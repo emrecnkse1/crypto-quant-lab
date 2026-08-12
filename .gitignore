@@ -4,6 +4,7 @@ venv/
 env/
 __pycache__/
 *.pyc
+*.egg-info/
 
 # Environment variables / secrets
 .env

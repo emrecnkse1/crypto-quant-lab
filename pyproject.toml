@@ -4,6 +4,9 @@ version = "0.1.0"
 description = "Local crypto quant research and execution platform"
 requires-python = ">=3.13,<3.14"
 
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
