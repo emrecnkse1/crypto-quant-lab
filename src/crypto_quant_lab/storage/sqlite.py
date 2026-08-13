@@ -61,14 +61,88 @@ WHERE exchange = ? AND market_type = ? AND symbol = ? AND timeframe = ?
 ORDER BY open_time_us ASC
 """
 
+_TABLE_INFO_SQL = "PRAGMA table_info(historical_candles)"
+
+# (name, declared type, notnull, pk position) per HISTORICAL_DATA_SPEC.md Bölüm 14, 17.
+# pk position 0 means "not part of the primary key"; positions 1-5 give the
+# composite canonical key's declared order (exchange, market_type, symbol,
+# timeframe, open_time_us).
+_EXPECTED_SCHEMA = (
+    ("exchange", "TEXT", 1, 1),
+    ("market_type", "TEXT", 1, 2),
+    ("symbol", "TEXT", 1, 3),
+    ("timeframe", "TEXT", 1, 4),
+    ("open_time_us", "INTEGER", 1, 5),
+    ("open", "TEXT", 1, 0),
+    ("high", "TEXT", 1, 0),
+    ("low", "TEXT", 1, 0),
+    ("close", "TEXT", 1, 0),
+    ("volume", "TEXT", 1, 0),
+)
+
 
 class SQLiteHistoricalCandleStore:
     """SQLite-backed implementation of the HistoricalCandleStore protocol (storage/base.py)."""
 
     def __init__(self, database_path: str | Path) -> None:
         self._connection = sqlite3.connect(str(database_path))
-        with self._connection:
-            self._connection.execute(_CREATE_TABLE_SQL)
+        try:
+            try:
+                with self._connection:
+                    self._connection.execute(_CREATE_TABLE_SQL)
+            except sqlite3.Error as exc:
+                raise StorageError(f"unexpected SQLite error during initialization: {exc}") from exc
+
+            self._validate_schema()
+        except Exception:
+            self._connection.close()
+            raise
+
+    def _validate_schema(self) -> None:
+        try:
+            rows = self._connection.execute(_TABLE_INFO_SQL).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError(f"unexpected SQLite error during schema validation: {exc}") from exc
+
+        # PRAGMA table_info rows: (cid, name, type, notnull, dflt_value, pk).
+        actual_columns = [
+            (row[1], row[2], row[3], row[5]) for row in sorted(rows, key=lambda row: row[0])
+        ]
+
+        if len(actual_columns) != len(_EXPECTED_SCHEMA):
+            raise DataCorruptionError(
+                "historical_candles schema mismatch: unexpected column count, "
+                f"expected {len(_EXPECTED_SCHEMA)} columns "
+                f"{[c[0] for c in _EXPECTED_SCHEMA]!r}, "
+                f"found {len(actual_columns)} columns {[c[0] for c in actual_columns]!r}"
+            )
+
+        for position, (expected, actual) in enumerate(
+            zip(_EXPECTED_SCHEMA, actual_columns, strict=True)
+        ):
+            expected_name, expected_type, expected_notnull, expected_pk = expected
+            actual_name, actual_type, actual_notnull, actual_pk = actual
+
+            if actual_name != expected_name:
+                raise DataCorruptionError(
+                    f"historical_candles schema mismatch at column position {position}: "
+                    f"unexpected column name {actual_name!r}, expected {expected_name!r}"
+                )
+            if actual_type != expected_type:
+                raise DataCorruptionError(
+                    f"historical_candles schema mismatch for column {actual_name!r}: "
+                    f"unexpected type {actual_type!r}, expected {expected_type!r}"
+                )
+            if actual_notnull != expected_notnull:
+                raise DataCorruptionError(
+                    f"historical_candles schema mismatch for column {actual_name!r}: "
+                    f"unexpected NOT NULL flag {actual_notnull!r}, expected {expected_notnull!r}"
+                )
+            if actual_pk != expected_pk:
+                raise DataCorruptionError(
+                    f"historical_candles schema mismatch for column {actual_name!r}: "
+                    f"unexpected primary key position {actual_pk!r}, expected {expected_pk!r}"
+                )
 
     def write_batch(self, records: Sequence[HistoricalCandle]) -> None:
         for record in records:
