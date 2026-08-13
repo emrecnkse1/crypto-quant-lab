@@ -4,7 +4,22 @@ Bu doküman, Local Crypto Quant Research + Execution Platform projesinin fazlar�
 
 - **Faz 0:** Geliştirme ortamı ve proje iskeleti
 - **Faz 1:** Market data
-- **Faz 2:** Historical data + storage
+- **Faz 2:** Historical data + storage — **Tamamlandı**
+  - Backend-neutral `HistoricalCandleStore` abstraction
+  - Canonical SQLite normalized historical store
+  - Exact Decimal TEXT persistence
+  - UTC epoch-microsecond timestamps
+  - Atomic `write_batch`
+  - Idempotent duplicate handling
+  - `DataConflictError` conflict semantics
+  - Rollback / partial write yok
+  - Half-open `[start_time, end_time)` range query
+  - Ascending query ordering
+  - Stored-data corruption handling
+  - Incompatible SQLite schema validation
+  - Persistence across reopen
+  - Deferred by spec: finalized/closed-only executable ingestion filtering -> historical downloader/ingestion aşamasına
+  - Deferred by spec: research/backtest/strategy/risk katmanlarının backend-neutral abstraction entegrasyon testleri -> ilgili katmanlar oluşturulduğunda
 - **Faz 3:** Data quality + feature foundation
 - **Faz 4:** Backtest engine
 - **Faz 5:** Realistic cost model
