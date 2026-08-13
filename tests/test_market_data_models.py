@@ -1,5 +1,5 @@
 from dataclasses import FrozenInstanceError
-from datetime import UTC, datetime
+from datetime import UTC, datetime, tzinfo
 from decimal import Decimal
 
 import pytest
@@ -39,6 +39,25 @@ def test_naive_datetime_is_rejected():
         make_candle(open_time=datetime(2026, 1, 1))  # noqa: DTZ001
 
 
+class _BrokenTzInfo(tzinfo):
+    """A tzinfo that pretends to be attached but reports no offset (pseudo-naive)."""
+
+    def utcoffset(self, dt):
+        return None
+
+    def dst(self, dt):
+        return None
+
+    def tzname(self, dt):
+        return None
+
+
+def test_pseudo_naive_datetime_with_none_utcoffset_is_rejected():
+    pseudo_naive = datetime(2026, 1, 1, tzinfo=_BrokenTzInfo())
+    with pytest.raises(ValueError, match="timezone-aware"):
+        make_candle(open_time=pseudo_naive)
+
+
 def test_negative_volume_is_rejected():
     with pytest.raises(ValueError, match="volume"):
         make_candle(volume=Decimal(-1))
@@ -62,3 +81,20 @@ def test_empty_symbol_is_rejected():
 def test_empty_timeframe_is_rejected():
     with pytest.raises(ValueError, match="timeframe"):
         make_candle(timeframe="")
+
+
+NON_FINITE_DECIMALS = [
+    Decimal("NaN"),
+    Decimal("sNaN"),
+    Decimal("Infinity"),
+    Decimal("-Infinity"),
+]
+
+OHLCV_FIELDS = ["open", "high", "low", "close", "volume"]
+
+
+@pytest.mark.parametrize("field_name", OHLCV_FIELDS)
+@pytest.mark.parametrize("non_finite_value", NON_FINITE_DECIMALS, ids=str)
+def test_non_finite_ohlcv_value_is_rejected(field_name, non_finite_value):
+    with pytest.raises(ValueError, match=f"{field_name} must be finite"):
+        make_candle(**{field_name: non_finite_value})

@@ -21,8 +21,11 @@ class Candle:
             raise ValueError("symbol cannot be empty")
         if not self.timeframe:
             raise ValueError("timeframe cannot be empty")
-        if self.open_time.tzinfo is None:
+        if self.open_time.tzinfo is None or self.open_time.utcoffset() is None:
             raise ValueError("open_time must be timezone-aware")
+        for field_name in ("open", "high", "low", "close", "volume"):
+            if not getattr(self, field_name).is_finite():
+                raise ValueError(f"{field_name} must be finite")
         if self.volume < 0:
             raise ValueError("volume cannot be negative")
         if self.high < self.open or self.high < self.low or self.high < self.close:
