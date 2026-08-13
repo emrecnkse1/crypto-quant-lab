@@ -1,8 +1,8 @@
 """SQLite implementation of the backend-neutral historical candle store.
 
 Establishes the connection, initializes the canonical schema, and implements
-atomic, conflict-safe batch writes (HISTORICAL_DATA_SPEC.md Bölüm 2, 8, 9,
-10, 14.2, 14.3). Reading (query) is not implemented yet.
+atomic, conflict-safe batch writes and half-open range queries
+(HISTORICAL_DATA_SPEC.md Bölüm 2, 8, 9, 10, 11, 14.2, 14.3).
 """
 
 import sqlite3
@@ -10,14 +10,17 @@ from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
+from crypto_quant_lab.market_data.models import Candle
 from crypto_quant_lab.storage.base import (
     DataConflictError,
+    DataCorruptionError,
     HistoricalCandle,
     StorageError,
 )
 from crypto_quant_lab.storage.sqlite_codec import (
     datetime_to_epoch_us,
     decimal_to_text,
+    epoch_us_to_datetime,
     text_to_decimal,
 )
 
@@ -48,6 +51,14 @@ INSERT INTO historical_candles (
     exchange, market_type, symbol, timeframe, open_time_us,
     open, high, low, close, volume
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
+_SELECT_RANGE_SQL = """
+SELECT open_time_us, open, high, low, close, volume
+FROM historical_candles
+WHERE exchange = ? AND market_type = ? AND symbol = ? AND timeframe = ?
+  AND open_time_us >= ? AND open_time_us < ?
+ORDER BY open_time_us ASC
 """
 
 
@@ -120,7 +131,48 @@ class SQLiteHistoricalCandleStore:
         start_time: datetime,
         end_time: datetime,
     ) -> list[HistoricalCandle]:
-        raise NotImplementedError("query is not implemented yet")
+        start_us = datetime_to_epoch_us(start_time)
+        end_us = datetime_to_epoch_us(end_time)
+        if start_us >= end_us:
+            raise ValueError(
+                "start_time must be strictly less than end_time, got "
+                f"start_time={start_time!r}, end_time={end_time!r}"
+            )
+
+        try:
+            rows = self._connection.execute(
+                _SELECT_RANGE_SQL,
+                (exchange, market_type, symbol, timeframe, start_us, end_us),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError(f"unexpected SQLite error during query: {exc}") from exc
+
+        return [self._row_to_record(exchange, market_type, symbol, timeframe, row) for row in rows]
+
+    @staticmethod
+    def _row_to_record(
+        exchange: str,
+        market_type: str,
+        symbol: str,
+        timeframe: str,
+        row: tuple,
+    ) -> HistoricalCandle:
+        open_time_us, open_, high, low, close, volume = row
+        try:
+            candle = Candle(
+                symbol=symbol,
+                timeframe=timeframe,
+                open_time=epoch_us_to_datetime(open_time_us),
+                open=text_to_decimal(open_),
+                high=text_to_decimal(high),
+                low=text_to_decimal(low),
+                close=text_to_decimal(close),
+                volume=text_to_decimal(volume),
+            )
+        except (TypeError, ValueError) as exc:
+            raise DataCorruptionError(f"stored row failed to reconstruct: {exc}") from exc
+
+        return HistoricalCandle(exchange=exchange, market_type=market_type, candle=candle)
 
     def close(self) -> None:
         self._connection.close()

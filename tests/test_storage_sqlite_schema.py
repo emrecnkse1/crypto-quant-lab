@@ -1,5 +1,4 @@
 import sqlite3
-from datetime import UTC, datetime
 
 import pytest
 
@@ -129,20 +128,3 @@ def test_close_closes_the_connection(tmp_path):
 
     with pytest.raises(sqlite3.ProgrammingError):
         store._connection.execute("SELECT 1")
-
-
-def test_query_raises_not_implemented(tmp_path):
-    db_path = tmp_path / "historical.db"
-    store = SQLiteHistoricalCandleStore(db_path)
-    try:
-        with pytest.raises(NotImplementedError):
-            store.query(
-                "binance",
-                "spot",
-                "BTCUSDT",
-                "1h",
-                datetime(2024, 1, 1, tzinfo=UTC),
-                datetime(2024, 1, 2, tzinfo=UTC),
-            )
-    finally:
-        store.close()
