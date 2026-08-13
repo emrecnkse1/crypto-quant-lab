@@ -131,16 +131,6 @@ def test_close_closes_the_connection(tmp_path):
         store._connection.execute("SELECT 1")
 
 
-def test_write_batch_raises_not_implemented(tmp_path):
-    db_path = tmp_path / "historical.db"
-    store = SQLiteHistoricalCandleStore(db_path)
-    try:
-        with pytest.raises(NotImplementedError):
-            store.write_batch([])
-    finally:
-        store.close()
-
-
 def test_query_raises_not_implemented(tmp_path):
     db_path = tmp_path / "historical.db"
     store = SQLiteHistoricalCandleStore(db_path)
