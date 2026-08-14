@@ -14,9 +14,28 @@ _MIN_LIMIT = 1
 _MAX_LIMIT = 1000
 
 
-def _build_klines_url(symbol: str, timeframe: str, limit: int) -> str:
-    query = urllib.parse.urlencode({"symbol": symbol, "interval": timeframe, "limit": limit})
+def _build_klines_url(
+    symbol: str,
+    timeframe: str,
+    limit: int,
+    *,
+    start_time_ms: int | None = None,
+    end_time_ms: int | None = None,
+) -> str:
+    params: dict[str, str | int] = {"symbol": symbol, "interval": timeframe, "limit": limit}
+    if start_time_ms is not None:
+        params["startTime"] = start_time_ms
+    if end_time_ms is not None:
+        params["endTime"] = end_time_ms
+    query = urllib.parse.urlencode(params)
     return f"{_BASE_URL}{_KLINES_PATH}?{query}"
+
+
+def _validate_optional_ms(name: str, value: int | None) -> None:
+    if value is None:
+        return
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{name} must be an int, got {type(value).__name__}")
 
 
 def _request(url: str, timeout: float) -> bytes:
@@ -32,6 +51,9 @@ def fetch_binance_klines(
     timeframe: str,
     limit: int = 1,
     timeout: float = 10.0,
+    *,
+    start_time_ms: int | None = None,
+    end_time_ms: int | None = None,
 ) -> list[Candle]:
     """Fetch recent klines from the Binance public Spot market-data API as Candles."""
     if not symbol:
@@ -42,8 +64,14 @@ def fetch_binance_klines(
         raise ValueError(f"limit must be between {_MIN_LIMIT} and {_MAX_LIMIT}, got {limit}")
     if timeout <= 0:
         raise ValueError(f"timeout must be greater than 0, got {timeout}")
+    _validate_optional_ms("start_time_ms", start_time_ms)
+    _validate_optional_ms("end_time_ms", end_time_ms)
+    if start_time_ms is not None and end_time_ms is not None and start_time_ms > end_time_ms:
+        raise ValueError(f"start_time_ms ({start_time_ms}) must be <= end_time_ms ({end_time_ms})")
 
-    url = _build_klines_url(symbol, timeframe, limit)
+    url = _build_klines_url(
+        symbol, timeframe, limit, start_time_ms=start_time_ms, end_time_ms=end_time_ms
+    )
     raw_body = _request(url, timeout)
 
     try:

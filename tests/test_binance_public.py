@@ -109,3 +109,110 @@ def test_network_error_is_reported_clearly(monkeypatch):
 
     with pytest.raises(ConnectionError, match="Binance public API"):
         fetch_binance_klines("BTCUSDT", "1h")
+
+
+def test_no_range_params_means_no_start_or_end_in_query(monkeypatch):
+    fake = _fake_request_returning(json.dumps([VALID_KLINE]).encode())
+    monkeypatch.setattr(binance_public, "_request", fake)
+
+    fetch_binance_klines("BTCUSDT", "1h", limit=1)
+
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(fake.last_url).query)
+    assert "startTime" not in query
+    assert "endTime" not in query
+
+
+def test_start_time_ms_is_added_to_query(monkeypatch):
+    fake = _fake_request_returning(json.dumps([VALID_KLINE]).encode())
+    monkeypatch.setattr(binance_public, "_request", fake)
+
+    fetch_binance_klines("BTCUSDT", "1h", limit=1, start_time_ms=1234567890000)
+
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(fake.last_url).query)
+    assert query["startTime"] == ["1234567890000"]
+    assert "endTime" not in query
+
+
+def test_end_time_ms_is_added_to_query(monkeypatch):
+    fake = _fake_request_returning(json.dumps([VALID_KLINE]).encode())
+    monkeypatch.setattr(binance_public, "_request", fake)
+
+    fetch_binance_klines("BTCUSDT", "1h", limit=1, end_time_ms=1234567990000)
+
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(fake.last_url).query)
+    assert query["endTime"] == ["1234567990000"]
+    assert "startTime" not in query
+
+
+def test_start_and_end_time_ms_are_both_added_to_query(monkeypatch):
+    fake = _fake_request_returning(json.dumps([VALID_KLINE]).encode())
+    monkeypatch.setattr(binance_public, "_request", fake)
+
+    fetch_binance_klines(
+        "BTCUSDT", "1h", limit=1, start_time_ms=1234567890000, end_time_ms=1234567990000
+    )
+
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(fake.last_url).query)
+    assert query["startTime"] == ["1234567890000"]
+    assert query["endTime"] == ["1234567990000"]
+    assert query["symbol"] == ["BTCUSDT"]
+    assert query["interval"] == ["1h"]
+    assert query["limit"] == ["1"]
+
+
+def test_start_time_ms_bool_is_rejected(monkeypatch):
+    fake = _fake_request_returning(json.dumps([VALID_KLINE]).encode())
+    monkeypatch.setattr(binance_public, "_request", fake)
+
+    with pytest.raises(TypeError, match="start_time_ms"):
+        fetch_binance_klines("BTCUSDT", "1h", start_time_ms=True)
+
+
+def test_end_time_ms_bool_is_rejected(monkeypatch):
+    fake = _fake_request_returning(json.dumps([VALID_KLINE]).encode())
+    monkeypatch.setattr(binance_public, "_request", fake)
+
+    with pytest.raises(TypeError, match="end_time_ms"):
+        fetch_binance_klines("BTCUSDT", "1h", end_time_ms=False)
+
+
+def test_start_time_ms_float_is_rejected():
+    with pytest.raises(TypeError, match="start_time_ms"):
+        fetch_binance_klines("BTCUSDT", "1h", start_time_ms=1234567890000.0)
+
+
+def test_start_time_ms_string_is_rejected():
+    with pytest.raises(TypeError, match="start_time_ms"):
+        fetch_binance_klines("BTCUSDT", "1h", start_time_ms="1234567890000")
+
+
+def test_start_after_end_is_rejected():
+    with pytest.raises(ValueError, match="start_time_ms"):
+        fetch_binance_klines(
+            "BTCUSDT", "1h", start_time_ms=1234567990000, end_time_ms=1234567890000
+        )
+
+
+def test_start_equal_end_is_accepted_by_low_level_client(monkeypatch):
+    fake = _fake_request_returning(json.dumps([VALID_KLINE]).encode())
+    monkeypatch.setattr(binance_public, "_request", fake)
+
+    fetch_binance_klines("BTCUSDT", "1h", start_time_ms=1234567890000, end_time_ms=1234567890000)
+
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(fake.last_url).query)
+    assert query["startTime"] == ["1234567890000"]
+    assert query["endTime"] == ["1234567890000"]
+
+
+def test_range_params_do_not_change_candle_parsing(monkeypatch):
+    fake = _fake_request_returning(json.dumps([VALID_KLINE]).encode())
+    monkeypatch.setattr(binance_public, "_request", fake)
+
+    candles = fetch_binance_klines(
+        "BTCUSDT", "1h", limit=1, start_time_ms=1234567890000, end_time_ms=1234567990000
+    )
+
+    assert len(candles) == 1
+    assert isinstance(candles[0], Candle)
+    assert candles[0].symbol == "BTCUSDT"
+    assert candles[0].timeframe == "1h"
