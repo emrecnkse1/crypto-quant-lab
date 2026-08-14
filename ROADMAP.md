@@ -20,7 +20,18 @@ Bu doküman, Local Crypto Quant Research + Execution Platform projesinin fazlar�
   - Persistence across reopen
   - Deferred by spec: finalized/closed-only executable ingestion filtering -> historical downloader/ingestion aşamasına
   - Deferred by spec: research/backtest/strategy/risk katmanlarının backend-neutral abstraction entegrasyon testleri -> ilgili katmanlar oluşturulduğunda
-- **Faz 3:** Data quality + feature foundation
+- **Faz 3:** Data quality + feature foundation — **Tamamlandı**
+  - 1h/4h deterministic timeframe + grid/effective-range contract
+  - Lossless transport boundary handling
+  - Binance historical `close_time` preservation + finalized validation
+  - Bounded pagination + `ConnectionError` retry
+  - Atomic historical ingestion → canonical SQLite
+  - Deterministic gap/alignment quality reports
+  - Incomplete-tail handling
+  - Real store → quality integration
+  - End-to-end ingestion + quality regression
+  - Exchange-neutral feature availability / anti-lookahead contract
+  - 36/36 Faz 3 acceptance criteria PASS
 - **Faz 4:** Backtest engine
 - **Faz 5:** Realistic cost model
 - **Faz 6:** Validation / anti-overfitting
