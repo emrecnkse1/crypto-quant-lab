@@ -1,21 +1,23 @@
-"""Backtest cost model abstraction (BACKTEST_SPEC.md Bölüm 21, 22).
+"""Backtest cost model abstraction (BACKTEST_SPEC.md Bölüm 21, 22; COST_MODEL_SPEC.md).
 
 `CostModel` is a minimal, structural (`typing.Protocol`) abstraction so the
 backtest engine never becomes tightly coupled to a concrete cost
 implementation. Faz 4 mandates exactly one concrete implementation —
-`ZeroCostModel` — which always returns zero; realistic costs (commission,
-spread, slippage, funding) are deferred to Faz 5 (BACKTEST_SPEC.md Bölüm 34).
+`ZeroCostModel` — which always returns zero. Faz 5A adds realistic
+proportional transaction-cost models (commission, spread, slippage) on top
+of this unchanged Protocol (COST_MODEL_SPEC.md); funding remains deferred to
+Faz 5B.
 
 `quantity` is always the absolute (unsigned) traded quantity for a single
 fill — never a signed position delta, and never tied to BUY/SELL side,
 current position, target position, or policy. Example (BACKTEST_SPEC.md
 Bölüm 16): both `FLAT -> LONG` and `LONG -> FLAT` trade `quantity=q`; a
 `LONG -> SHORT` reversal trades `quantity=2q`. `execution_price` is the
-fill's execution price — in Faz 4's future next-open execution engine this
-will be the next candle's OPEN, but this module has no knowledge of that
-timing logic.
+fill's execution price — in Faz 4's next-open execution engine this is the
+next candle's OPEN, but this module has no knowledge of that timing logic.
 """
 
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol
 
@@ -36,3 +38,27 @@ class ZeroCostModel:
         _require_decimal(quantity, "quantity")
         _require_decimal(execution_price, "execution_price")
         return Decimal(0)
+
+
+@dataclass(frozen=True, slots=True)
+class ProportionalCommissionModel:
+    """Faz 5A proportional taker-like commission (COST_MODEL_SPEC.md Bölüm 7, 8).
+
+    `cost = quantity * execution_price * rate` — a symmetric, direction-
+    independent fee on the fill's notional. No default `rate`: the caller
+    must always supply one explicitly.
+    """
+
+    rate: Decimal
+
+    def __post_init__(self) -> None:
+        _require_decimal(self.rate, "rate")
+        if not self.rate.is_finite():
+            raise ValueError(f"rate must be finite, got {self.rate}")
+        if self.rate < 0:
+            raise ValueError(f"rate must be >= 0, got {self.rate}")
+
+    def calculate_cost(self, *, quantity: Decimal, execution_price: Decimal) -> Decimal:
+        _require_decimal(quantity, "quantity")
+        _require_decimal(execution_price, "execution_price")
+        return quantity * execution_price * self.rate
