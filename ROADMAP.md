@@ -32,7 +32,19 @@ Bu doküman, Local Crypto Quant Research + Execution Platform projesinin fazlar�
   - End-to-end ingestion + quality regression
   - Exchange-neutral feature availability / anti-lookahead contract
   - 36/36 Faz 3 acceptance criteria PASS
-- **Faz 4:** Backtest engine
+- **Faz 4:** Backtest engine — **Tamamlandı**
+  - Deterministic, bar-by-bar, event-driven replay engine
+  - Anti-lookahead available-prefix policy context (no future candle access)
+  - Signal at candle N → fill at candle N+1 OPEN
+  - Last-candle signal produces no fabricated fill
+  - Fixed-quantity LONG/FLAT/SHORT position transition model
+  - Deterministic Decimal accounting (cash, realized/unrealized PnL, equity)
+  - Pluggable `CostModel` abstraction + mandatory `ZeroCostModel`
+  - Quality-gated `HistoricalCandleStore` dataset preparation
+  - Real SQLite store-backed backtest runner
+  - NO TRADE as a first-class valid outcome
+  - Canonical end-to-end golden regression
+  - 35/35 Faz 4 acceptance criteria PASS
 - **Faz 5:** Realistic cost model
 - **Faz 6:** Validation / anti-overfitting
 - **Faz 7:** İlk Funding/Basis araştırması
