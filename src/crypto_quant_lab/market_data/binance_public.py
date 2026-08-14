@@ -5,6 +5,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from crypto_quant_lab.market_data.binance_historical import (
+    BinanceHistoricalKline,
+    parse_binance_historical_kline,
+)
 from crypto_quant_lab.market_data.models import Candle
 from crypto_quant_lab.market_data.parsers import parse_binance_kline
 
@@ -46,16 +50,21 @@ def _request(url: str, timeout: float) -> bytes:
         raise ConnectionError(f"failed to reach Binance public API: {exc}") from exc
 
 
-def fetch_binance_klines(
+def _fetch_klines_payload(
     symbol: str,
     timeframe: str,
-    limit: int = 1,
-    timeout: float = 10.0,
+    limit: int,
+    timeout: float,
     *,
-    start_time_ms: int | None = None,
-    end_time_ms: int | None = None,
-) -> list[Candle]:
-    """Fetch recent klines from the Binance public Spot market-data API as Candles."""
+    start_time_ms: int | None,
+    end_time_ms: int | None,
+) -> list:
+    """Validate parameters, perform the request, and return the decoded JSON row list.
+
+    Shared by `fetch_binance_klines` and `fetch_binance_historical_klines` —
+    the only difference between them is which parser turns each raw row into
+    a domain value.
+    """
     if not symbol:
         raise ValueError("symbol cannot be empty")
     if not timeframe:
@@ -82,4 +91,42 @@ def fetch_binance_klines(
     if not isinstance(payload, list):
         raise ValueError(f"expected a JSON list response, got {type(payload).__name__}")  # noqa: TRY004
 
+    return payload
+
+
+def fetch_binance_klines(
+    symbol: str,
+    timeframe: str,
+    limit: int = 1,
+    timeout: float = 10.0,
+    *,
+    start_time_ms: int | None = None,
+    end_time_ms: int | None = None,
+) -> list[Candle]:
+    """Fetch recent klines from the Binance public Spot market-data API as Candles."""
+    payload = _fetch_klines_payload(
+        symbol, timeframe, limit, timeout, start_time_ms=start_time_ms, end_time_ms=end_time_ms
+    )
     return [parse_binance_kline(raw, symbol=symbol, timeframe=timeframe) for raw in payload]
+
+
+def fetch_binance_historical_klines(
+    symbol: str,
+    timeframe: str,
+    limit: int = 1000,
+    timeout: float = 10.0,
+    *,
+    start_time_ms: int | None = None,
+    end_time_ms: int | None = None,
+) -> list[BinanceHistoricalKline]:
+    """Fetch historical klines from the Binance public Spot market-data API.
+
+    Unlike `fetch_binance_klines`, each row is preserved as a
+    `BinanceHistoricalKline` envelope — raw `close_time` is not discarded.
+    """
+    payload = _fetch_klines_payload(
+        symbol, timeframe, limit, timeout, start_time_ms=start_time_ms, end_time_ms=end_time_ms
+    )
+    return [
+        parse_binance_historical_kline(raw, symbol=symbol, timeframe=timeframe) for raw in payload
+    ]

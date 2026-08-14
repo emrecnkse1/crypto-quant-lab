@@ -4,8 +4,16 @@ import urllib.parse
 import pytest
 
 from crypto_quant_lab.market_data import binance_public
-from crypto_quant_lab.market_data.binance_public import fetch_binance_klines
+from crypto_quant_lab.market_data.binance_historical import (
+    BinanceHistoricalKline,
+    parse_binance_historical_kline,
+)
+from crypto_quant_lab.market_data.binance_public import (
+    fetch_binance_historical_klines,
+    fetch_binance_klines,
+)
 from crypto_quant_lab.market_data.models import Candle
+from crypto_quant_lab.market_data.parsers import parse_binance_kline
 
 VALID_KLINE = [
     1704067200000,
@@ -216,3 +224,97 @@ def test_range_params_do_not_change_candle_parsing(monkeypatch):
     assert isinstance(candles[0], Candle)
     assert candles[0].symbol == "BTCUSDT"
     assert candles[0].timeframe == "1h"
+
+
+# --- fetch_binance_historical_klines ---
+
+
+def test_historical_valid_response_returns_binance_historical_kline_list(monkeypatch):
+    fake = _fake_request_returning(json.dumps([VALID_KLINE]).encode())
+    monkeypatch.setattr(binance_public, "_request", fake)
+
+    klines = fetch_binance_historical_klines("BTCUSDT", "1h", limit=1)
+
+    assert len(klines) == 1
+    assert isinstance(klines[0], BinanceHistoricalKline)
+
+
+def test_historical_raw_close_time_is_preserved(monkeypatch):
+    fake = _fake_request_returning(json.dumps([VALID_KLINE]).encode())
+    monkeypatch.setattr(binance_public, "_request", fake)
+
+    klines = fetch_binance_historical_klines("BTCUSDT", "1h", limit=1)
+
+    expected = parse_binance_historical_kline(VALID_KLINE, "BTCUSDT", "1h")
+    assert klines[0].close_time == expected.close_time
+
+
+def test_historical_candle_matches_existing_parser(monkeypatch):
+    fake = _fake_request_returning(json.dumps([VALID_KLINE]).encode())
+    monkeypatch.setattr(binance_public, "_request", fake)
+
+    klines = fetch_binance_historical_klines("BTCUSDT", "1h", limit=1)
+
+    expected_candle = parse_binance_kline(VALID_KLINE, "BTCUSDT", "1h")
+    assert klines[0].candle == expected_candle
+
+
+def test_historical_url_contains_start_and_end_time(monkeypatch):
+    fake = _fake_request_returning(json.dumps([VALID_KLINE]).encode())
+    monkeypatch.setattr(binance_public, "_request", fake)
+
+    fetch_binance_historical_klines(
+        "BTCUSDT", "1h", limit=1, start_time_ms=1234567890000, end_time_ms=1234567990000
+    )
+
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(fake.last_url).query)
+    assert query["startTime"] == ["1234567890000"]
+    assert query["endTime"] == ["1234567990000"]
+
+
+def test_historical_url_contains_symbol_interval_and_limit(monkeypatch):
+    fake = _fake_request_returning(json.dumps([VALID_KLINE]).encode())
+    monkeypatch.setattr(binance_public, "_request", fake)
+
+    fetch_binance_historical_klines("ETHUSDT", "4h", limit=500)
+
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(fake.last_url).query)
+    assert query["symbol"] == ["ETHUSDT"]
+    assert query["interval"] == ["4h"]
+    assert query["limit"] == ["500"]
+
+
+def test_historical_default_limit_is_1000(monkeypatch):
+    fake = _fake_request_returning(json.dumps([VALID_KLINE]).encode())
+    monkeypatch.setattr(binance_public, "_request", fake)
+
+    fetch_binance_historical_klines("BTCUSDT", "1h")
+
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(fake.last_url).query)
+    assert query["limit"] == ["1000"]
+
+
+def test_historical_invalid_json_is_rejected(monkeypatch):
+    fake = _fake_request_returning(b"not-json")
+    monkeypatch.setattr(binance_public, "_request", fake)
+
+    with pytest.raises(ValueError, match="JSON"):
+        fetch_binance_historical_klines("BTCUSDT", "1h")
+
+
+def test_historical_non_list_json_response_is_rejected(monkeypatch):
+    fake = _fake_request_returning(json.dumps({"error": "unexpected"}).encode())
+    monkeypatch.setattr(binance_public, "_request", fake)
+
+    with pytest.raises(ValueError, match="list"):
+        fetch_binance_historical_klines("BTCUSDT", "1h")
+
+
+def test_historical_network_error_is_reported_clearly(monkeypatch):
+    def _raise(url: str, timeout: float) -> bytes:
+        raise ConnectionError("failed to reach Binance public API: simulated network failure")
+
+    monkeypatch.setattr(binance_public, "_request", _raise)
+
+    with pytest.raises(ConnectionError, match="Binance public API"):
+        fetch_binance_historical_klines("BTCUSDT", "1h")
