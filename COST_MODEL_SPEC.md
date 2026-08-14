@@ -98,9 +98,13 @@ Faz 4'ün execution modeli yalnızca market-at-next-open/full-fill olduğundan (
 ## 8. Commission Rate Validation (MUST)
 
 - `rate` genuine `Decimal` olmalı. `float`/`int`/`bool` → `TypeError`.
-- `rate < 0` → `ValueError`.
+- `rate` finite olmalı. `Decimal("NaN")` / `Decimal("Infinity")` / `Decimal("-Infinity")` → `ValueError`.
+- `rate < 0` (finite negatif) → `ValueError`.
 - `rate == 0` → legal.
+- Pozitif finite `rate` → legal.
 - Hiçbir default `rate` yoktur — caller açıkça sağlamak zorundadır.
+
+**Neden finite:** NaN/±Infinity, ekonomik olarak geçerli bir configured transaction-cost rate'i temsil etmez. Bu finite/negatif validation'ı yalnızca isimli somut friction modellerine (bu Bölüm, Bölüm 10, Bölüm 12) aittir — generic `CostModel` Protocol'üne veya `CompositeCostModel`'in kendi output'una genişletilmez (bkz. Bölüm 18).
 
 ## 9. Spread Model (LOCKED)
 
@@ -119,9 +123,13 @@ Field adı kasıtlı olarak `half_spread_rate`'dir, belirsiz `spread_rate` **de�
 ## 10. Spread Validation (MUST)
 
 - `half_spread_rate` genuine `Decimal` olmalı. `float`/`int`/`bool` → `TypeError`.
-- `half_spread_rate < 0` → `ValueError`.
+- `half_spread_rate` finite olmalı. `Decimal("NaN")` / `Decimal("Infinity")` / `Decimal("-Infinity")` → `ValueError`.
+- `half_spread_rate < 0` (finite negatif) → `ValueError`.
 - `half_spread_rate == 0` → legal.
+- Pozitif finite `half_spread_rate` → legal.
 - Default yok.
+
+Finite gereksiniminin gerekçesi Bölüm 8'dekiyle aynıdır.
 
 ## 11. Slippage Model (LOCKED)
 
@@ -140,9 +148,13 @@ Bu, sabit-proportional slippage yaklaşımıdır — ciddi bir ilk model için y
 ## 12. Slippage Validation (MUST)
 
 - `rate` genuine `Decimal` olmalı. `float`/`int`/`bool` → `TypeError`.
-- `rate < 0` → `ValueError`.
+- `rate` finite olmalı. `Decimal("NaN")` / `Decimal("Infinity")` / `Decimal("-Infinity")` → `ValueError`.
+- `rate < 0` (finite negatif) → `ValueError`.
 - `rate == 0` → legal.
+- Pozitif finite `rate` → legal.
 - Default yok.
+
+Finite gereksiniminin gerekçesi Bölüm 8'dekiyle aynıdır.
 
 ## 13. Quantity / Price Input Semantics (MUST NOT DEĞİŞTİRİLMEZ)
 
@@ -360,7 +372,7 @@ Faz 5B (bu dokümanın kapsamı dışında, yalnızca referans için):
 4. Spread exact Decimal hesaplama üretir.
 5. Slippage exact Decimal hesaplama üretir.
 6. Composite, exact deterministic sol-dan-sağa Decimal toplamı üretir.
-7. Spesifik model rate'leri yalnızca genuine Decimal kabul eder — float/int/bool reddedilir.
+7. Spesifik model rate'leri yalnızca genuine finite Decimal kabul eder — float/int/bool reddedilir; NaN/±Infinity reddedilir.
 8. Negatif commission/spread/slippage rate'leri reddedilir.
 9. Sıfır rate'ler legal'dir.
 10. Hiçbir gerçekçi rate için hidden/default değer yoktur.
