@@ -210,6 +210,51 @@ def test_effective_end_normalizes_non_utc_requested_boundaries():
     assert result == datetime(2024, 1, 1, 14, 0, tzinfo=UTC)
 
 
+@pytest.mark.parametrize(
+    "invalid_requested_start",
+    [datetime(2024, 1, 1, 10, 0), datetime(2024, 1, 1, 10, 0, tzinfo=_BrokenTzInfo())],  # noqa: DTZ001
+    ids=["naive", "pseudo_naive"],
+)
+def test_effective_end_rejects_invalid_requested_start_timezone(invalid_requested_start):
+    with pytest.raises(ValueError):
+        calculate_effective_end(
+            requested_start=invalid_requested_start,
+            requested_end=datetime(2024, 1, 1, 15, 0, tzinfo=UTC),
+            as_of_time=datetime(2024, 1, 1, 14, 37, tzinfo=UTC),
+            timeframe="1h",
+        )
+
+
+@pytest.mark.parametrize(
+    "invalid_requested_end",
+    [datetime(2024, 1, 1, 15, 0), datetime(2024, 1, 1, 15, 0, tzinfo=_BrokenTzInfo())],  # noqa: DTZ001
+    ids=["naive", "pseudo_naive"],
+)
+def test_effective_end_rejects_invalid_requested_end_timezone(invalid_requested_end):
+    with pytest.raises(ValueError):
+        calculate_effective_end(
+            requested_start=datetime(2024, 1, 1, 10, 0, tzinfo=UTC),
+            requested_end=invalid_requested_end,
+            as_of_time=datetime(2024, 1, 1, 14, 37, tzinfo=UTC),
+            timeframe="1h",
+        )
+
+
+@pytest.mark.parametrize(
+    "invalid_as_of_time",
+    [datetime(2024, 1, 1, 14, 37), datetime(2024, 1, 1, 14, 37, tzinfo=_BrokenTzInfo())],  # noqa: DTZ001
+    ids=["naive", "pseudo_naive"],
+)
+def test_effective_end_rejects_invalid_as_of_time_timezone(invalid_as_of_time):
+    with pytest.raises(ValueError):
+        calculate_effective_end(
+            requested_start=datetime(2024, 1, 1, 10, 0, tzinfo=UTC),
+            requested_end=datetime(2024, 1, 1, 15, 0, tzinfo=UTC),
+            as_of_time=invalid_as_of_time,
+            timeframe="1h",
+        )
+
+
 # --- incomplete_tail_excluded_count ---
 
 
