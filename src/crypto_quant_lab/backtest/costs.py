@@ -114,3 +114,35 @@ class ProportionalSlippageCostModel:
         _require_decimal(quantity, "quantity")
         _require_decimal(execution_price, "execution_price")
         return quantity * execution_price * self.rate
+
+
+@dataclass(frozen=True, slots=True)
+class CompositeCostModel:
+    """Faz 5A deterministic composition of cost models (COST_MODEL_SPEC.md Bölüm 16-19).
+
+    `components` is invoked in exact left-to-right tuple order, each exactly
+    once, and their `calculate_cost` outputs are summed. Composite does not
+    interpret component semantics: negative component outputs (and a
+    negative total) are legal, non-finite Decimal outputs are not rejected
+    (only non-Decimal outputs are), and an empty `components` tuple is a
+    legal zero-cost edge case (though `ZeroCostModel` remains the preferred
+    explicit zero-friction baseline). No default `components`.
+    """
+
+    components: tuple[CostModel, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.components, tuple):
+            raise TypeError(f"components must be a tuple, got {type(self.components).__name__}")
+
+    def calculate_cost(self, *, quantity: Decimal, execution_price: Decimal) -> Decimal:
+        _require_decimal(quantity, "quantity")
+        _require_decimal(execution_price, "execution_price")
+        total = Decimal(0)
+        for index, component in enumerate(self.components):
+            component_cost = component.calculate_cost(
+                quantity=quantity, execution_price=execution_price
+            )
+            _require_decimal(component_cost, f"components[{index}] calculate_cost result")
+            total += component_cost
+        return total

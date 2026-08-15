@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 
 from crypto_quant_lab.backtest.costs import (
+    CompositeCostModel,
     ProportionalCommissionModel,
     ProportionalSlippageCostModel,
     ProportionalSpreadCostModel,
@@ -422,3 +423,230 @@ def test_slippage_model_is_frozen():
     model = ProportionalSlippageCostModel(rate=Decimal("0.001"))
     with pytest.raises(FrozenInstanceError):
         model.rate = Decimal("0.002")
+
+
+# --- CompositeCostModel: test-only doubles ---
+
+
+class RecordingCostModel:
+    """Test-only double: records call order/inputs, returns a fixed Decimal."""
+
+    def __init__(self, label, return_value, call_log, received_log=None):
+        self.label = label
+        self.return_value = return_value
+        self.call_log = call_log
+        self.received_log = received_log
+
+    def calculate_cost(self, *, quantity: Decimal, execution_price: Decimal) -> Decimal:
+        self.call_log.append(self.label)
+        if self.received_log is not None:
+            self.received_log.append((quantity, execution_price))
+        return self.return_value
+
+
+class _CompositeTestException(Exception):
+    """Test-only marker exception for exception-propagation tests."""
+
+
+class FailingCostModel:
+    """Test-only double: raises a dedicated test exception."""
+
+    def calculate_cost(self, *, quantity: Decimal, execution_price: Decimal) -> Decimal:
+        raise _CompositeTestException("boom")
+
+
+class InvalidReturnCostModel:
+    """Test-only double: returns a configurable non-Decimal object."""
+
+    def __init__(self, return_value):
+        self.return_value = return_value
+
+    def calculate_cost(self, *, quantity: Decimal, execution_price: Decimal):
+        return self.return_value
+
+
+# --- CompositeCostModel: worked example (real production models) ---
+
+
+def test_composite_worked_example_with_real_models():
+    commission = ProportionalCommissionModel(rate=Decimal("0.001"))
+    spread = ProportionalSpreadCostModel(half_spread_rate=Decimal("0.0005"))
+    slippage = ProportionalSlippageCostModel(rate=Decimal("0.001"))
+    model = CompositeCostModel(components=(commission, spread, slippage))
+    result = model.calculate_cost(quantity=Decimal(2), execution_price=Decimal(100))
+    assert result == Decimal("0.5000")
+
+
+# --- CompositeCostModel: empty composite ---
+
+
+def test_composite_empty_tuple_returns_zero():
+    model = CompositeCostModel(components=())
+    result = model.calculate_cost(quantity=Decimal(2), execution_price=Decimal(100))
+    assert result == Decimal(0)
+
+
+def test_composite_empty_tuple_result_is_genuine_decimal():
+    model = CompositeCostModel(components=())
+    result = model.calculate_cost(quantity=Decimal(2), execution_price=Decimal(100))
+    assert type(result) is Decimal
+
+
+# --- CompositeCostModel: container validation ---
+
+
+def _generator_components():
+    yield ZeroCostModel()
+
+
+@pytest.mark.parametrize(
+    "invalid_components",
+    [[], set(), iter(()), [ZeroCostModel()], _generator_components()],
+)
+def test_composite_rejects_non_tuple_components(invalid_components):
+    with pytest.raises(TypeError, match="components"):
+        CompositeCostModel(components=invalid_components)
+
+
+def test_composite_accepts_genuine_tuple():
+    model = CompositeCostModel(components=(ZeroCostModel(),))
+    assert isinstance(model.components, tuple)
+
+
+# --- CompositeCostModel: calculate_cost input validation (even when empty) ---
+
+
+@pytest.mark.parametrize("invalid_quantity", [1.0, 1, True, "2", None])
+def test_composite_rejects_invalid_quantity_type(invalid_quantity):
+    model = CompositeCostModel(components=())
+    with pytest.raises(TypeError, match="quantity"):
+        model.calculate_cost(quantity=invalid_quantity, execution_price=Decimal(100))
+
+
+@pytest.mark.parametrize("invalid_execution_price", [100.0, 100, True, "100", None])
+def test_composite_rejects_invalid_execution_price_type(invalid_execution_price):
+    model = CompositeCostModel(components=())
+    with pytest.raises(TypeError, match="execution_price"):
+        model.calculate_cost(quantity=Decimal(2), execution_price=invalid_execution_price)
+
+
+# --- CompositeCostModel: component output validation ---
+
+
+@pytest.mark.parametrize("invalid_output", [1.0, 1, True, "0.1", None])
+def test_composite_rejects_non_decimal_component_output(invalid_output):
+    model = CompositeCostModel(components=(InvalidReturnCostModel(invalid_output),))
+    with pytest.raises(TypeError, match=r"components\[0\]"):
+        model.calculate_cost(quantity=Decimal(2), execution_price=Decimal(100))
+
+
+# --- CompositeCostModel: negative component output / total ---
+
+
+def test_composite_single_negative_component_output():
+    call_log = []
+    model = CompositeCostModel(components=(RecordingCostModel("A", Decimal("-0.25"), call_log),))
+    result = model.calculate_cost(quantity=Decimal(2), execution_price=Decimal(100))
+    assert result == Decimal("-0.25")
+
+
+def test_composite_negative_total_from_mixed_components():
+    call_log = []
+    model = CompositeCostModel(
+        components=(
+            RecordingCostModel("A", Decimal("0.10"), call_log),
+            RecordingCostModel("B", Decimal("-0.50"), call_log),
+        )
+    )
+    result = model.calculate_cost(quantity=Decimal(2), execution_price=Decimal(100))
+    assert result == Decimal("-0.40")
+
+
+# --- CompositeCostModel: exact left-to-right order + exactly-once ---
+
+
+def test_composite_invokes_components_in_exact_order_exactly_once():
+    call_log = []
+    model = CompositeCostModel(
+        components=(
+            RecordingCostModel("A", Decimal("0.10"), call_log),
+            RecordingCostModel("B", Decimal("0.20"), call_log),
+            RecordingCostModel("C", Decimal("0.30"), call_log),
+        )
+    )
+    model.calculate_cost(quantity=Decimal(2), execution_price=Decimal(100))
+    assert call_log == ["A", "B", "C"]
+
+
+# --- CompositeCostModel: input forwarding ---
+
+
+def test_composite_forwards_exact_inputs_unchanged():
+    received = []
+    call_log = []
+    quantity = Decimal("1.2345")
+    execution_price = Decimal("987.6543")
+    model = CompositeCostModel(
+        components=(
+            RecordingCostModel("A", Decimal(0), call_log, received_log=received),
+            RecordingCostModel("B", Decimal(0), call_log, received_log=received),
+        )
+    )
+    model.calculate_cost(quantity=quantity, execution_price=execution_price)
+    assert received == [(quantity, execution_price), (quantity, execution_price)]
+
+
+# --- CompositeCostModel: exception propagation + short-circuit ---
+
+
+def test_composite_propagates_component_exception_and_short_circuits():
+    call_log = []
+    model = CompositeCostModel(
+        components=(
+            RecordingCostModel("A", Decimal("0.10"), call_log),
+            FailingCostModel(),
+            RecordingCostModel("C", Decimal("0.30"), call_log),
+        )
+    )
+    with pytest.raises(_CompositeTestException):
+        model.calculate_cost(quantity=Decimal(2), execution_price=Decimal(100))
+    assert call_log == ["A"]
+
+
+# --- CompositeCostModel: duplicate component ---
+
+
+def test_composite_duplicate_component_invoked_twice():
+    call_log = []
+    component = RecordingCostModel("A", Decimal("0.25"), call_log)
+    model = CompositeCostModel(components=(component, component))
+    result = model.calculate_cost(quantity=Decimal(2), execution_price=Decimal(100))
+    assert call_log == ["A", "A"]
+    assert result == Decimal("0.50")
+
+
+# --- CompositeCostModel: nested composite ---
+
+
+def test_composite_nested_composite_sums_correctly():
+    call_log = []
+    inner = CompositeCostModel(
+        components=(
+            RecordingCostModel("inner_a", Decimal("0.10"), call_log),
+            RecordingCostModel("inner_b", Decimal("0.20"), call_log),
+        )
+    )
+    outer = CompositeCostModel(
+        components=(inner, RecordingCostModel("outer_c", Decimal("0.30"), call_log))
+    )
+    result = outer.calculate_cost(quantity=Decimal(2), execution_price=Decimal(100))
+    assert result == Decimal("0.60")
+
+
+# --- CompositeCostModel: immutability ---
+
+
+def test_composite_model_is_frozen():
+    model = CompositeCostModel(components=())
+    with pytest.raises(FrozenInstanceError):
+        model.components = (ZeroCostModel(),)
