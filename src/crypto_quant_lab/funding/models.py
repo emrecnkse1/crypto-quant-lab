@@ -89,3 +89,26 @@ class HistoricalFundingEvent:
             self.funding.event_time,
             self.funding.rate_type,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class FundingCoverageInterval:
+    """A validated `[start_time, end_time)` coverage range (FUNDING_DATA_SPEC.md Bölüm 19-20).
+
+    A pure time-range value — no `exchange`/`market_type`/`symbol` and no
+    `canonical_key`: partition identity is already fixed by the store query
+    that returns this value, never carried redundantly on the value itself.
+    """
+
+    start_time: datetime
+    end_time: datetime
+
+    def __post_init__(self) -> None:
+        datetime_to_epoch_us(self.start_time)  # validates genuine, aware, non-pseudo-naive
+        datetime_to_epoch_us(self.end_time)
+
+        if self.start_time >= self.end_time:
+            raise ValueError(
+                f"start_time must be strictly before end_time, got "
+                f"start_time={self.start_time!r}, end_time={self.end_time!r}"
+            )

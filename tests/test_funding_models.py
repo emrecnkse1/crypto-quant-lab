@@ -4,7 +4,11 @@ from decimal import Decimal
 
 import pytest
 
-from crypto_quant_lab.funding.models import FundingEvent, HistoricalFundingEvent
+from crypto_quant_lab.funding.models import (
+    FundingCoverageInterval,
+    FundingEvent,
+    HistoricalFundingEvent,
+)
 
 
 class _BrokenTzInfo(tzinfo):
@@ -278,3 +282,83 @@ def test_historical_funding_event_is_frozen():
     record = make_historical_funding_event()
     with pytest.raises(FrozenInstanceError):
         record.exchange = "other"
+
+
+# --- FundingCoverageInterval: valid construction ---
+
+
+def test_valid_coverage_interval_can_be_created():
+    interval = FundingCoverageInterval(
+        start_time=datetime(2024, 1, 1, tzinfo=UTC),
+        end_time=datetime(2024, 1, 2, tzinfo=UTC),
+    )
+    assert interval.start_time == datetime(2024, 1, 1, tzinfo=UTC)
+    assert interval.end_time == datetime(2024, 1, 2, tzinfo=UTC)
+
+
+def test_coverage_interval_non_utc_aware_equivalent_is_accepted():
+    plus_five = timezone(timedelta(hours=5))
+    start = datetime(2024, 1, 1, 5, 0, tzinfo=plus_five)  # == 2024-01-01 00:00 UTC
+    end = datetime(2024, 1, 2, 5, 0, tzinfo=plus_five)  # == 2024-01-02 00:00 UTC
+    interval = FundingCoverageInterval(start_time=start, end_time=end)
+    assert interval.start_time == start
+    assert interval.start_time.tzinfo is plus_five  # not silently converted/replaced
+    assert interval.end_time == end
+
+
+# --- FundingCoverageInterval: invalid construction ---
+
+
+def test_coverage_interval_naive_start_is_rejected():
+    with pytest.raises(ValueError):
+        FundingCoverageInterval(
+            start_time=datetime(2024, 1, 1),  # noqa: DTZ001
+            end_time=datetime(2024, 1, 2, tzinfo=UTC),
+        )
+
+
+def test_coverage_interval_naive_end_is_rejected():
+    with pytest.raises(ValueError):
+        FundingCoverageInterval(
+            start_time=datetime(2024, 1, 1, tzinfo=UTC),
+            end_time=datetime(2024, 1, 2),  # noqa: DTZ001
+        )
+
+
+def test_coverage_interval_pseudo_naive_start_is_rejected():
+    with pytest.raises(ValueError):
+        FundingCoverageInterval(
+            start_time=datetime(2024, 1, 1, tzinfo=_BrokenTzInfo()),
+            end_time=datetime(2024, 1, 2, tzinfo=UTC),
+        )
+
+
+def test_coverage_interval_non_datetime_start_is_rejected():
+    with pytest.raises(TypeError):
+        FundingCoverageInterval(start_time="2024-01-01", end_time=datetime(2024, 1, 2, tzinfo=UTC))
+
+
+def test_coverage_interval_start_equal_end_is_rejected():
+    same = datetime(2024, 1, 1, tzinfo=UTC)
+    with pytest.raises(ValueError, match="start_time"):
+        FundingCoverageInterval(start_time=same, end_time=same)
+
+
+def test_coverage_interval_start_after_end_is_rejected():
+    with pytest.raises(ValueError, match="start_time"):
+        FundingCoverageInterval(
+            start_time=datetime(2024, 1, 2, tzinfo=UTC),
+            end_time=datetime(2024, 1, 1, tzinfo=UTC),
+        )
+
+
+# --- FundingCoverageInterval: immutability ---
+
+
+def test_coverage_interval_is_frozen():
+    interval = FundingCoverageInterval(
+        start_time=datetime(2024, 1, 1, tzinfo=UTC),
+        end_time=datetime(2024, 1, 2, tzinfo=UTC),
+    )
+    with pytest.raises(FrozenInstanceError):
+        interval.start_time = datetime(2024, 1, 1, 12, tzinfo=UTC)
