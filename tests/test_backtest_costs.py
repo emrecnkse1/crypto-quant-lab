@@ -5,6 +5,7 @@ import pytest
 
 from crypto_quant_lab.backtest.costs import (
     ProportionalCommissionModel,
+    ProportionalSlippageCostModel,
     ProportionalSpreadCostModel,
     ZeroCostModel,
 )
@@ -307,3 +308,117 @@ def test_spread_model_is_frozen():
     model = ProportionalSpreadCostModel(half_spread_rate=Decimal("0.0005"))
     with pytest.raises(FrozenInstanceError):
         model.half_spread_rate = Decimal("0.001")
+
+
+# --- ProportionalSlippageCostModel: calculation ---
+
+
+def test_slippage_standard_calculation():
+    model = ProportionalSlippageCostModel(rate=Decimal("0.001"))
+    result = model.calculate_cost(quantity=Decimal(2), execution_price=Decimal(100))
+    assert result == Decimal("0.200")
+
+
+def test_slippage_return_type_is_genuine_decimal():
+    model = ProportionalSlippageCostModel(rate=Decimal("0.001"))
+    result = model.calculate_cost(quantity=Decimal(2), execution_price=Decimal(100))
+    assert type(result) is Decimal
+
+
+def test_slippage_zero_rate_returns_zero():
+    model = ProportionalSlippageCostModel(rate=Decimal(0))
+    result = model.calculate_cost(quantity=Decimal(2), execution_price=Decimal(100))
+    assert result == Decimal(0)
+
+
+def test_slippage_precision_example():
+    # Independently hand-computed, not derived via any production helper:
+    # 1.2345 * 987.6543 = 1219.25923335
+    # 1219.25923335 * 0.0017 = 2.072740696695
+    model = ProportionalSlippageCostModel(rate=Decimal("0.0017"))
+    result = model.calculate_cost(quantity=Decimal("1.2345"), execution_price=Decimal("987.6543"))
+    assert result == Decimal("2.072740696695")
+
+
+def test_slippage_reversal_sized_quantity():
+    model = ProportionalSlippageCostModel(rate=Decimal("0.001"))
+    result = model.calculate_cost(quantity=Decimal(4), execution_price=Decimal(90))
+    assert result == Decimal("0.360")
+
+
+def test_slippage_is_deterministic():
+    model = ProportionalSlippageCostModel(rate=Decimal("0.001"))
+    first = model.calculate_cost(quantity=Decimal(2), execution_price=Decimal(100))
+    second = model.calculate_cost(quantity=Decimal(2), execution_price=Decimal(100))
+    assert first == second == Decimal("0.200")
+
+
+# --- ProportionalSlippageCostModel: CostModel boundary permissiveness ---
+
+
+@pytest.mark.parametrize("quantity", [Decimal(0), Decimal(-1)])
+def test_slippage_permits_zero_and_negative_quantity(quantity):
+    model = ProportionalSlippageCostModel(rate=Decimal("0.001"))
+    result = model.calculate_cost(quantity=quantity, execution_price=Decimal(100))
+    assert result == quantity * Decimal(100) * Decimal("0.001")
+
+
+@pytest.mark.parametrize("execution_price", [Decimal(0), Decimal(-1)])
+def test_slippage_permits_zero_and_negative_execution_price(execution_price):
+    model = ProportionalSlippageCostModel(rate=Decimal("0.001"))
+    result = model.calculate_cost(quantity=Decimal(2), execution_price=execution_price)
+    assert result == Decimal(2) * execution_price * Decimal("0.001")
+
+
+# --- ProportionalSlippageCostModel: rate construction validation ---
+
+
+@pytest.mark.parametrize("invalid_rate", [1.0, 1, True, "0.001", None])
+def test_slippage_rejects_invalid_rate_type(invalid_rate):
+    with pytest.raises(TypeError, match="rate"):
+        ProportionalSlippageCostModel(rate=invalid_rate)
+
+
+@pytest.mark.parametrize(
+    "non_finite_rate", [Decimal("NaN"), Decimal("Infinity"), Decimal("-Infinity")]
+)
+def test_slippage_rejects_non_finite_rate(non_finite_rate):
+    with pytest.raises(ValueError, match="finite"):
+        ProportionalSlippageCostModel(rate=non_finite_rate)
+
+
+def test_slippage_rejects_negative_rate():
+    with pytest.raises(ValueError, match="rate"):
+        ProportionalSlippageCostModel(rate=Decimal("-0.001"))
+
+
+@pytest.mark.parametrize("valid_rate", [Decimal(0), Decimal("0.001")])
+def test_slippage_accepts_zero_and_positive_rate(valid_rate):
+    model = ProportionalSlippageCostModel(rate=valid_rate)
+    assert model.rate == valid_rate
+
+
+# --- ProportionalSlippageCostModel: calculate_cost input validation ---
+
+
+@pytest.mark.parametrize("invalid_quantity", [1.0, 1, True, "2", None])
+def test_slippage_rejects_invalid_quantity_type(invalid_quantity):
+    model = ProportionalSlippageCostModel(rate=Decimal("0.001"))
+    with pytest.raises(TypeError, match="quantity"):
+        model.calculate_cost(quantity=invalid_quantity, execution_price=Decimal(100))
+
+
+@pytest.mark.parametrize("invalid_execution_price", [100.0, 100, True, "100", None])
+def test_slippage_rejects_invalid_execution_price_type(invalid_execution_price):
+    model = ProportionalSlippageCostModel(rate=Decimal("0.001"))
+    with pytest.raises(TypeError, match="execution_price"):
+        model.calculate_cost(quantity=Decimal(2), execution_price=invalid_execution_price)
+
+
+# --- ProportionalSlippageCostModel: immutability ---
+
+
+def test_slippage_model_is_frozen():
+    model = ProportionalSlippageCostModel(rate=Decimal("0.001"))
+    with pytest.raises(FrozenInstanceError):
+        model.rate = Decimal("0.002")

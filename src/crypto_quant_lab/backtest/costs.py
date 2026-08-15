@@ -88,3 +88,29 @@ class ProportionalSpreadCostModel:
         _require_decimal(quantity, "quantity")
         _require_decimal(execution_price, "execution_price")
         return quantity * execution_price * self.half_spread_rate
+
+
+@dataclass(frozen=True, slots=True)
+class ProportionalSlippageCostModel:
+    """Faz 5A fixed-proportional slippage approximation (COST_MODEL_SPEC.md Bölüm 11, 12).
+
+    `cost = quantity * execution_price * rate` — a fixed-proportional
+    friction on the fill's notional, represented as a monetary cost rather
+    than an execution-price adjustment. Size/depth/volatility-dependent
+    slippage and market impact are deferred. No default `rate`: the caller
+    must always supply one explicitly.
+    """
+
+    rate: Decimal
+
+    def __post_init__(self) -> None:
+        _require_decimal(self.rate, "rate")
+        if not self.rate.is_finite():
+            raise ValueError(f"rate must be finite, got {self.rate}")
+        if self.rate < 0:
+            raise ValueError(f"rate must be >= 0, got {self.rate}")
+
+    def calculate_cost(self, *, quantity: Decimal, execution_price: Decimal) -> Decimal:
+        _require_decimal(quantity, "quantity")
+        _require_decimal(execution_price, "execution_price")
+        return quantity * execution_price * self.rate
