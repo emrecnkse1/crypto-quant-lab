@@ -387,6 +387,6 @@ Faz 5B (bu dokümanın kapsamı dışında, yalnızca referans için):
 19. Store-backed gerçekçi transaction-cost regresyonu PASS olur.
 20. Deterministic tekrar çalıştırma exact eşitlik üretir.
 21. Tüm testler tamamen offline çalışır.
-22. Mevcut 715 test regresyonsuz PASS kalır.
+22. Faz 5A öncesi mevcut 715-test Faz 4 baseline'ı regresyonsuz kalır; Faz 5A testleri buna eklenir. (Faz 5A final checkpoint: 846 total PASS.)
 23. `ruff check` / `ruff format --check` temiz kalır.
 24. Funding, Faz 5A içinde yanlışlıkla implement/approximate edilmez.
