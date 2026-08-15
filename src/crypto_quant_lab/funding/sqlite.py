@@ -1,15 +1,18 @@
-"""SQLite atomic events+coverage writer for funding storage (FUNDING_DATA_SPEC.md Bölüm 18-24, 31-34).
+"""SQLite funding store: atomic writes, strict schema validation, range queries.
 
-Faz 5B Microstep 6 boundary: this module implements fresh-database schema
-creation for both funding tables and the complete atomic
-`write_ingestion_batch` behavior only. `SQLiteHistoricalFundingStore` does
-**not** yet implement `query_events`/`query_coverage` — it is intentionally
-not yet a structurally complete `HistoricalFundingStore` (Protocol
-conformance is not runtime-checked, and nothing consumes this class as that
-Protocol yet). Public range queries and strict validation of a malformed
-*pre-existing* schema are Microstep 7's responsibility; `CREATE TABLE IF NOT
-EXISTS` here only guarantees a fresh or already-compatible database gets the
-expected tables, not that a corrupted existing schema is detected.
+(FUNDING_DATA_SPEC.md Bölüm 7, 18-24, 29-31, 38.)
+
+`SQLiteHistoricalFundingStore` is now structurally complete against
+`funding/store.py`'s `HistoricalFundingStore` Protocol: `write_ingestion_batch`
+(Faz 5B Microstep 6), `query_events`/`query_coverage` (Microstep 7), and
+`close`. Both funding tables are strictly validated on every construction —
+`CREATE TABLE IF NOT EXISTS` alone never proves an existing table matches the
+expected schema, so a dedicated `PRAGMA table_info`-based comparison (mirroring
+`storage.sqlite.SQLiteHistoricalCandleStore._validate_schema`) runs
+immediately after table creation for both tables. Query methods return only
+mechanical, unmodified stored truth — no coverage union, no completeness
+judgment, no clipping/merging; that remains a future pure quality layer's
+responsibility, operating on the raw values these methods return.
 """
 
 import sqlite3
@@ -17,11 +20,16 @@ from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
-from crypto_quant_lab.funding.models import HistoricalFundingEvent
-from crypto_quant_lab.storage.base import DataConflictError, StorageError
+from crypto_quant_lab.funding.models import (
+    FundingCoverageInterval,
+    FundingEvent,
+    HistoricalFundingEvent,
+)
+from crypto_quant_lab.storage.base import DataConflictError, DataCorruptionError, StorageError
 from crypto_quant_lab.storage.sqlite_codec import (
     datetime_to_epoch_us,
     decimal_to_text,
+    epoch_us_to_datetime,
     text_to_decimal,
 )
 
@@ -73,6 +81,43 @@ INSERT INTO historical_funding_coverage (
 ) VALUES (?, ?, ?, ?, ?)
 """
 
+_SELECT_EVENTS_RANGE_SQL = """
+SELECT event_time_us, rate_type, funding_rate, reference_price
+FROM historical_funding_events
+WHERE exchange = ? AND market_type = ? AND symbol = ?
+  AND event_time_us >= ? AND event_time_us < ?
+ORDER BY event_time_us ASC, rate_type ASC
+"""
+
+_SELECT_COVERAGE_OVERLAP_SQL = """
+SELECT start_time_us, end_time_us
+FROM historical_funding_coverage
+WHERE exchange = ? AND market_type = ? AND symbol = ?
+  AND end_time_us > ? AND start_time_us < ?
+ORDER BY start_time_us ASC, end_time_us ASC
+"""
+
+# (name, declared type, notnull, pk position) per FUNDING_DATA_SPEC.md Bölüm 18, 20.
+# pk position 0 means "not part of the primary key"; positions 1-5 give the
+# composite key's declared order.
+_EXPECTED_EVENTS_SCHEMA = (
+    ("exchange", "TEXT", 1, 1),
+    ("market_type", "TEXT", 1, 2),
+    ("symbol", "TEXT", 1, 3),
+    ("event_time_us", "INTEGER", 1, 4),
+    ("rate_type", "TEXT", 1, 5),
+    ("funding_rate", "TEXT", 1, 0),
+    ("reference_price", "TEXT", 1, 0),
+)
+
+_EXPECTED_COVERAGE_SCHEMA = (
+    ("exchange", "TEXT", 1, 1),
+    ("market_type", "TEXT", 1, 2),
+    ("symbol", "TEXT", 1, 3),
+    ("start_time_us", "INTEGER", 1, 4),
+    ("end_time_us", "INTEGER", 1, 5),
+)
+
 
 def _require_str(value: object, field_name: str) -> None:
     if not isinstance(value, str):
@@ -82,22 +127,73 @@ def _require_str(value: object, field_name: str) -> None:
 
 
 class SQLiteHistoricalFundingStore:
-    """SQLite-backed funding events+coverage writer (funding/store.py's `HistoricalFundingStore`).
-
-    Microstep 6 only: implements `__init__` (schema creation),
-    `write_ingestion_batch`, and `close`. `query_events`/`query_coverage`
-    are deliberately absent until Microstep 7.
-    """
+    """SQLite-backed implementation of `funding/store.py`'s `HistoricalFundingStore` protocol."""
 
     def __init__(self, database_path: str | Path) -> None:
         self._connection = sqlite3.connect(str(database_path))
         try:
-            with self._connection:
-                self._connection.execute(_CREATE_EVENTS_TABLE_SQL)
-                self._connection.execute(_CREATE_COVERAGE_TABLE_SQL)
-        except sqlite3.Error as exc:
+            try:
+                with self._connection:
+                    self._connection.execute(_CREATE_EVENTS_TABLE_SQL)
+                    self._connection.execute(_CREATE_COVERAGE_TABLE_SQL)
+            except sqlite3.Error as exc:
+                raise StorageError(f"unexpected SQLite error during initialization: {exc}") from exc
+
+            self._validate_table_schema("historical_funding_events", _EXPECTED_EVENTS_SCHEMA)
+            self._validate_table_schema("historical_funding_coverage", _EXPECTED_COVERAGE_SCHEMA)
+        except Exception:
             self._connection.close()
-            raise StorageError(f"unexpected SQLite error during initialization: {exc}") from exc
+            raise
+
+    def _validate_table_schema(
+        self, table_name: str, expected_schema: tuple[tuple[str, str, int, int], ...]
+    ) -> None:
+        try:
+            rows = self._connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError(
+                f"unexpected SQLite error during schema validation of {table_name!r}: {exc}"
+            ) from exc
+
+        # PRAGMA table_info rows: (cid, name, type, notnull, dflt_value, pk).
+        actual_columns = [
+            (row[1], row[2], row[3], row[5]) for row in sorted(rows, key=lambda row: row[0])
+        ]
+
+        if len(actual_columns) != len(expected_schema):
+            raise DataCorruptionError(
+                f"{table_name} schema mismatch: unexpected column count, "
+                f"expected {len(expected_schema)} columns "
+                f"{[c[0] for c in expected_schema]!r}, "
+                f"found {len(actual_columns)} columns {[c[0] for c in actual_columns]!r}"
+            )
+
+        for position, (expected, actual) in enumerate(
+            zip(expected_schema, actual_columns, strict=True)
+        ):
+            expected_name, expected_type, expected_notnull, expected_pk = expected
+            actual_name, actual_type, actual_notnull, actual_pk = actual
+
+            if actual_name != expected_name:
+                raise DataCorruptionError(
+                    f"{table_name} schema mismatch at column position {position}: "
+                    f"unexpected column name {actual_name!r}, expected {expected_name!r}"
+                )
+            if actual_type != expected_type:
+                raise DataCorruptionError(
+                    f"{table_name} schema mismatch for column {actual_name!r}: "
+                    f"unexpected type {actual_type!r}, expected {expected_type!r}"
+                )
+            if actual_notnull != expected_notnull:
+                raise DataCorruptionError(
+                    f"{table_name} schema mismatch for column {actual_name!r}: "
+                    f"unexpected NOT NULL flag {actual_notnull!r}, expected {expected_notnull!r}"
+                )
+            if actual_pk != expected_pk:
+                raise DataCorruptionError(
+                    f"{table_name} schema mismatch for column {actual_name!r}: "
+                    f"unexpected primary key position {actual_pk!r}, expected {expected_pk!r}"
+                )
 
     def write_ingestion_batch(
         self,
@@ -205,6 +301,98 @@ class SQLiteHistoricalFundingStore:
             return  # exact same coverage interval: idempotent no-op
 
         self._connection.execute(_INSERT_COVERAGE_SQL, key)
+
+    def query_events(
+        self,
+        *,
+        exchange: str,
+        market_type: str,
+        symbol: str,
+        start_time: datetime,
+        end_time: datetime,
+    ) -> list[HistoricalFundingEvent]:
+        _require_str(exchange, "exchange")
+        _require_str(market_type, "market_type")
+        _require_str(symbol, "symbol")
+
+        start_us = datetime_to_epoch_us(start_time)
+        end_us = datetime_to_epoch_us(end_time)
+        if start_us >= end_us:
+            raise ValueError(
+                "start_time must be strictly before end_time, got "
+                f"start_time={start_time!r}, end_time={end_time!r}"
+            )
+
+        try:
+            rows = self._connection.execute(
+                _SELECT_EVENTS_RANGE_SQL, (exchange, market_type, symbol, start_us, end_us)
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError(f"unexpected SQLite error during query_events: {exc}") from exc
+
+        return [self._row_to_event(exchange, market_type, symbol, row) for row in rows]
+
+    @staticmethod
+    def _row_to_event(
+        exchange: str, market_type: str, symbol: str, row: tuple
+    ) -> HistoricalFundingEvent:
+        event_time_us, rate_type, funding_rate, reference_price = row
+        try:
+            funding = FundingEvent(
+                event_time=epoch_us_to_datetime(event_time_us),
+                funding_rate=text_to_decimal(funding_rate),
+                reference_price=text_to_decimal(reference_price),
+                rate_type=rate_type,
+            )
+        except (TypeError, ValueError) as exc:
+            raise DataCorruptionError(f"stored funding event failed to reconstruct: {exc}") from exc
+
+        return HistoricalFundingEvent(
+            exchange=exchange, market_type=market_type, symbol=symbol, funding=funding
+        )
+
+    def query_coverage(
+        self,
+        *,
+        exchange: str,
+        market_type: str,
+        symbol: str,
+        start_time: datetime,
+        end_time: datetime,
+    ) -> list[FundingCoverageInterval]:
+        _require_str(exchange, "exchange")
+        _require_str(market_type, "market_type")
+        _require_str(symbol, "symbol")
+
+        start_us = datetime_to_epoch_us(start_time)
+        end_us = datetime_to_epoch_us(end_time)
+        if start_us >= end_us:
+            raise ValueError(
+                "start_time must be strictly before end_time, got "
+                f"start_time={start_time!r}, end_time={end_time!r}"
+            )
+
+        try:
+            rows = self._connection.execute(
+                _SELECT_COVERAGE_OVERLAP_SQL, (exchange, market_type, symbol, start_us, end_us)
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError(f"unexpected SQLite error during query_coverage: {exc}") from exc
+
+        return [self._row_to_coverage(row) for row in rows]
+
+    @staticmethod
+    def _row_to_coverage(row: tuple) -> FundingCoverageInterval:
+        start_time_us, end_time_us = row
+        try:
+            return FundingCoverageInterval(
+                start_time=epoch_us_to_datetime(start_time_us),
+                end_time=epoch_us_to_datetime(end_time_us),
+            )
+        except (TypeError, ValueError) as exc:
+            raise DataCorruptionError(
+                f"stored funding coverage interval failed to reconstruct: {exc}"
+            ) from exc
 
     def close(self) -> None:
         self._connection.close()
