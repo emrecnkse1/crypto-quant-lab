@@ -62,3 +62,29 @@ class ProportionalCommissionModel:
         _require_decimal(quantity, "quantity")
         _require_decimal(execution_price, "execution_price")
         return quantity * execution_price * self.rate
+
+
+@dataclass(frozen=True, slots=True)
+class ProportionalSpreadCostModel:
+    """Faz 5A proportional half-spread cost (COST_MODEL_SPEC.md Bölüm 9, 10).
+
+    `cost = quantity * execution_price * half_spread_rate` — a single
+    simulated fill pays an approximate half-spread against the OHLCV
+    reference price, represented as a monetary cost rather than an
+    execution-price adjustment. No default `half_spread_rate`: the caller
+    must always supply one explicitly.
+    """
+
+    half_spread_rate: Decimal
+
+    def __post_init__(self) -> None:
+        _require_decimal(self.half_spread_rate, "half_spread_rate")
+        if not self.half_spread_rate.is_finite():
+            raise ValueError(f"half_spread_rate must be finite, got {self.half_spread_rate}")
+        if self.half_spread_rate < 0:
+            raise ValueError(f"half_spread_rate must be >= 0, got {self.half_spread_rate}")
+
+    def calculate_cost(self, *, quantity: Decimal, execution_price: Decimal) -> Decimal:
+        _require_decimal(quantity, "quantity")
+        _require_decimal(execution_price, "execution_price")
+        return quantity * execution_price * self.half_spread_rate
