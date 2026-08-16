@@ -3,7 +3,14 @@ from decimal import Decimal
 
 import pytest
 
-from crypto_quant_lab.backtest.accounting import AccountState, apply_fill, equity, unrealized_pnl
+from crypto_quant_lab.backtest.accounting import (
+    AccountState,
+    apply_cash_cost,
+    apply_fill,
+    equity,
+    unrealized_pnl,
+)
+from crypto_quant_lab.funding.calculator import LinearFundingModel
 
 
 def _flat_state(cash=Decimal(1000)):
@@ -381,3 +388,87 @@ def test_equity_short_exact():
 def test_equity_rejects_invalid_mark_price_type(invalid_value):
     with pytest.raises(TypeError, match="mark_price"):
         equity(_flat_state(), mark_price=invalid_value)
+
+
+# --- apply_cash_cost ---
+
+
+def test_apply_cash_cost_positive_reduces_cash():
+    new_state = apply_cash_cost(_long_state(cash=Decimal(1000)), cost=Decimal("0.20"))
+    assert new_state.cash == Decimal("999.80")
+
+
+def test_apply_cash_cost_negative_increases_cash():
+    new_state = apply_cash_cost(_long_state(cash=Decimal(1000)), cost=Decimal("-0.20"))
+    assert new_state.cash == Decimal("1000.20")
+
+
+def test_apply_cash_cost_zero_leaves_cash_unchanged():
+    new_state = apply_cash_cost(_long_state(cash=Decimal(1000)), cost=Decimal(0))
+    assert new_state.cash == Decimal(1000)
+
+
+def test_apply_cash_cost_preserves_non_cash_fields():
+    state = _long_state(cash=Decimal(1000), quantity=Decimal(2), entry=Decimal(105))
+    new_state = apply_cash_cost(state, cost=Decimal("0.20"))
+    assert new_state.position_quantity == state.position_quantity
+    assert new_state.average_entry_price == state.average_entry_price
+    assert new_state.realized_pnl == state.realized_pnl
+
+
+def test_apply_cash_cost_does_not_mutate_input_state():
+    state = _long_state(cash=Decimal(1000))
+    apply_cash_cost(state, cost=Decimal("0.20"))
+    assert state.cash == Decimal(1000)
+
+
+def test_apply_cash_cost_rejects_invalid_state_type():
+    with pytest.raises(TypeError, match="state"):
+        apply_cash_cost("not-a-state", cost=Decimal("0.20"))
+
+
+@pytest.mark.parametrize("invalid_value", [0, 0.1, True, "0.1"])
+def test_apply_cash_cost_rejects_invalid_cost_type(invalid_value):
+    with pytest.raises(TypeError, match="cost"):
+        apply_cash_cost(_flat_state(), cost=invalid_value)
+
+
+# --- funding calculator + apply_cash_cost composition ---
+
+
+def test_funding_calculator_and_cash_primitive_composition_long_pays():
+    model = LinearFundingModel()
+    cost = model.calculate_funding_cost(
+        signed_position_quantity=Decimal(2),
+        reference_price=Decimal(100),
+        funding_rate=Decimal("0.001"),
+    )
+    new_state = apply_cash_cost(_flat_state(cash=Decimal(1000)), cost=cost)
+
+    assert cost == Decimal("0.200")
+    assert new_state.cash == Decimal("999.800")
+
+
+def test_funding_calculator_and_cash_primitive_composition_short_receives():
+    model = LinearFundingModel()
+    cost = model.calculate_funding_cost(
+        signed_position_quantity=Decimal(-2),
+        reference_price=Decimal(100),
+        funding_rate=Decimal("0.001"),
+    )
+    new_state = apply_cash_cost(_flat_state(cash=Decimal(1000)), cost=cost)
+
+    assert cost == Decimal("-0.200")
+    assert new_state.cash == Decimal("1000.200")
+
+
+def test_funding_cash_cost_equity_delta_matches_cost_sign():
+    mark_price = Decimal(100)
+    state = _flat_state(cash=Decimal(1000))
+    before_equity = equity(state, mark_price=mark_price)
+
+    paid_state = apply_cash_cost(state, cost=Decimal("0.20"))
+    assert equity(paid_state, mark_price=mark_price) == before_equity - Decimal("0.20")
+
+    received_state = apply_cash_cost(state, cost=Decimal("-0.20"))
+    assert equity(received_state, mark_price=mark_price) == before_equity + Decimal("0.20")

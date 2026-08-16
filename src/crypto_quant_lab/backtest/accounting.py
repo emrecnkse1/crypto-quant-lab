@@ -118,6 +118,32 @@ def apply_fill(
     )
 
 
+def apply_cash_cost(
+    state: AccountState,
+    *,
+    cost: Decimal,
+) -> AccountState:
+    """Apply a signed cash-only cost to `state`, returning a new `AccountState`.
+
+    Generic — no funding-specific knowledge. `cost > 0` reduces cash (an
+    outflow); `cost < 0` increases it (an inflow/rebate); `position_quantity`,
+    `average_entry_price`, and `realized_pnl` are preserved exactly. Unlike
+    `apply_fill`, this never represents an execution: no position/entry/
+    realized-PnL change, and no fill/trade-count effect (those are owned by
+    the replay loop, not `AccountState`).
+    """
+    if not isinstance(state, AccountState):
+        raise TypeError(f"state must be an AccountState, got {type(state).__name__}")
+    _require_decimal(cost, "cost")
+
+    return AccountState(
+        cash=state.cash - cost,
+        position_quantity=state.position_quantity,
+        average_entry_price=state.average_entry_price,
+        realized_pnl=state.realized_pnl,
+    )
+
+
 def unrealized_pnl(state: AccountState, *, mark_price: Decimal) -> Decimal:
     """Mark-to-market unrealized PnL (BACKTEST_SPEC.md Bölüm 19) — zero when flat."""
     if not isinstance(state, AccountState):
