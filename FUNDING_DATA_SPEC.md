@@ -595,7 +595,7 @@ Mevcut bounded **`ConnectionError`-only** retry prensibi reuse edilir.
 - funding formula implementasyonu
 - accounting primitive
 - replay funding entegrasyonu
-- funding-vs-fill tie ordering (FUNDING_SPEC.md Bölüm 12'de PROVISIONAL kalır)
+- funding-vs-fill tie ordering (FUNDING_SPEC.md Bölüm 12'de LOCKED: funding before fill, pre-fill position — FUNDING-SPEC MS9/MS10)
 - BacktestResult değişiklikleri
 - funding'in strateji kullanımı
 - Funding/Basis stratejisi (ROADMAP Faz 7)

@@ -313,7 +313,7 @@ event_time > as_of_time  →  replay bu event'i UYGULAYAMAZ
 
 **Hiçbir wallclock okuması yok.** Deterministic replay içinde `datetime.now()` **yasak.** Tüm timing explicit olarak inject edilir — bu, mevcut candle anti-lookahead invariant'ının (BACKTEST_SPEC.md Bölüm 8) funding'e doğal uzantısıdır.
 
-## 12. Tie Timestamp — EXPLICITLY DEFERRED (MUST NOT LOCK HERE)
+## 12. Tie Timestamp — LOCKED (FUNDING-SPEC MS9/MS10)
 
 Eğer:
 
@@ -321,25 +321,44 @@ Eğer:
 funding event_time == bir sinyal-tetiklemeli fill'in execution timestamp'i
 ```
 
-ise, sonuçsal bir ordering kararı vardır: **pre-fill position** mi yoksa **post-fill position** mi kullanılacak.
-
-Bu doküman bu kararı **kilitlemez.**
-
-**Provisional (bağlayıcı değil) yön:** funding, **PRE-EXISTING / PRE-FILL pozisyona** karşı settle olur — çünkü scheduled settlement, az önce biten interval'ı kapatır; tam olarak aynı boundary'de gerçekleşen bir trade, kavramsal olarak bir SONRAKİ interval'a aittir.
-
-**Bu yön açıkça şöyle etiketlenir:**
+ise, exact timestamp T'de şu sıra bağlayıcıdır:
 
 ```
-PROVISIONAL — MUST BE LOCKED IN A DEDICATED REPLAY-TIMING MICROSTEP.
+1. funding settlement(s)
+2. equity mark
+3. policy evaluation
+4. fill
 ```
 
-Bu, gerçek Binance millisecond-level order-book/settlement sıralaması olduğu iddiasında **değildir** — bu yalnızca deterministic bir backtest convention'ıdır ve explicit olarak belgelenmelidir. Exact kilitleme, dedicated bir replay-timing pre-flight/microstep'te yapılacaktır (Bölüm 21).
+Funding settlement(s), **PRE-EXISTING / PRE-FILL** `AccountState.position_quantity`'ye karşı settle olur — bu instant'taki hiçbir fill henüz gerçekleşmemiş kabul edilir. Gerekçe: scheduled settlement, az önce biten interval'ı kapatır; tam olarak aynı boundary'de gerçekleşen bir trade, kavramsal olarak bir SONRAKİ interval'a aittir.
 
-## 13. Equity Curve (MUST)
+Aynı T'de birden fazla funding event'i paylaşılırsa:
+
+```
+- her biri ayrı ayrı işlenir (asla pre-summed değil)
+- deterministic (event_time, rate_type) sırasıyla
+- tümü aynı pre-fill pozisyonu gözlemler
+- funding cash etkisi position_quantity'yi asla değiştirmez
+```
+
+Bu, gerçek Binance millisecond-level order-book/settlement sıralaması olduğu iddiasında **değildir** — bu deterministic bir backtest convention'ıdır. Implementasyon: `backtest/replay.py` (`_apply_due_funding_events`, FUNDING-SPEC MS10) ve `backtest/store_runner.py` (FUNDING-SPEC MS11); regression: `tests/test_backtest_funding_replay.py`, `tests/test_backtest_funding_store_runner.py`, `tests/test_backtest_funding_e2e_regression.py` (FUNDING-SPEC MS12 canonical E2E golden + determinism).
+
+## 13. Equity Curve (LOCKED — FUNDING-SPEC MS9/MS10)
 
 Funding'in neden olduğu cash hareketi, sonraki equity accounting'de **görünür olmalıdır.** Funding, replay'den sonra **invisible bir post-processing adımı olarak uygulanamaz** — bu, equity curve'ün her sonraki noktasını ve final result'ı bozar (Bölüm 14).
 
-Aynı-timestamp'teki exact equity-point ordering'i, Bölüm 12'deki tie-order kontratına bağlıdır ve dedicated replay-timing mikro-adımına ertelenir.
+Exact locked davranış (Bölüm 12'nin tie-order kontratının doğal sonucu):
+
+```
+- T'de due olan funding, o T'deki equity mark'tan ÖNCE uygulanır
+- marklar arasında (between-bar) due olan funding, cash'i kronolojik olarak değiştirir
+  ve bir sonraki normal candle-tetiklemeli EquityPoint'te görünür
+- funding hiçbir zaman kendi başına yeni bir EquityPoint yaratmaz
+- equity mark her zaman candle.close kullanır
+- funding reference_price bir equity mark price DEĞİLDİR
+```
+
+Implementasyon: `backtest/results.py` (`build_equity_point`, değişmedi) + `backtest/replay.py`'ın funding sweep'i mark'tan önce çalıştıran loop sırası. Regression: `tests/test_backtest_funding_replay.py`, `tests/test_backtest_funding_e2e_regression.py`.
 
 ## 14. Replay Mimari Yönü (MUST)
 
@@ -356,22 +375,30 @@ arasında scoped, chronological bir merge. Tüm funding event'leri, o anki pozis
 
 **Exact implementasyon bu dokümanda kilitlenmez** — dedicated replay-integration mikro-adımına ertelenir.
 
-## 15. Replay / Store Runner API Compatibility (MUST NOT DEĞİŞTİRİLMEZ — Bu Görevde)
+## 15. Replay / Store Runner API Compatibility (LOCKED — FUNDING-SPEC MS10/MS11)
 
-Mevcut Faz 4/Faz 5A replay çağrıları **geçerli kalmalıdır.**
+Mevcut Faz 4/Faz 5A replay çağrıları **geçerli kalmıştır** — aşağıdaki extension'lar pure additive'tir, hiçbir mevcut çağrı imzasını replace etmez.
 
-**Muhtemel gelecek additive extension** (bu görevde implement EDİLMEZ):
+**Implemented (FUNDING-SPEC MS10):** `backtest/replay.py`'ın `run_backtest_replay` fonksiyonu artık şu additive, keyword-only, defaulted parametreleri taşır:
 
 ```
-run_backtest_replay(..., funding_events=?, funding_model=?)
-run_backtest_from_store(..., funding_store=?, funding_model=?)
+funding_events: Sequence[HistoricalFundingEvent] = ()
+funding_model: FundingModel | None = None
 ```
 
-Mevcut API'yi **replace etmek değil**, additive extension tercih edilir.
+`funding_events=()` ile davranış, funding'den önceki haliyle byte/value-identical'dır.
 
-Funding-enabled instrument'lar için funding'in sessiz yokluğu, ileride daha yüksek seviyeli bir market-aware boundary tarafından (örn. `run_backtest_from_store` seviyesinde) **reddedilmelidir** — ama bu boundary bu dokümanda implement edilmez.
+**Implemented (FUNDING-SPEC MS11):** `backtest/store_runner.py`'ın `run_backtest_from_store` fonksiyonu artık şu additive, keyword-only, defaulted parametreleri taşır:
 
-**Store runner yönü:** gelecekte, `store_runner` ayrı bir `HistoricalFundingStore` ve bir `FundingModel`'e additive erişim kazanacaktır. Mevcut `HistoricalCandleStore` **yalnızca OHLCV** olarak kalır — funding satırları/kolonları candle storage'a **eklenmez.**
+```
+funding_required: bool = False
+funding_store: HistoricalFundingStore | None = None
+funding_model: FundingModel | None = None
+```
+
+Funding-enabled instrument'lar için funding'in sessiz yokluğu, bu market-aware boundary'de `funding_required` explicit caller declaration'ı ile **reddedilir** (bkz. Bölüm 16 — tam kontrat orada).
+
+**Store runner yönü:** `store_runner`, ayrı bir `HistoricalFundingStore` ve bir `FundingModel`'e additive erişim kazanmıştır. Mevcut `HistoricalCandleStore` **yalnızca OHLCV** olarak kalır — funding satırları/kolonları candle storage'a **eklenmemiştir.**
 
 ## 16. Market-Type Prensibi (MUST)
 
@@ -391,6 +418,26 @@ market_type != "spot" => funding
 bu kural yanlıştır — dated futures perpetual-style periyodik funding kullanmaz.
 
 Mevcut `market_type: str` opak storage partition contract'ı, Faz 5B'de **global olarak yeniden yazılmaz** (gerekli olmadıkça). Dar, funding-aware bir sınıflandırma, ileride yalnızca integration boundary'sinde (örn. `store_runner`) tanıtılabilir.
+
+### 16.1 `funding_required` — Explicit Integration-Boundary Kontratı (LOCKED — FUNDING-SPEC MS11)
+
+`store_runner`'daki dar, funding-aware sınıflandırma, `run_backtest_from_store`'un `funding_required: bool = False` parametresi olarak implement edilmiştir — **explicit bir caller declaration'ıdır**, asla şunlardan inference edilmez:
+
+```
+market_type
+exchange
+funding_store'un supply edilip edilmediği
+funding_model'in supply edilip edilmediği
+```
+
+Kontrat:
+
+```
+funding_required=False  → funding_store VE funding_model her ikisi de ABSENT olmalı
+funding_required=True   → funding_store VE funding_model her ikisi de MANDATORY
+```
+
+Bu iki durumun dışındaki her kombinasyon (kısmi/çelişkili config) herhangi bir store I/O'dan ÖNCE reddedilir. `market_type` bu kararda **hiçbir rol oynamaz** — Bölüm 16'nın opak partition-key prensibi bu boundary'de de korunur.
 
 ## 17. Missing Funding Data (MUST)
 
@@ -516,16 +563,16 @@ BacktestResult:         unchanged
 HistoricalCandleStore:  unchanged (OHLCV-only kalır)
 ```
 
-**Muhtemel gelecek additive extension'lar** (bu görevde implement edilmez):
+**Implemented additive extension'lar** (Bölüm 15'te tam kontrat):
 
 ```
-run_backtest_replay
-run_backtest_from_store
+run_backtest_replay        (FUNDING-SPEC MS10)
+run_backtest_from_store    (FUNDING-SPEC MS11)
 ```
 
 ## 23. Future Acceptance Categories (Numaralandırma YOK — Kategori Seviyesinde)
 
-Aşağıdaki kategoriler, `FUNDING_DATA_SPEC.md` ve replay-timing kontratı kilitlenene kadar **final numaralandırma almaz:**
+`FUNDING_DATA_SPEC.md` ve replay-timing kontratı (Bölüm 12) artık kilitlenmiştir (FUNDING-SPEC MS9-MS12). Aşağıdaki kategoriler bilinçli olarak **category-level** kalır — final numaralandırma bu dokümanın acceptance style'ı için gerekli değildir; exact numbered acceptance criteria `FUNDING_DATA_SPEC.md` Bölüm 46'da (35 kriter) yaşar:
 
 ```
 - funding sign exact

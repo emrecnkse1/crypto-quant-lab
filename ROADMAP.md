@@ -45,7 +45,7 @@ Bu doküman, Local Crypto Quant Research + Execution Platform projesinin fazlar�
   - NO TRADE as a first-class valid outcome
   - Canonical end-to-end golden regression
   - 35/35 Faz 4 acceptance criteria PASS
-- **Faz 5:** Realistic cost model — **Devam ediyor**
+- **Faz 5:** Realistic cost model — **Tamamlandı**
   - Faz 5A: Transaction cost — **Tamamlandı**
     - Proportional commission
     - Proportional spread (half-spread)
@@ -54,7 +54,14 @@ Bu doküman, Local Crypto Quant Research + Execution Platform projesinin fazlar�
     - Realistic replay-level ve store-backed integration regresyonu
     - Deterministic tekrar-çalıştırma regresyonu
     - 24/24 Faz 5A acceptance criteria PASS
-  - Faz 5B: Funding — **Başlanmadı**
+  - Faz 5B: Funding — **Tamamlandı**
+    - Canonical funding data/store (event + coverage, atomic SQLite)
+    - Funding data quality (coverage-union, zero-event-legal, fail-closed)
+    - `FundingModel` + cash-only accounting entegrasyonu
+    - Replay tie-ordering (funding before fill, pre-fill position)
+    - Store-runner explicit `funding_required` fail-closed wiring
+    - Real SQLite end-to-end golden + determinism regresyonu
+    - 35/35 Faz 5B data acceptance criteria PASS
 - **Faz 6:** Validation / anti-overfitting
 - **Faz 7:** İlk Funding/Basis araştırması
 - **Faz 8:** Risk Engine
