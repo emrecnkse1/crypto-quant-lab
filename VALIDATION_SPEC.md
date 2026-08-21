@@ -148,12 +148,12 @@ Bu bölüm, bu spec'in en önemli açık-bırakılan kararıdır ve **sahte bir 
 
 **Sonuç:** mevcut API, "geçmişi gör ama yalnızca `OOS.start`'tan itibaren skorla" ayrımını **temiz bir şekilde ifade edemez.**
 
-**Bu MS1 sorunu çözmüyordu; FAZ6A MS3 pre-flight'ı ve bu MS4 kilidi artık çözer (Bölüm 8.3).** Mekanizma (B2) LOCKED'dır, ama:
+**Bu MS1 sorunu çözmüyordu; FAZ6A MS3 pre-flight'ı, MS4 kilidi ve sonrasındaki Layer-1 implementasyonu artık çözer (Bölüm 8.3).** Mekanizma (B2) LOCKED'dır ve Layer-1 için **IMPLEMENTED + TESTED**'dır:
 
-- **Implementasyon henüz yapılmamıştır** — `run_backtest_replay`/`run_backtest_from_store` bugün hâlâ context/evaluation ayrımını bilmez (Bölüm 9'daki audit bulgusu implementasyon yapılana kadar geçerli kalır).
-- Bu, **generic bir OOS runner**'ın inşasını implementasyon tamamlanana kadar blokeler.
+- **Layer-1 implementasyonu tamamlandı** — `run_backtest_replay`/`run_backtest_from_store` artık `evaluation_start: datetime | None = None` üzerinden context/evaluation ayrımını bilir (Bölüm 8.3.11, 23; Bölüm 9'daki audit bulgusu artık tarihsel/RESOLVED'dır).
+- Bu, **generic/çok-pencereli (Layer-2) bir OOS runner**'ın inşasını artık warm-up mekanizması yüzünden değil, ayrı bir policy-instance-freshness ihtiyacı yüzünden bloke eder (Bölüm 8.3.6, 13).
 - Bu, **temporal-window primitive**'inin (Bölüm 6/7, MS2'de implement edildi) inşasını hiçbir zaman bloke etmedi — o primitive tamamen pure/store-free'dir ve bu sorundan bağımsızdır.
-- Dedicated **"OOS Context/Warm-up API Pre-flight"** mikro-adımı (FAZ6A MS3) tamamlandı; exact mekanizma bu dokümanda (Bölüm 8.3) MS4 ile kilitlendi — generic OOS runner'ın implementasyonu bundan **sonra** gelir.
+- Dedicated **"OOS Context/Warm-up API Pre-flight"** mikro-adımı (FAZ6A MS3) tamamlandı; exact mekanizma bu dokümanda (Bölüm 8.3) MS4 ile kilitlendi; Layer-1 implementasyonu (canonical replay + store-runner) da tamamlandı (bkz. Bölüm 23) — geriye yalnızca Layer-2 orchestration kalır.
 
 ### 8.1 Olası Gelecek Tasarımlar (Analiz — Kilitlenmez)
 
@@ -186,7 +186,7 @@ olmalıdır — mevcut `prepare_backtest_dataset`'in candle path'i için zaten g
 
 ### 8.3 LOCKED Mechanism — B2 (FAZ6A MS3 Pre-flight + MS4 Spec-Lock)
 
-**Durum: LOCKED (mimari/tasarım).** Bu bölüm, Bölüm 8/8.1'in açık bıraktığı kararı kilitler. **Bu bir implementasyon değildir** — `run_backtest_replay`/`run_backtest_from_store` bugün hâlâ bu bölümdeki ayrımı bilmez (Bölüm 9). Implementasyon, kendi regression suite'i ile test edilecek, henüz numaralandırılmamış bir sonraki mikro-adımdır (Bölüm 23).
+**Durum: LOCKED (mimari/tasarım) VE Layer-1 için IMPLEMENTED + TESTED.** Bu bölüm, Bölüm 8/8.1'in açık bıraktığı kararı kilitler VE bu kararın Layer-1 (tek-pencere context-aware canonical replay + store-backed composition) implementasyonunun exact şeklini kaydeder — `run_backtest_replay`/`run_backtest_from_store` artık `evaluation_start: datetime | None = None` üzerinden bu bölümdeki ayrımı bilir, kendi regression suite'i ile test edilmiştir (Bölüm 8.3.11, 23; Bölüm 9 artık tarihsel/RESOLVED). Layer-2 (çok-pencereli orchestrator) **HENÜZ implement edilmemiştir** (Bölüm 8.3.6, 13, 23).
 
 **8.3.1 Context / Evaluation Aralıkları**
 
@@ -373,7 +373,7 @@ Context candle'lar tarihsel olarak IS aralığının içinden, IS/OOS research g
 
 Nihai `BacktestResult`'ın tüm ekonomik alanları (`final_cash`, `final_equity`, `total_realized_pnl`, `total_unrealized_pnl`, `total_cost`, `total_pnl`, `fill_count`, `trade_count`, `equity_curve`) yalnızca evaluation-fazı ekonomisinden türetilir — context, yalnızca policy'nin gördüğü INFORMATION'ı etkiler, ekonomik muhasebeye asla doğrudan katkıda bulunmaz.
 
-**8.3.11 Canonical Replay Composition (Genişletme Yönü — Exact Signature Kilitlenmez)**
+**8.3.11 Canonical Replay Composition (IMPLEMENTED — Exact Signature Aşağıdaki Kavramsal API ile Birebir Eşleşir)**
 
 ```
 Canonical run_backtest_replay TEK replay engine olarak kalır.
@@ -381,17 +381,17 @@ Context-aware evaluation, validation-specific bir replay loop
 YARATAMAZ (Bölüm 4, 21) — additive, canonical replay'i GENİŞLETİR.
 ```
 
-Kavramsal leading API (implementasyon bu MS4'te YAZILMAZ):
+**IMPLEMENTED** (`src/crypto_quant_lab/backtest/replay.py`, `src/crypto_quant_lab/backtest/store_runner.py`) — exact şekil, aşağıdaki kavramsal API ile birebir örtüşür:
 
 ```
 evaluation_start: datetime | None = None
 ```
 
-`evaluation_start` `None` olduğunda (default), legacy replay semantics'i **DEĞİŞMEDEN** kalır — mevcut `run_backtest_replay`/`run_backtest_from_store` çağrıcıları, context/evaluation mekanizmasını hiç kullanmadıkları sürece **davranış değişikliği görmez.** Hiçbir mevcut çağrıcı sessizce context semantics'i almaz. Bu, `funding_events=()`/`funding_model=None` (FUNDING-SPEC MS10) ve `funding_required=False` (FUNDING-SPEC MS11) additive-parametre precedent'ıyla birebir tutarlıdır.
+`evaluation_start` `None` olduğunda (default), legacy replay semantics'i **DEĞİŞMEDEN** kalır — mevcut `run_backtest_replay`/`run_backtest_from_store` çağrıcıları, context/evaluation mekanizmasını hiç kullanmadıkları sürece **davranış değişikliği görmez** (regression testleriyle kanıtlanmıştır: `tests/test_backtest_replay_context_evaluation.py`, `tests/test_backtest_store_runner_context_evaluation.py`). Hiçbir mevcut çağrıcı sessizce context semantics'i almaz. Bu, `funding_events=()`/`funding_model=None` (FUNDING-SPEC MS10) ve `funding_required=False` (FUNDING-SPEC MS11) additive-parametre precedent'ıyla birebir tutarlıdır.
 
-Bu MS4, exact positional/keyword parametre şeklini literal olarak kilitlemez — implementasyon mikro-adımı, mevcut fonksiyon signature'ına daha temiz oturan başka bir additive keyword-only şekil bulursa onu kullanabilir; kilitlenen şey **kavramdır** (tek canonical replay + additive evaluation boundary), exact syntax değil.
+Bu MS4, exact positional/keyword parametre şeklini literal olarak kilitlememişti — gerçekleşen implementasyon, mevcut fonksiyon signature'larına (her iki fonksiyonda da keyword-only, additive, `funding_model`'den sonra) doğal şekilde oturan, buradaki kavramsal API ile birebir aynı şekli kullandı.
 
-**Store-runner yönü (implement edilmez, yalnızca yön):** `requested_start`, yüklenen context/evaluation dataset'inin başlangıcı (context_start) rolünü oynamaya devam eder; `requested_end` evaluation_end/yüklenen aralığın sonu olarak kalır; ayrı, açık bir `evaluation_start` parametresi information-history başlangıcını economic-start'tan ayırmak için **gereklidir** — tek bir "start" parametresi iki anlamı üstlenmez. Gelecekteki store-runner: `[requested_start, requested_end)` üzerinden candle yükler/quality-gate'ler, `evaluation_start`'ı canonical replay'e geçirir, ve ekonomik funding'i yalnızca `[evaluation_start, requested_end)` üzerinden sorgular/gate'ler — bu, kendi implementasyon pre-flight'ine tabidir.
+**Store-runner yönü — IMPLEMENTED:** `requested_start`, yüklenen context/evaluation dataset'inin başlangıcı (context_start) rolünü oynamaya devam eder; `requested_end` evaluation_end/yüklenen aralığın sonu olarak kalır; ayrı, açık bir `evaluation_start` parametresi information-history başlangıcını economic-start'tan ayırır — tek bir "start" parametresi iki anlamı üstlenmez. Store-runner: `[requested_start, requested_end)` üzerinden candle yükler/quality-gate'ler (`dataset.py` DEĞİŞMEDİ), `evaluation_start`'ı canonical replay'e geçirir, ve ekonomik funding'i yalnızca `[evaluation_start, gerçek prepared run end)` üzerinden sorgular/gate'ler. Ayrıca, raw `requested_end`'in gerçek/prepared `effective_end`'den daha geç olabileceği durumu ele almak için, candle I/O'dan **SONRA** ama funding I/O'dan **ÖNCE** ikinci bir doğrulama adımı (Stage B) uygular — bu, MS4'te öngörülmemiş ama implementasyon sırasında gerekli bulunan, minimal bir ek kontroldür (bkz. Bölüm 8.3.15).
 
 **8.3.12 TemporalWindow / TemporalSplit İlişkisi**
 
@@ -425,25 +425,32 @@ Her evaluation çağrısındaki `PolicyContext`, yalnızca o çağrının `as_of
   üzerinden FAIL (Bölüm 8.3.8)
 - eksik gerekli economic funding coverage → canonical funding quality
   gate üzerinden FAIL (Bölüm 8.3.7, 24)
+- store-backed çağrılarda: raw requested_end'e göre legal görünen bir
+  evaluation_start, gerçek/prepared candle tuple'ının effective run
+  end'i daha erken olduğunda geçersiz olabilir (effective_end clamp'i
+  nedeniyle) — bu durum candle I/O'dan SONRA, funding I/O'dan ÖNCE
+  ayrıca kontrol edilir (Stage B, bkz. 8.3.11) → ValueError
 ```
 
-Exact exception mesaj string'leri bu dokümanda kilitlenmez — mevcut proje TypeError (yanlış tip) / ValueError (yanlış değer) konvansiyonu kullanılır.
+Exact exception mesaj string'leri bu dokümanda kilitlenmez — mevcut proje TypeError (yanlış tip) / ValueError (yanlış değer) konvansiyonu kullanılır. Bu liste artık implement edilmiş/test edilmiş davranışı doğru şekilde tarif eder (bkz. Bölüm 8.3.11, 23).
 
-## 9. Current API Limitation Audit (Bölüm 8'in Kaynak Doğrulaması)
+## 9. Current API Limitation Audit (Bölüm 8'in Kaynak Doğrulaması) — TARİHSEL, RESOLVED
 
-`src/crypto_quant_lab/backtest/store_runner.py` ve `replay.py`'dan doğrulanmıştır:
+**Durum: RESOLVED (Layer-1 implementasyonuyla, bkz. Bölüm 8.3.11, 23).** Bu bölüm, B2 mekanizmasının Layer-1 implementasyonundan **ÖNCEKİ** (MS1 zamanındaki) kaynak-kod audit bulgusunu, B2'nin gerekçesini korumak için **tarihsel kayıt** olarak saklar. `run_backtest_replay`/`run_backtest_from_store` artık bu bölümdeki ayrımı `evaluation_start` parametresi üzerinden bilir (implement edildi + test edildi).
+
+`src/crypto_quant_lab/backtest/store_runner.py` ve `replay.py`'dan (implementasyon **ÖNCESİ**, MS1 zamanında) doğrulanmıştır:
 
 - `run_backtest_from_store(requested_start=X, requested_end=Y, ...)` → `prepare_backtest_dataset` yalnızca `[X, report.effective_end)` candle'larını query eder ve döner. `X`'ten önceki hiçbir candle asla mevcut değildir.
 - `run_backtest_replay`'ın ana döngüsü (`for i, candle in enumerate(candles): ...`), **her** candle için sırasıyla funding sweep → equity mark → `PolicyContext` → policy call → (son candle değilse) execution çalıştırır. Loop'ta "yalnızca görünürlük, trade yok" diye ayrı bir mod **yoktur** — sequence'e giren her candle hem `PolicyContext.candles`'a hem de execution/equity mark mekanizmasına eşit şekilde tabidir.
 
-**Sonuç (LOCKED — audit finding, icat edilmemiştir):**
+**Sonuç (tarihsel audit finding, B2 Layer-1 implementasyonuyla RESOLVED):**
 
 ```
-Mevcut API, pre-evaluation lookback history'yi WITHOUT contamination
-sağlayamaz.
+Mevcut (implementasyon ÖNCESİ) API, pre-evaluation lookback history'yi
+WITHOUT contamination sağlayamıyordu.
 ```
 
-Bu, Bölüm 8.3'te LOCKED olan B2 mekanizması gibi bir additive extension'a ihtiyaç duyar — bu extension implement edilene kadar bu audit bulgusu geçerliliğini korur. **Sahte destek icat edilmez.**
+Bu, Bölüm 8.3'te LOCKED olan B2 mekanizması gibi bir additive extension'a ihtiyaç duyuyordu — bu extension artık implement edilmiştir (bkz. Bölüm 8.3.11, 23) ve bu audit bulgusu artık geçerli değildir. **Sahte destek icat edilmemişti; gerçek destek şimdi implement edilmiştir.**
 
 ## 10. State Carryover — Üç Ayrı Kavram (LOCKED)
 
@@ -455,7 +462,7 @@ Bu üç kavram **aynı şey değildir** ve karıştırılmaz:
 3. Parameter/candidate carry-in    — IS'te seçilen dondurulmuş candidate/parametre OOS'a taşınır mı
 ```
 
-**(1) Historical context:** gereklidir (Bölüm 8); exact mekanizması artık **Bölüm 8.3'te LOCKED**'dır — implementasyonu deferred'dir (henüz kodlanmadı).
+**(1) Historical context:** gereklidir (Bölüm 8); exact mekanizması **Bölüm 8.3'te LOCKED**'dır ve Layer-1 için **implement edilmiştir** (bkz. `replay.py`/`store_runner.py`, Bölüm 8.3.11, 23).
 
 **(2) Economic account-state:** Bölüm 11'de **fresh (A)** olarak kilitlenir — foundation için.
 
@@ -477,9 +484,9 @@ IS'teki hiçbir fill, OOS PnL'ine katkıda bulunmaz.
 IS'te üretilen hiçbir sinyal, OOS içinde bir fill YARATAMAZ.
 ```
 
-Bu, **Bölüm 8.3'te LOCKED olan B2 mekanizması de dahil, hangi warm-up mekanizması seçilirse seçilsin geçerli kalan bir prensiptir** — exact API tasarımından bağımsız olarak kilitlenir. Bugün, historical context implementasyonu (Bölüm 8.3) henüz kodlanmadığı için, bu prensip triviyal şekilde sağlanır: her pencere, IS candle'larını hiç görmeyen, tamamen bağımsız bir `run_backtest_from_store` çağrısıdır (Bölüm 8.1 seçenek A, mevcut fiili davranış — ama nihai runner mekanizması değil, bkz. Bölüm 13). Bölüm 8.3'te LOCKED olan B2 mekanizması implement edildiğinde, bu **AYNI** prensip o implementasyonda explicit olarak yeniden kanıtlanmalıdır (regression testleriyle) — context desteği eklemek bu accounting kontratını **asla** gevşetemez.
+Bu, **Bölüm 8.3'te LOCKED olan B2 mekanizması de dahil, hangi warm-up mekanizması seçilirse seçilsin geçerli kalan bir prensiptir** — exact API tasarımından bağımsız olarak kilitlenir. Bölüm 8.3'te LOCKED olan B2 mekanizması Layer-1 için **implement edilmiştir**; bu **AYNI** prensip o implementasyonda explicit olarak regression testleriyle **yeniden kanıtlanmıştır** (`tests/test_backtest_replay_context_evaluation.py`, `tests/test_backtest_store_runner_context_evaluation.py`) — context desteği eklemek bu accounting kontratını **gevşetmemiştir.**
 
-**Final IS signal / context-candle rule (LOCKED, mekanizmadan bağımsız):** IS sırasında üretilen ekonomik bir aksiyon/sinyal, hiçbir bağımsız OOS evaluation'ında pending bir fill olarak **ortaya çıkamaz.** Bölüm 8.3'te LOCKED olan B2 mekanizması implement edildiğinde, pre-OOS geçmiş candle'lar (context candle'lar) salt-okunur information context olarak görünür hale gelir; bu context candle'ları:
+**Final IS signal / context-candle rule (LOCKED, mekanizmadan bağımsız):** IS sırasında üretilen ekonomik bir aksiyon/sinyal, hiçbir bağımsız OOS evaluation'ında pending bir fill olarak **ortaya çıkamaz.** Bölüm 8.3'te LOCKED olan B2 mekanizması Layer-1 için implement edilmiştir; pre-OOS geçmiş candle'lar (context candle'lar) artık salt-okunur information context olarak görünürdür; bu context candle'ları:
 
 ```
 - evaluation_start'tan ÖNCE hiçbir skorlanmış PnL üretemez
@@ -501,7 +508,7 @@ as_of_time KULLANILAMAZ olarak:
 
 Settled tarihsel veri için bugün `OOS`'u `as_of_time > OOS.end` ile çalıştırmak **veri açısından legal**dir (gerçekleşmiş geçmiş veri zaten kesinleşmiştir) — ama bu, bir candidate'in **seçim sürecinin** OOS sonucunu görmediğini garanti **etmez.** Selection leakage (Bölüm 20), `as_of_time`'ın değil, **research-process disiplininin** (henüz code ile enforce edilemeyen) sorumluluğundadır — bu ayrım Bölüm 19'da tekrar netleştirilir.
 
-## 13. First Foundation Mode (LOCKED — Hedef; Generic Runner B2 İmplementasyonuna Gated)
+## 13. First Foundation Mode (LOCKED — Hedef; Generic/Çok-Pencereli Runner Layer-2 Policy-Freshness'a Gated)
 
 FAZ6A'nın hedeflediği ilk validation modu:
 
@@ -516,22 +523,23 @@ YOK: fitting, optimizer, candidate selection.
 
 Bu, henüz **tam walk-forward optimization değildir** (Bölüm 14) — bu ayrım kilitlidir.
 
-**Ama bu modun GENERIC, executable bir runner'ı bugün implement edilmiş değildir.** Mimari artık Bölüm 8.3'te LOCKED'dır (B2), ama mevcut `run_backtest_from_store`/`run_backtest_replay` kodu henüz context/evaluation ayrımını bilmez — Bölüm 8/9'un audit bulgusu implementasyona kadar geçerlidir: herhangi bir `BacktestPolicy`'nin (özellikle lookback/rolling-feature kullanan bir policy'nin) `run_backtest_from_store(requested_start=OOS.start, ...)` ile doğrudan, doğru şekilde değerlendirilebileceği **iddia edilmez.** Bu nedenle:
+**Tek-pencereli (Layer 1) context-aware evaluation artık implement edilmiş + test edilmiştir** (Bölüm 8.3.11, 23). Mimari Bölüm 8.3'te LOCKED'dır (B2) VE `run_backtest_from_store`/`run_backtest_replay` kodu artık `evaluation_start` üzerinden context/evaluation ayrımını bilir — Bölüm 8/9'un audit bulgusu artık tarihsel/RESOLVED'dır: history-reconstructible (Type-H) bir `BacktestPolicy` (özellikle lookback/rolling-feature kullanan bir policy), `run_backtest_from_store(requested_start=context_start, evaluation_start=OOS.start, ...)` ile doğrudan, doğru şekilde değerlendirilebilir (bkz. Bölüm 8.3.5 için Type-H niteliğinin caller/policy-author sorumluluğu kaldığı). **Ama GENERIC, çok-pencereli (Layer 2) bir rolling OOS runner bugün implement edilmiş değildir** — bu, warm-up mekanizması yüzünden değil, ayrı bir policy-instance-freshness ihtiyacı yüzündendir. Bu nedenle:
 
 ```
 - Fixed-policy temporal evaluation FAZ6A'nın bir HEDEFİDİR (Bölüm 22).
-- Onun generic runner kontratının MİMARİSİ artık LOCKED'dır (Bölüm 8.3,
-  B2) — ama İMPLEMENTASYONU henüz yapılmamıştır. Tek-pencereli (Layer 1)
-  context-aware canonical replay mekanizması spec-lock aşamasındadır;
-  çok-pencereli (Layer 2) rolling OOS orchestrator ayrıca
-  policy-instance-freshness mekanizmasına (Bölüm 8.3.6, Bölüm 19)
-  ihtiyaç duyar — bu HENÜZ TASARLANMAMIŞTIR.
+- Onun generic runner kontratının MİMARİSİ LOCKED'dır (Bölüm 8.3, B2) VE
+  Layer-1 İMPLEMENTASYONU TAMAMLANMIŞTIR. Tek-pencereli (Layer 1)
+  context-aware canonical replay + store-backed composition
+  IMPLEMENTED + TESTED'dır (bkz. Bölüm 23); çok-pencereli (Layer 2)
+  rolling OOS orchestrator ayrıca policy-instance-freshness
+  mekanizmasına (Bölüm 8.3.6, Bölüm 19) ihtiyaç duyar — bu HENÜZ
+  TASARLANMAMIŞTIR/İMPLEMENT EDİLMEMİŞTİR.
 - MS2 (temporal-window primitives) bu karara bağımlı DEĞİLDİR — tamamen
   pure/store-free'dir ve bağımsız olarak inşa edilebilir (implement
   edildi, bkz. Bölüm 23).
 ```
 
-Context/lookback kullanmayan trivial bir policy için, bugünkü `run_backtest_from_store`'un pencere-başına bağımsız çağrılması **zaten doğru sonucu üretir** (Bölüm 11) — ama bunu şimdiden **genel bir runner contract'ı** olarak kilitlemek, warm-up implementasyonunun henüz tamamlanmadığını sessizce görmezden gelmek olurdu. Generic runner'ın exact mekanizması Bölüm 8.3'te kilitlenmiştir (Bölüm 21, Bölüm 23); implementasyonu ayrı, henüz numaralandırılmamış bir mikro-adımdır.
+Context/lookback kullanmayan trivial bir policy için, bugünkü `run_backtest_from_store`'un pencere-başına bağımsız çağrılması **zaten doğru sonucu üretir** (Bölüm 11) — bunu artık **tek-pencereli (Layer 1) bir runner contract'ı** olarak kilitlemek mümkündür, çünkü warm-up implementasyonu tamamlanmıştır. Generic/çok-pencereli (Layer 2) bir runner ise Layer-1'in tamamlanmasından SONRA bile ayrı bir policy-instance-freshness mekanizmasına bağımlı kalır (Bölüm 8.3.6); o mekanizma tamamlanmadan çok-pencereli bir runner'a commit edilmez.
 
 ## 14. Walk-Forward Terminolojisi (LOCKED — Precision)
 
@@ -685,17 +693,22 @@ CostModel/FundingModel:  unchanged
   (validation-specific replay FORBIDDEN)
 - mevcut economic semantics (fill timing, cost/funding accounting,
   PnL/equity formülleri) korunur
-- context/evaluation-boundary desteği artık Bölüm 8.3'te LOCKED'dır:
-  ADDITIVE, keyword-only, default'ta davranışı değiştirmeyen bir
-  `evaluation_start` konsepti — implementasyonu kendi regression suite'i
-  ile test edilecek, ayrı bir mikro-adımdır
+- context/evaluation-boundary desteği Bölüm 8.3'te LOCKED'dır VE
+  IMPLEMENT EDİLMİŞTİR: ADDITIVE, keyword-only, default'ta davranışı
+  değiştirmeyen bir `evaluation_start` parametresi (`run_backtest_replay`,
+  `run_backtest_from_store`) — kendi regression suite'i ile test
+  edilmiştir (`tests/test_backtest_replay_context_evaluation.py`,
+  `tests/test_backtest_store_runner_context_evaluation.py`)
 - exact API mechanism (Bölüm 8.1'deki B2 seçeneği) Bölüm 8.3'te
-  LOCKED'dır; exact parametre ismi/signature implementasyon
-  mikro-adımında finalize edilir — bu MS4, positional/keyword shape'i
-  literal olarak kilitlemez
+  LOCKED'dır; exact parametre ismi/signature implementasyonda finalize
+  edildi: `evaluation_start: datetime | None = None`, her iki
+  fonksiyonda da keyword-only additive parametre olarak (bkz. Bölüm
+  8.3.11) — bu MS4 positional/keyword shape'i literal olarak
+  kilitlememişti, ama gerçekleşen implementasyon kavramsal API ile
+  birebir örtüşmektedir
 ```
 
-**Bu MS1/MS4, `run_backtest_from_store`/`run_backtest_replay`'in public signature'larının sonsuza kadar literal olarak aynı kalacağını GARANTİ ETMEZ** — yalnızca, herhangi bir gelecekteki değişikliğin additive/geriye-uyumlu olacağını ve kendi regression suite'inden geçeceğini kilitler. Exact extension syntax'ı bu dokümanda tasarlanmaz.
+**Bu MS1/MS4, `run_backtest_from_store`/`run_backtest_replay`'in public signature'larının sonsuza kadar literal olarak aynı kalacağını GARANTİ ETMEZ** — yalnızca, herhangi bir gelecekteki değişikliğin additive/geriye-uyumlu olacağını ve kendi regression suite'inden geçeceğini kilitler. `evaluation_start` eklemesi bu garantiyi doğrulamıştır: additive, geriye-uyumlu (legacy-equivalence regression testleriyle kanıtlanmıştır) ve kendi regression suite'inden geçmiştir. Herhangi bir gelecekteki extension syntax'ı bu dokümanda tasarlanmaz.
 
 ## 22. Faz 6 Alt-Faz Yapısı (LOCKED — "Foundation" ≠ "Faz 6 Complete")
 
@@ -706,10 +719,12 @@ FAZ 6A — Temporal Validation Foundation
 
 FAZ 6B — Context/Warm-up + Metrics + Experiment Foundation
     OOS context/warm-up API implementasyonu (exact mekanizma — B2 —
-    FAZ6A MS3 pre-flight'ı + MS4 spec-lock'u ile Bölüm 8.3'te LOCKED;
-    bu alt-fazda kalan iş implementasyon + regression testleridir,
-    tasarım değil), return-series/Sharpe contract, candidate/trial
-    abstraction.
+    Bölüm 8.3'te LOCKED; Layer-1 [tek-pencere context-aware canonical
+    replay + store-backed composition] artık İMPLEMENT EDİLMİŞ +
+    TEST EDİLMİŞTİR, bkz. Bölüm 23, 28.B). Bu alt-fazda kalan iş:
+    Layer-2 çok-pencereli orchestrator (policy-instance-freshness
+    mekanizmasına bağımlı, Bölüm 8.3.6), return-series/Sharpe contract,
+    candidate/trial abstraction — hepsi HENÜZ PENDING.
 
 FAZ 6C — Advanced Overfitting Controls
     purging/embargo (horizon contract'a bağımlı), CPCV, Deflated Sharpe,
@@ -739,15 +754,27 @@ FAZ6A MS3:
   runner'dan ÖNCE geldi.
 
 FAZ6A MS4:
-  OOS CONTEXT / EVALUATION CONTRACT — SPEC LOCK (bu doküman güncellemesi)
+  OOS CONTEXT / EVALUATION CONTRACT — SPEC LOCK — TAMAMLANDI
   — MS3'ün seçtiği B2 mekanizmasını, Type-H/Type-I policy semantics'ini
-  ve policy-freshness sınırını Bölüm 8.3'te LOCKED olarak kaydeder.
-  Docs-only; production kod değişikliği içermez.
+  ve policy-freshness sınırını Bölüm 8.3'te LOCKED olarak kaydetti.
+  Docs-only; production kod değişikliği içermedi.
 
-FAZ6A MS5+ (henüz numaralandırılmamış):
-  Bölüm 8.3'te LOCKED olan B2 mekanizmasının canonical replay/store-runner
-  implementasyonu + kendi regression suite'i. Bu mikro-adımdan önce
-  generic bir OOS runner'a commit edilmez.
+FAZ6A Layer-1 implementasyonu (henüz resmi MS numarası atanmamış) —
+TAMAMLANDI:
+  - canonical run_backtest_replay evaluation_start desteği — TAMAMLANDI
+    (src/crypto_quant_lab/backtest/replay.py,
+    tests/test_backtest_replay_context_evaluation.py — 22 test)
+  - store-backed run_backtest_from_store evaluation_start desteği —
+    TAMAMLANDI (src/crypto_quant_lab/backtest/store_runner.py,
+    tests/test_backtest_store_runner_context_evaluation.py — 21 test)
+  - 28.B Layer-1 acceptance/status reconciliation (bu doküman
+    güncellemesi) — TAMAMLANDI
+
+Sonraki (henüz başlanmadı):
+  Layer-2 çok-pencereli (multi-window) validation orchestrator —
+  policy-instance-freshness mekanizmasına (Bölüm 8.3.6) ihtiyaç duyar;
+  bu mikro-adımdan önce generic/çok-pencereli bir OOS runner'a commit
+  edilmez.
 ```
 
 **MS3 scope (TAMAMLANDI — pre-flight'in kendisi, Bölüm 8.3'te kilitlendi):**
@@ -783,7 +810,7 @@ MS3'ün seçtiği B2 mekanizması, Bölüm 11'de zaten kilitlenmiş şu invarian
 - candle/funding data quality gate bypass edilemez (Bölüm 24)
 ```
 
-Bu dizinin ötesi (fixed-policy OOS runner implementasyonu, walk-forward window advance, metrics foundation implementasyonu, 6B/6C mikro-adımları) **B2'nin implementasyonuna bağımlı olduğu için burada detaylandırılmaz** — implementasyon tamamlanmadan bir generic OOS runner'a **commit edilmez.**
+B2'nin Layer-1 implementasyonu artık **tamamlanmıştır** (yukarıda). Bunun ötesi (generic/çok-pencereli [Layer-2] OOS runner implementasyonu, walk-forward window advance, metrics foundation implementasyonu, 6B/6C mikro-adımları) **Layer-2'nin kendi policy-instance-freshness mekanizmasına (Bölüm 8.3.6) bağımlı olduğu için burada detaylandırılmaz** — o mekanizma tamamlanmadan bir generic/çok-pencereli OOS runner'a **commit edilmez.**
 
 ## 24. Data / Ekonomik Bütünlük (LOCKED)
 
@@ -832,7 +859,7 @@ Aynı girdiler → aynı pencere sonuçları — mevcut `run_backtest_from_store
 
 ## 28. Acceptance Criteria — İki Ayrı Grup (LOCKED)
 
-Foundation acceptance, runner-independent (pure/store-free) kontratlar ile generic OOS runner'a bağımlı, MS3'e gated kontratlar **karıştırılmaz.** Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B altındaki sayılar).
+Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B altındaki sayılar).
 
 ### 28.A — LOCKED FOUNDATION ACCEPTANCE (Runner-Bağımsız)
 
@@ -851,7 +878,7 @@ Bu MS1 ile lock edilebilen, MS2 gibi pure primitive'lerin temelini oluşturan ko
 11. IS'teki hiçbir ekonomik aksiyon/pending fill, bağımsız bir OOS evaluation'ına taşınamaz (Bölüm 11).
 12. Historical information context (policy'nin gördüğü geçmiş candle'lar) ile economic account-state carry-in (cash/position/realized_pnl) **ayrı kavramlardır** ve karıştırılmaz (Bölüm 10).
 13. Pre-OOS historical (information) context, prensip olarak legal olabilir (Bölüm 8, 8.1).
-14. Exact warm-up/context API mekanizması artık **Bölüm 8.3'te LOCKED**'dır (FAZ6A MS3 pre-flight'ı + MS4 spec-lock'u ile) — ama **implementasyonu deferred'dir**; bu deferred implementasyon foundation'ın (28.A) bir parçası DEĞİLDİR (bkz. Bölüm 8.1, 8.3, 23, 28.B).
+14. Exact warm-up/context API mekanizması **Bölüm 8.3'te LOCKED**'dır (FAZ6A MS3 pre-flight'ı + MS4 spec-lock'u ile) ve Layer-1 için **implement edilmiş + test edilmiştir** (bkz. Bölüm 23, 28.B — 15/15 runtime/test exercised) — ama bu implementasyon durumu, 28.A'nın MS1 zamanında lock edilen foundation kapsamını **genişletmez**; bu criterion yalnızca "mekanizma MS1'de LOCKED DEĞİLDİ, sonradan LOCKED edildi (ve implement edildi)" tarihsel gerçeğini kaydeder (bkz. Bölüm 8.1, 8.3, 23, 28.B).
 15. `BacktestResult`, validation tarafından değişmeden (unchanged) canonical economic output olarak kalır (Bölüm 4, 21).
 16. Validation, canonical backtest semantics'ini (replay/accounting/execution/cost/funding) compose eder — yeniden implement etmez (Bölüm 4, 21).
 17. Validation-specific bir replay/accounting/execution engine **yasaktır** (Bölüm 4, 21).
@@ -863,9 +890,11 @@ Bu MS1 ile lock edilebilen, MS2 gibi pure primitive'lerin temelini oluşturan ko
 
 **Locked foundation acceptance count: 22.**
 
-### 28.B — PENDING B2-IMPLEMENTATION-GATED RUNNER ACCEPTANCE
+### 28.B — LAYER-1 CONTEXT-AWARE ACCEPTANCE (15/15 RUNTIME/TEST EXERCISED)
 
-Bu kriterler henüz **SATISFIED DEĞİLDİR** — implementasyon ve test henüz yapılmamıştır. FAZ6A MS3 pre-flight'ı + MS4 spec-lock'u, bu kriterlerin **hepsini** exact mekanizmaya (B2, Bölüm 8.3) **DESIGN seviyesinde** bağladı — ama **design-resolved, implemented anlamına gelmez.** Generic OOS runner implement edilmeden önce, Bölüm 8.3'te LOCKED olan mekanizma production kodunda (replay/store-runner) inşa edilmeli ve kendi regression suite'i ile test edilmelidir. **Foundation locked acceptance count'una (28.A) dahil edilmezler.**
+Bu kriterlerin hepsi artık **Layer-1** (tek-pencere context-aware canonical replay + store-backed composition) için **RUNTIME/TEST EXERCISED**'dır — implementasyon (`src/crypto_quant_lab/backtest/replay.py`, `store_runner.py`) ve kendi regression suite'i (`tests/test_backtest_replay_context_evaluation.py` — 22 test, `tests/test_backtest_store_runner_context_evaluation.py` — 21 test) tamamlanmıştır.
+
+**Bu, generic/çok-pencereli (Layer-2) bir OOS runner'ın hazır olduğu anlamına GELMEZ** — Layer-2 ayrıca policy-instance-freshness mekanizmasına (Bölüm 8.3.6, 19) ihtiyaç duyar, bu HENÜZ implement edilmemiştir. Ayrıca criterion 14'ün history-reconstructible (Type-H) niteliği, hâlâ mekanik olarak enforce edilemeyen bir semantic/caller precondition'dır (Bölüm 8.3.5) — bu, testlerin "kanıtladığı" bir şey değildir, yalnızca testlerin VARSAYDIĞI (Type-H policy fixture'ları kullanan) bir disiplin sınırıdır. **Foundation locked acceptance count'una (28.A) hâlâ dahil edilmezler** — bu ayrı bir sayımdır.
 
 1. Legal pre-OOS context, candle quality gate'ten geçmiş (quality-gated) olmalıdır (Bölüm 8.2, 24).
 2. Context, evaluation edilen pencere ile aynı exact partition'a (exchange/market_type/symbol/timeframe) ait olmalıdır (Bölüm 8.2).
@@ -880,12 +909,12 @@ Bu kriterler henüz **SATISFIED DEĞİLDİR** — implementasyon ve test henüz 
 11. `funding_required=True` olan bir ekonomik evaluation, funding quality gate'ini korumalıdır — bypass yasak (Bölüm 24).
 12. Transaction cost semantics'i (`CostModel`) korunmalıdır (Bölüm 21, 24).
 13. Funding chronology/cost semantics'i (`FundingModel`) korunmalıdır (Bölüm 21, 24).
-14. **History-reconstructible (Type-H)** lookback kullanan bir `BacktestPolicy`, pencere-boundary distortion'ı olmadan (ilk N candle'ı context'siz kırmadan) değerlendirilebilmelidir (Bölüm 8.1, 8.3.5, 13). **Design: RESOLVED** (Bölüm 8.3.5) Type-H policy'ler için; **incremental-state (Type-I)** policy'ler bu mekanizma tarafından otomatik warm-up edilmez — bu, `BacktestPolicy`'nin global contract'ının değil, yalnızca context-aware evaluation'ın bir precondition'ıdır. **Implementation/Testing: PENDING.**
+14. **History-reconstructible (Type-H)** lookback kullanan bir `BacktestPolicy`, pencere-boundary distortion'ı olmadan (ilk N candle'ı context'siz kırmadan) değerlendirilebilmelidir (Bölüm 8.1, 8.3.5, 13). **Design: RESOLVED** (Bölüm 8.3.5) Type-H policy'ler için; **incremental-state (Type-I)** policy'ler bu mekanizma tarafından otomatik warm-up edilmez — bu, `BacktestPolicy`'nin global contract'ının değil, yalnızca context-aware evaluation'ın bir precondition'ıdır. **Implementation/Testing: TAMAMLANDI** (Layer-1, bkz. Bölüm 23) — Type-H policy fixture'ları kullanan regression testleriyle kanıtlanmıştır (örn. `test_type_h_policy_can_use_context_history_for_first_decision`); Type-H niteliğinin **kendisi** mekanik olarak enforce edilmez, hâlâ caller/policy-author sorumluluğudur.
 15. Context desteği, canonical replay'i fork etmemeli / ikinci bir engine yaratmamalıdır (Bölüm 4, 21).
 
-**Pending B2-implementation-gated runner acceptance count: 15.**
+**Layer-1 runtime/test exercised acceptance count: 15 / 15.**
 
-**Design status:** Bölüm 8.3'teki B2 kilidi sayesinde bu 15 kriterin **hepsi DESIGN-RESOLVED**'dır (exact mekanizma tanımlanmıştır) — ama **hiçbiri IMPLEMENTED/TESTED değildir.** Bu ayrım korunur: design-resolved, implementation/testing tamamlandığı anlamına gelmez.
+**Durum:** Bölüm 8.3'teki B2 kilidi Layer-1 için **implement edilmiş ve test edilmiştir** (bkz. Bölüm 23) — bu 15 kriterin hepsi artık **runtime/test exercised**'dır. Bu, Layer-2 (çok-pencereli orchestrator) veya Faz 6A'nın tamamının tamamlandığı anlamına **GELMEZ** — yalnızca context-aware Layer-1 acceptance contract'ının karşılandığı anlamına gelir.
 
 **İleri seviye Faz 6 kategorileri (28.A/28.B'nin hiçbirine dahil DEĞİL, ayrı ve pending):** purging/embargo (17.1), CPCV (17.2), Sharpe-ailesi/return-series (16, 17.3), Deflated Sharpe (17.4), PBO (17.5), multiple-testing corrections (17.6), parameter stability (17.7), candidate/trial abstraction (18).
 
