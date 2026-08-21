@@ -31,6 +31,17 @@ timing/order/availability checks reuse `feature_availability_time` and
 `datetime_to_epoch_us`; fills reuse `execute_target_on_next_candle`; the
 funding cash effect reuses `apply_cash_cost`; result assembly reuses
 `build_equity_point`/`trade_count_for_transition`/`build_backtest_result`.
+
+`evaluation_start` is an additive, keyword-only, defaulted parameter
+(VALIDATION_SPEC.md Bölüm 8.3, locked B2 mechanism): with
+`evaluation_start=None` this function is byte/value-identical to its
+pre-context behavior. When supplied, candles before it are context-only —
+visible to the policy only as history once the first evaluation candle is
+reached, never economically processed (no funding sweep, no equity mark,
+no policy call, no execution). `AccountState` begins fresh exactly at the
+first evaluation candle, never before. This is the first validation
+consumer of this loop; `run_backtest_from_store`'s context/evaluation
+pass-through is a later microstep.
 """
 
 from collections.abc import Sequence
@@ -53,6 +64,7 @@ from crypto_quant_lab.backtest.results import (
     trade_count_for_transition,
 )
 from crypto_quant_lab.data_quality.feature_availability import feature_availability_time
+from crypto_quant_lab.data_quality.time import is_grid_aligned
 from crypto_quant_lab.funding.calculator import FundingModel
 from crypto_quant_lab.funding.models import HistoricalFundingEvent
 from crypto_quant_lab.market_data.models import Candle
@@ -196,6 +208,45 @@ def _validate_funding_events(
         seen_keys.add(key)
 
 
+def _resolve_evaluation_start_us(
+    evaluation_start: datetime | None, *, candles: tuple[Candle, ...]
+) -> int:
+    """Resolve and validate the economic evaluation boundary (VALIDATION_SPEC.md Bölüm 8.3).
+
+    `None` means "no context": the effective boundary is `candles[0].open_time`,
+    reproducing pre-context-support behavior exactly. An explicit boundary must
+    be grid-aligned to the dataset's timeframe and fall within
+    `[candles[0].open_time, feature_availability_time(candles[-1]))` — combined
+    with `_validate_dataset`'s already-enforced gapless contiguity (which has
+    already run by the time this is called), this guarantees a candle exists
+    at exactly that open_time, so no separate existence search is performed.
+    """
+    if evaluation_start is None:
+        return datetime_to_epoch_us(candles[0].open_time)
+
+    evaluation_start_us = datetime_to_epoch_us(evaluation_start)
+
+    if not is_grid_aligned(evaluation_start, candles[0].timeframe):
+        raise ValueError(
+            f"evaluation_start is not aligned to the {candles[0].timeframe!r} grid: "
+            f"{evaluation_start!r}"
+        )
+
+    run_start_us = datetime_to_epoch_us(candles[0].open_time)
+    run_end_us = datetime_to_epoch_us(feature_availability_time(candles[-1]))
+
+    if not (run_start_us <= evaluation_start_us < run_end_us):
+        raise ValueError(
+            "evaluation_start must satisfy candles[0].open_time <= evaluation_start < "
+            "feature_availability_time(candles[-1]), got "
+            f"evaluation_start={evaluation_start!r}, candles[0].open_time="
+            f"{candles[0].open_time!r}, feature_availability_time(candles[-1])="
+            f"{feature_availability_time(candles[-1])!r}"
+        )
+
+    return evaluation_start_us
+
+
 def _apply_due_funding_events(
     state: AccountState,
     *,
@@ -240,6 +291,7 @@ def run_backtest_replay(
     cost_model: CostModel,
     funding_events: Sequence[HistoricalFundingEvent] = (),
     funding_model: FundingModel | None = None,
+    evaluation_start: datetime | None = None,
 ) -> BacktestResult:
     """Run a deterministic, bar-by-bar backtest replay over `candles`.
 
@@ -247,7 +299,7 @@ def run_backtest_replay(
     is never used as a `PolicyContext.as_of_time`; each step instead uses
     `feature_availability_time(candle_N)`, keeping the policy's own claimed
     "as of" instant consistent with the available prefix it is actually
-    shown. For each candle, in order: sweep in and apply any due funding
+    shown. For each evaluation candle, in order: sweep in and apply any due funding
     events against the pre-fill position (FUNDING-SPEC MS9 locked
     priority), mark equity with the resulting state, build the
     available-prefix `PolicyContext`, call the policy, and — unless this is
@@ -262,35 +314,53 @@ def run_backtest_replay(
     before the mark either way, so its cash effect is always visible in
     the mark labeled with that same instant.
 
-    `funding_events`' canonical range is derived from `candles` itself:
-    `[candles[0].open_time, feature_availability_time(candles[-1]))` — an
-    event exactly at the final candle's availability instant is therefore
+    `evaluation_start` is additive, keyword-only, defaulted (VALIDATION_SPEC.md
+    Bölüm 8.3 — locked B2 mechanism): `None` (the default) preserves this
+    function's exact pre-context behavior — every candle is an evaluation
+    candle, `AccountState` starts fresh at `candles[0]`. When supplied,
+    candles with `open_time < evaluation_start` are context-only: they are
+    never passed to `policy.target_position`, never swept for funding, never
+    equity-marked, and never executed — their only effect is remaining in
+    the `candles` tuple so they appear in `PolicyContext.candles` once the
+    first evaluation candle (`open_time >= evaluation_start`) is reached.
+    `AccountState` is constructed fresh — `cash=config.initial_cash`, flat,
+    zero realized PnL — exactly at that first evaluation candle, never
+    before. `evaluation_start` must be grid-aligned to `candles[0].timeframe`
+    and satisfy `candles[0].open_time <= evaluation_start <
+    feature_availability_time(candles[-1])`; combined with the dataset's
+    already-enforced gapless contiguity, this guarantees a candle exists at
+    exactly that open_time — no separate existence search is performed.
+
+    `funding_events`' canonical range is derived from the *effective*
+    evaluation start (`evaluation_start` if supplied, else
+    `candles[0].open_time`) through `feature_availability_time(candles[-1])`
+    — an event before that boundary is rejected (economic funding coverage
+    is never required, or accepted, for the context-only portion of the
+    range), and one exactly at the final candle's availability instant is
     never legal input (excluded by the same half-open convention the
-    funding store itself uses), and one before the first candle's open is
-    never legal either. Supplying a non-empty `funding_events` without a
-    `funding_model` is rejected before any candle is processed — funding
-    history is never silently treated as zero cost.
+    funding store itself uses). Supplying a non-empty `funding_events`
+    without a `funding_model` is rejected before any candle is processed —
+    funding history is never silently treated as zero cost.
     """
     datetime_to_epoch_us(as_of_time)
     if not isinstance(config, BacktestConfig):
         raise TypeError(f"config must be a BacktestConfig, got {type(config).__name__}")
     _validate_dataset(candles, as_of_time=as_of_time)
 
+    evaluation_start_us = _resolve_evaluation_start_us(evaluation_start, candles=candles)
+
     if funding_events and funding_model is None:
         raise ValueError("funding_model must be supplied when funding_events is non-empty")
 
-    run_start_us = datetime_to_epoch_us(candles[0].open_time)
     run_end_us = datetime_to_epoch_us(feature_availability_time(candles[-1]))
     _validate_funding_events(
-        funding_events, symbol=candles[0].symbol, run_start_us=run_start_us, run_end_us=run_end_us
+        funding_events,
+        symbol=candles[0].symbol,
+        run_start_us=evaluation_start_us,
+        run_end_us=run_end_us,
     )
 
-    state = AccountState(
-        cash=config.initial_cash,
-        position_quantity=Decimal(0),
-        average_entry_price=None,
-        realized_pnl=Decimal(0),
-    )
+    state: AccountState | None = None
     total_cost = Decimal(0)
     fill_count = 0
     trade_count = 0
@@ -299,6 +369,17 @@ def run_backtest_replay(
 
     last_index = len(candles) - 1
     for i, candle in enumerate(candles):
+        if datetime_to_epoch_us(candle.open_time) < evaluation_start_us:
+            continue
+
+        if state is None:
+            state = AccountState(
+                cash=config.initial_cash,
+                position_quantity=Decimal(0),
+                average_entry_price=None,
+                realized_pnl=Decimal(0),
+            )
+
         availability_time = feature_availability_time(candle)
 
         state, funding_cost_sum, funding_cursor = _apply_due_funding_events(
@@ -339,6 +420,11 @@ def run_backtest_replay(
             trade_count += trade_count_for_transition(
                 old_state.position_quantity, state.position_quantity
             )
+
+    assert state is not None, (
+        "state is guaranteed non-None: _resolve_evaluation_start_us already proved at least "
+        "one candle satisfies open_time >= evaluation_start"
+    )
 
     return build_backtest_result(
         initial_cash=config.initial_cash,
