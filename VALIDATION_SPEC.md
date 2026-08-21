@@ -759,13 +759,13 @@ Context/lookback kullanmayan trivial bir policy için, bugünkü `run_backtest_f
 
 (A), **"walk-forward optimization" olarak adlandırılmaz** — yalnızca "rolling fixed-policy temporal evaluation" veya benzeri dürüst bir isimle anılır. Bu repo (A)'yı (B)'den önce inşa edebilir; ama ikisi asla karıştırılmaz.
 
-## 15. Metrics Foundation — Staged Bağımlılık (LOCKED) — Stage-1 LOCKED VE IMPLEMENTED + TESTED (FAZ6B MS4 + MS5)
+## 15. Metrics Foundation — Staged Bağımlılık (LOCKED) — Stage-1 LOCKED VE IMPLEMENTED + TESTED (FAZ6B MS4 + MS5); Stage-2 Return-Series + Per-Observation Sharpe KONTRATI LOCKED (implementasyon HENÜZ BAŞLAMADI)
 
 `BacktestResult` **değişmeden** kalır (Bölüm 4). Metrikler `equity_curve`'den **dışarıda** türetilir.
 
 **Aşama 1 (foundation): total return + max drawdown — exact formül, API, validation ve edge-case davranışı Bölüm 15.1–15.8'de LOCKED'dır (FAZ6B MS4) VE artık IMPLEMENTED + TESTED'dır (FAZ6B MS5).** `equity_curve`'den doğrudan, ek runtime bağımlılık gerektirmeden hesaplanır. `src/crypto_quant_lab/validation/metrics.py`'de implement edilmiştir (commit `a265e44`) — `Stage1Metrics` (frozen, slots) + `compute_stage1_metrics(result: BacktestResult) -> Stage1Metrics` — kendi regression suite'i `tests/test_validation_metrics.py`'de (82 test, tümü PASS). İlgili regression suite'ler (`tests/test_backtest_models.py`, `tests/test_backtest_results.py`, `tests/test_validation_rolling_backtest.py` — 105 test) DEĞİŞMEDEN yeşil kalır; tam suite 1468/1468 PASS. Post-commit implementasyon audit'i — PASS (bkz. Bölüm 23, 28.D — 18/18).
 
-**Aşama 2 (LATER IN FAZ 6, kendi dedicated contract mikro-adımı):** return-series / Sharpe foundation — Bölüm 16'daki açık sorular **önce** çözülmelidir; formül burada gelişigüzel kilitlenmez.
+**Aşama 2 — return-series + per-observation Sharpe: exact formül, API, validation, timestamp/cadence ve Decimal-context kontratı artık Bölüm 15.9–15.18'de LOCKED'dır.** Bölüm 16'nın beş açık sorusundan dördü bu kilitle çözülmüştür (return tipi, periyodiklik, risk-free konvansiyonu, sıfır/negatif equity handling) — yalnızca annualization faktörü, ayrı bir gelecekteki calendar/annualization kontratına ertelenmiştir (bkz. Bölüm 15.9, 16). **Production implementasyonu HENÜZ BAŞLAMAMIŞTIR** — `metrics.py`'ye `Stage2Metrics`/`compute_periodic_returns`/`compute_stage2_metrics` sembolleri veya herhangi bir Stage-2 regression testi bu mikro-adımda EKLENMEMİŞTİR (bkz. Bölüm 23, 28.E — 0/29). Sortino, Calmar, CAGR, ve Sharpe'ın annualized varyantı bu kilide dahil DEĞİLDİR — bunlar kendi ayrı, henüz LOCKED edilmemiş bir calendar/annualization ve downside-deviation kontratına ihtiyaç duyar (Bölüm 15.9).
 
 **Aşama 3 (LATER IN FAZ 6):** Deflated Sharpe, PBO, multiple-testing corrections, parameter stability — Bölüm 17.
 
@@ -783,7 +783,9 @@ Aşama 1, **kesinlikle ve yalnızca** şunlardan oluşur:
 Bu kontrattan **açıkça hariç tutulur** (hiçbiri burada formül-kilitlenmez, hiçbiri bu mikro-adımda tasarlanmaz):
 
 ```
-- Periodic return series (Bölüm 16 — açık sorular, çözülmedi)
+- Periodic return series (Stage-1'in kapsamı dışında kalır; return-series
+  + per-observation Sharpe kontratı artık Bölüm 15.9–15.18'de LOCKED'dır
+  — ama bu, Stage-1'in yukarıdaki iki maddelik kapsamını genişletmez)
 - Mean/volatility
 - Sharpe (Bölüm 15 Aşama 2, 17.3)
 - Sortino
@@ -1080,11 +1082,414 @@ Yukarıdaki her LOCKED invariant, bu implementasyon için kanıtlanmıştır (po
   kanıtlanmıştır (9 purity/compatibility testi)
 ```
 
-**Kapsam sınırı (önemli):** bu implementasyon **yalnızca Stage-1**'dir (total return + max drawdown). Stage-2 (return-series/Sharpe/Sortino/Calmar/CAGR) ve Stage-3 (Deflated Sharpe, PBO, multiple-testing, parameter stability) implement edilmemiştir ve bu modülde hiçbir iz bırakmaz — `metrics.py` bu metriklere hiçbir referans içermez. `BacktestResult`, `WindowResult`, replay, store-runner, ve rolling orchestrator DEĞİŞMEDEN kalır (`git diff 76002ab..a265e44` bunların hiçbirinde boştur). Non-zero-context Layer-2 hâlâ implement edilmemiştir; bu implementasyon ona bağımlı DEĞİLDİR.
+**Kapsam sınırı (önemli):** bu implementasyon **yalnızca Stage-1**'dir (total return + max drawdown). Stage-2 (return-series/Sharpe/Sortino/Calmar/CAGR) ve Stage-3 (Deflated Sharpe, PBO, multiple-testing, parameter stability) implement edilmemiştir ve bu modülde hiçbir iz bırakmaz — `metrics.py` bu metriklere hiçbir referans içermez. `BacktestResult`, `WindowResult`, replay, store-runner, ve rolling orchestrator DEĞİŞMEDEN kalır (`git diff 76002ab..a265e44` bunların hiçbirinde boştur). Non-zero-context Layer-2 hâlâ implement edilmemiştir; bu implementasyon ona bağımlı DEĞİLDİR. Stage-2'nin exact kontratı (return-series + per-observation Sharpe) artık Bölüm 15.9–15.18'de LOCKED'dır — ama bu, yukarıdaki `a265e44` implementasyonunun kapsamını **genişletmez**; `metrics.py`'ye Stage-2 kodu bu mikro-adımda **eklenmemiştir**.
 
-## 16. Return Series Semantics — Açık Sorular (Kilitlenmez)
+### 15.9 Aşama 2 Kapsamı (LOCKED — Yalnızca Return-Series + Per-Observation Sharpe)
 
-Sharpe-ailesi metrikler bir return series gerektirir. `EquityPoint`, her candle availability'sinde bir örnek sağlar — ama şu sorular **bu MS1'de yeterli kanıt olmadığı için kilitlenmez:**
+Aşama 2, bu mikro-adımda **kesinlikle ve yalnızca** şunlardan oluşur:
+
+```
+1. Periyodik/simple return-series türetimi (compute_periodic_returns)
+2. Arithmetic mean return
+3. Sample standard deviation (n-1)
+4. Non-annualized, per-observation Sharpe ratio
+   (compute_stage2_metrics / Stage2Metrics)
+```
+
+Bu kontrattan **açıkça hariç tutulur** (hiçbiri burada formül-kilitlenmez, hiçbiri implement edilmez):
+
+```
+- Annualized Sharpe
+- periods_per_year
+- Otomatik cadence/annualization inference
+- Risk-free annual-to-period dönüşümü
+- Sortino
+- Calmar
+- CAGR
+- Downside-deviation konvansiyonları
+- Drawdown-tabanlı annualized rasyolar
+- Win rate
+- Profit factor
+- Exposure
+- Turnover
+- Cross-window aggregation
+- Candidate/trial aggregation (Bölüm 18)
+- Optimizer/grid-search (Bölüm 27)
+- Purging/embargo (17.1), CPCV (17.2), Deflated Sharpe (17.4), PBO (17.5),
+  multiple-testing corrections (17.6), parameter stability (17.7)
+```
+
+Annualized metrikler, `sharpe_ratio` alanı tarafından **sessizce ima edilmez** — ayrı, henüz LOCKED edilmemiş bir gelecekteki calendar/annualization kontratına ihtiyaç duyarlar (bkz. Bölüm 16).
+
+### 15.10 Evaluation-Domain Inheritance (LOCKED — İkinci Bir Filtre YOK)
+
+Runtime kanıtı (`src/crypto_quant_lab/backtest/replay.py`, satır ~371–394): context candle'lar için ana döngü, `equity_points.append(...)`'a hiç ulaşmadan `continue` ile bir sonraki iterasyona geçer — bu, Bölüm 8.3.2'nin "SIFIR EquityPoint yaratırlar" kuralının runtime enforcement'ıdır. Sonuç:
+
+```
+- BacktestResult.equity_curve, HEM zero-context (Layer-2 rolling) HEM
+  context-aware (Layer-1) sonuçlar için YALNIZCA evaluation-fazı
+  noktalarını içerir — ikisi equity_curve seviyesinde AYIRT EDİLEMEZ.
+- evaluation_start'ın kendisinde hiçbir fabricated EquityPoint yoktur
+  (Bölüm 8.3.10).
+- İlk gerçek evaluation noktası, ilk evaluation candle'ın kendi
+  feature-availability anıdır (evaluation_start + candle_duration,
+  Bölüm 8.3.4).
+```
+
+**Bu nedenle:**
+
+```
+- Stage-2, ikinci bir evaluation-boundary filtresi UYGULAMAZ.
+- Stage-2, bir evaluation_start parametresi GEREKTİRMEZ.
+- Stage-2, BacktestResult veya EquityPoint'e hiçbir uzantı GEREKTİRMEZ.
+- Stage-2, caller-supplied, önceden dilimlenmiş bir seri GEREKTİRMEZ.
+- Non-zero-context Layer-2, Stage-2 için bir prerequisite DEĞİLDİR — o
+  Layer-2 varyantı var olduğunda, ürettiği equity_curve de aynı B2
+  garantisiyle ZATEN evaluation-only olacaktır; Stage-2'nin hiçbir
+  değişikliğe ihtiyacı olmayacaktır.
+```
+
+**Gerekçe (neden ikinci bir filtre yasak):** metrics katmanında bağımsız bir evaluation-boundary filtresi inşa etmek, aynı garantinin İKİ ayrı, potansiyel olarak birbirinden SAPABİLEN sahibini yaratırdı (biri `replay.py`'de B2, diğeri `metrics.py`'de). Bu, compose-not-duplicate prensibinin (Bölüm 4, 21) bir ihlalidir — B2 zaten bu filtrelemeyi `BacktestResult` inşa edilmeden ÖNCE, tek bir yerde yapar; Stage-2 bunu yeniden yapmaz, yalnızca zaten temiz olan `equity_curve`'ü tüketir. Bu bölüm Bölüm 8.3'ün B2 mekanizmasını **değiştirmez veya genişletmez** — yalnızca onun Stage-2 için zaten yeterli olduğunu kaydeder.
+
+### 15.11 Public API (LOCKED — Kavram ve İsimler; Implementasyon Değil)
+
+```
+Modül:  src/crypto_quant_lab/validation/metrics.py  (Stage-1 ile AYNI modül)
+
+def compute_periodic_returns(result: BacktestResult) -> tuple[Decimal, ...]:
+    ...
+
+@dataclass(frozen=True, slots=True)
+class Stage2Metrics:
+    mean_return: Decimal
+    return_stdev: Decimal
+    sharpe_ratio: Decimal
+
+def compute_stage2_metrics(
+    result: BacktestResult,
+    *,
+    risk_free_per_period: Decimal = Decimal("0"),
+) -> Stage2Metrics:
+    ...
+```
+
+```
+- Public import path: crypto_quant_lab.validation.metrics (Stage-1 ile
+  aynı modül, package-root re-export YOK — mevcut zero-re-export
+  convention'ıyla tutarlı).
+- BacktestResult, WindowResult, EquityPoint DEĞİŞMEDEN kalır — hiçbir
+  result modeline metrics field'ı EKLENMEZ.
+- compute_stage2_metrics, kendi periyodik-return tuple'ını İÇSEL
+  olarak, compute_periodic_returns ile AYNI kilitli semantikle
+  hesaplar.
+- Periyodik return'ler Stage2Metrics İÇİNDE saklanmaz — bir caller,
+  compute_periodic_returns'ü bağımsız olarak da çağırabilir.
+- Doğrudan bir BacktestResult üzerinde VE bağımsız bir
+  WindowResult.result üzerinde çalışır — Stage-1 ile birebir aynı
+  desen (Bölüm 15.2).
+- risk_free_per_period ismi KORUNUR, ama kontrat bunun bir "period"ı
+  YALNIZCA ardışık iki eligible equity gözlemi arasındaki ARALIK
+  olarak tanımlar — bu bir yıllık (annual) oran DEĞİLDİR.
+```
+
+Bu mikro-adım yalnızca API'yi kilitler — `metrics.py`'ye hiçbir yeni sembol bu mikro-adımda EKLENMEZ.
+
+### 15.12 `Stage2Metrics` Değer Invariant'ları (LOCKED)
+
+```
+- mean_return, return_stdev, sharpe_ratio — ÜÇÜ DE Decimal olmalıdır;
+  değilse TypeError.
+- ÜÇÜ DE finite olmalıdır; değilse ValueError.
+- return_stdev >= Decimal("0") olmalıdır (bir value-object
+  invariant'ı olarak); negatifse ValueError.
+- Ekstra field YOK.
+- Cross-window aggregation, candidate/trial aggregation, veya
+  annualization factor field'ı YOK.
+- Custom equality/hashing/ordering YOK — frozen dataclass
+  default'ları (value equality, hashability) yeterlidir.
+```
+
+Nesne frozen, slotted, ve normal frozen-dataclass davranışıyla hashable'dır — `Stage1Metrics` ile birebir aynı convention (Bölüm 15.3).
+
+### 15.13 `compute_periodic_returns` Kontratı — Formül ve Gözlem Sayısı (LOCKED)
+
+```
+- Dönüş tipi: immutable tuple[Decimal, ...].
+- Return'ler YALNIZCA result.equity_curve'den türetilir.
+- Cash, fills, PnL, fees, cost, funding, veya unrealized
+  mark-to-market BAĞIMSIZ OLARAK YENİDEN HESAPLANMAZ (equity_curve'de
+  zaten yansır, Bölüm 15.5'in aynı prensibi).
+- result.initial_cash, ilk eligible equity noktasından HEMEN ÖNCEKİ
+  implicit gözlemdir (Bölüm 15.6'nın peak-seed prensibiyle aynı
+  desen).
+- N equity noktası için TAM OLARAK N return gözlemi üretilir — N-1
+  DEĞİL.
+- Tek noktalı bir curve TAM OLARAK bir return üretir.
+```
+
+**Exact formül ve operation sırası:**
+
+```python
+first_return = result.equity_curve[0].equity / result.initial_cash - Decimal("1")
+
+# i >= 1 için:
+periodic_return_i = result.equity_curve[i].equity / result.equity_curve[i - 1].equity - Decimal("1")
+```
+
+```
+- Operation sırası: ÖNCE bölme, SONRA çıkarma — Stage-1'in
+  total-return sırasıyla birebir aynı (Bölüm 15.5). Cebirsel bir
+  rewrite'a SESSİZCE geçilmez.
+- Yalnızca simple return — log return KULLANILMAZ (aşağıdaki
+  gerekçe).
+- Float'a hiçbir dönüşüm YAPILMAZ.
+- Hesaplama sonrası quantization YOK.
+- Hiçbir return cap'lenmez veya clip edilmez.
+- Güncel equity sıfır legal'dir ve Decimal("-1") üretebilir.
+- Güncel equity negatif legal'dir ve Decimal("-1")'den küçük bir
+  return üretebilir.
+- Bir sonraki return'ün paydası olacak equity <= 0 ise, bu
+  INVALID'dir ve o bölme işleminden ÖNCE deterministik olarak fail
+  eder (Bölüm 15.15).
+- Non-pozitif bir paydadan SONRA seri sessizce KISALTILMAZ —
+  hesaplama o noktada AÇIKÇA fail eder.
+- Hiçbir equity değeri repair/replace/filter/normalize EDİLMEZ.
+```
+
+**Log return neden kullanılmaz (gerekçe):** Bölüm 15.6 zaten equity'nin pozitif bir peak'ten sonra negatife dönebileceğini ve bunun **legal** olduğunu kilitler. `ln(x)`, `x <= 0` için tanımsızdır — log return, Stage-1'in zaten kilitlediği tam olarak bu path'lerde sessizce kırılırdı. Simple return bu çakışmayı yaşamaz; yalnızca payda (önceki equity) için açık bir pozitiflik kontrolüne ihtiyaç duyar (Bölüm 15.15).
+
+**Stage-1 ile kasıtlı asimetri (LOCKED, çelişki DEĞİL):**
+
+```
+- Stage-1'in total_return ve max_drawdown'u, equity sıfıra
+  ulaştığında veya sıfırın altına geçtiğinde HÂLÂ hesaplanabilir
+  kalır (Bölüm 15.5, 15.6).
+- Sonraki bir periyodik return, non-pozitif bir ÖNCEKİ equity'yi
+  ekonomik olarak anlamlı bir payda olarak KULLANAMAZ.
+- Bu nedenle Stage-2, Stage-1'in HÂLÂ değerlendirebildiği bir sonucu
+  deterministik olarak REDDEDEBİLİR.
+- Bu KASITLIDIR ve bir çelişki DEĞİLDİR — iki aşama farklı sorular
+  sorar: Stage-1 "başlangıçtan sona ne oldu," Stage-2 "her ardışık
+  aralıkta ne oldu" (ve bir aralığın kendisi sıfır/negatif bir
+  başlangıç noktasından tanımlı bir şekilde ölçülemez).
+```
+
+### 15.14 Timestamp / Cadence Semantics (LOCKED — Per-Observation, Annualized DEĞİL)
+
+```
+- equity_curve timestamp'leri strictly ascending olmalıdır; duplicate
+  veya descending timestamp → ValueError (Stage-1'in Bölüm 15.4 madde
+  8'i ile aynı kural, reuse edilir).
+- Stage-2, timeframe veya annualization'ı timestamp delta'larından
+  INFER ETMEZ (Bölüm 8.3.13'ün auto-inference-yok prensibiyle
+  tutarlı).
+- Stage-2, value-object sınırında eşit timestamp spacing GEREKTİRMEZ
+  — BacktestResult/EquityPoint hiçbir timeframe/cadence field'ı
+  taşımaz (kod incelemesiyle doğrulanmıştır: models.py, results.py'de
+  `timeframe` YOK).
+- Her ardışık eligible equity-gözlem çifti TAM OLARAK bir return
+  gözlemi tanımlar.
+- Sonuç olarak kilitli Sharpe, bir PER-OBSERVATION, NON-ANNUALIZED
+  rasyodur — "per-period" ifadesi burada annualized veya wall-clock-
+  uniform olarak YANLIŞ OKUNMAMALIDIR; netlik gerektiğinde
+  "per-observation" tercih edilir.
+- Doğrudan inşa edilmiş, düzensiz (irregular) timestamp'lere sahip
+  bir BacktestResult, strictly ascending olduğu sürece hâlâ
+  legal'dir — ama onun per-observation Sharpe'ının standart bir
+  wall-clock periyodu temsil ettiği İDDİA EDİLMEZ.
+- Canonical backtest path'leri (her evaluation candle işaretlenir)
+  düzenli spacing üretebilir, ama bu bir result-model invariant'ı
+  olarak TASARLANMAZ/ENFORCE EDİLMEZ.
+- Hiçbir calendar, trading-day, candle-count, veya periods_per_year
+  değeri otomatik olarak INFER EDİLMEZ.
+```
+
+### 15.15 Input Validation ve Fail-Fast Sırası (LOCKED)
+
+`compute_periodic_returns`, deterministik validation'ı tam olarak bu sırada çalıştırır — yalnızca TÜMÜ geçtikten SONRA arithmetic başlar:
+
+```
+1. result bir BacktestResult olmalıdır; değilse TypeError.
+2. result.initial_cash finite olmalıdır; değilse ValueError.
+3. result.initial_cash > Decimal("0") olmalıdır; değilse ValueError.
+4. result.final_equity finite olmalıdır; değilse ValueError.
+5. result.equity_curve boş OLMAMALIDIR; boşsa ValueError.
+6. Her curve elemanı bir EquityPoint olmalıdır; geçersiz eleman,
+   index'i içeren bir TypeError fırlatır.
+7. Her equity_curve[i].equity finite olmalıdır; geçersiz değer,
+   index'i içeren bir ValueError fırlatır.
+8. Timestamp'ler strictly ascending olmalıdır; değilse ValueError.
+9. equity_curve[-1].equity == result.final_equity olmalıdır; değilse
+   ValueError.
+10. Bir SONRAKİ return'ün paydası olacak her equity değeri
+    Decimal("0")'dan KESİNLİKLE BÜYÜK olmalıdır; değilse, o index'i
+    ve payda rolünü içeren bir ValueError.
+11. Yalnızca TÜM validasyonlar geçtikten SONRA return arithmetic'i
+    çalışır.
+```
+
+**Payda sahipliği (netleştirme):**
+
+```
+- Return index 0, initial_cash'i payda olarak kullanır — bu zaten
+  adım 2-3'te validate edilmiştir.
+- Return index i >= 1, equity_curve[i-1].equity'yi payda olarak
+  kullanır.
+- Terminal equity (equity_curve[-1]), başka bir return'ün paydası
+  OLARAK KULLANILMAYACAKSA pozitif olmak ZORUNDA DEĞİLDİR — yalnızca
+  bir ÖNCEKİ return'ün paydası olan her equity pozitif olmalıdır
+  (yani equity_curve[0..N-2] pozitif olmalıdır; equity_curve[N-1]
+  yalnızca finite olmak zorundadır, adım 7'de zaten kontrol edilir).
+- Fail mesajı, ilgili curve index'ini ve onun payda rolünü tanımlar
+  (mevcut proje TypeError/ValueError + index-in-message convention'ı,
+  Bölüm 15.4 ile aynı stil).
+```
+
+`compute_stage2_metrics`, yukarıdaki TAM validation zincirini gevşetmeden şu EK sırayı uygular:
+
+```
+1. Yukarıdaki result/curve/payda validation zinciri TAMAMEN uygulanır.
+2. risk_free_per_period bir Decimal olmalıdır; değilse TypeError.
+3. risk_free_per_period finite olmalıdır; değilse ValueError.
+4. En az İKİ periyodik return gereklidir (len(returns) >= 2); değilse
+   ValueError.
+5. Yalnızca BUNDAN SONRA mean/variance/stdev/Sharpe arithmetic'i
+   çalışır.
+6. Her hesaplanmış çıktı (mean_return, return_stdev, sharpe_ratio)
+   finite OLMALIDIR; değilse ValueError.
+7. return_stdev, Sharpe bölmesinden ÖNCE Decimal("0")'dan KESİNLİKLE
+   BÜYÜK olmalıdır; değilse deterministik ValueError.
+8. Stage2Metrics döndürülür.
+```
+
+Geçersiz bir `risk_free_per_period`, yetersiz sample, veya sıfır volatilite hiçbir zaman NaN/Infinity ile "başarılı" bir sonuca DÖNÜŞMEZ — yukarıdaki her adım, arithmetic'ten ÖNCE veya arithmetic'in hemen ardından açık bir exception fırlatır.
+
+### 15.16 Mean / Sample Standard Deviation / Sharpe Formülleri (LOCKED)
+
+Tüm işlemler Bölüm 15.17'nin kilitli private Decimal context'i İÇİNDE çalışır.
+
+`returns = compute_periodic_returns(result)`, `n = len(returns)`, `n >= 2` (Bölüm 15.15 madde 4) için:
+
+**Arithmetic mean:**
+
+```python
+return_sum = sum(returns, Decimal("0"))
+mean_return = return_sum / Decimal(n)
+```
+
+**Sample variance ve standard deviation:**
+
+```python
+squared_deviation_sum = Decimal("0")
+
+for periodic_return in returns:
+    deviation = periodic_return - mean_return
+    squared_deviation_sum += deviation * deviation
+
+sample_variance = squared_deviation_sum / Decimal(n - 1)
+return_stdev = sample_variance.sqrt()
+```
+
+**Non-annualized, per-observation Sharpe:**
+
+```python
+sharpe_ratio = (mean_return - risk_free_per_period) / return_stdev
+```
+
+```
+- Yalnızca arithmetic mean — başka bir mean konvansiyonu KULLANILMAZ.
+- Yalnızca sample standard deviation (n-1 payda) — population
+  variance (n payda) KULLANILMAZ.
+- Log-return istatistikleri KULLANILMAZ (Bölüm 15.13).
+- Bessel correction başka hiçbir yerde UYGULANMAZ.
+- Ara işlemler arasında rounding YAPILMAZ.
+- Final çıktılar quantize EDİLMEZ.
+- Float'a hiçbir dönüşüm YAPILMAZ.
+- NumPy, pandas, statistics modülü (float-conversion ile), veya
+  başka bir external numerical library KULLANILMAZ (Bölüm 27).
+- Hiçbir çıktı cap'lenmez.
+- risk_free_per_period, exact Decimal("0")'a default olur.
+- Sıfır standard deviation, Sharpe'ı TANIMSIZ kılar ve deterministik
+  ValueError fırlatmalıdır (Bölüm 15.15 madde 7) — sıfır, None, NaN,
+  veya Infinity DÖNDÜRÜLMEZ.
+- Döndürülen Sharpe rasyosu boyutsuz (dimensionless) ve
+  NON-ANNUALIZED'dır.
+```
+
+Exact operation sırası (yukarıdaki kod blokları) SABİT kalır — sonraki implementasyon testleri, yasak bir cebirsel rewrite'ı (örn. matematiksel olarak eşdeğer ama farklı finite-precision davranışı olan varyantları) bu exact sıradan davranışsal olarak ayırt edebilmelidir.
+
+### 15.17 Decimal-Context Determinism (LOCKED)
+
+Stage-2, Stage-1 için zaten kilitli olan AYNI explicit context shape'i kullanır (Bölüm 15.7):
+
+```
+Context(
+    prec=28,
+    rounding=ROUND_HALF_EVEN,
+    Emin=-999999,
+    Emax=999999,
+    capitals=1,
+    clamp=0,
+    traps=[],
+)
+```
+
+```
+- Her hesaplama için taze (fresh) bir private context — paylaşılan
+  bir modül-seviyeli sabit DEĞİL (Bölüm 15.7'nin aynı gerekçesi).
+- localcontext(...) izolasyonu.
+- Caller'ın ambient precision/rounding'i çıktıyı ETKİLEMEZ.
+- Toplama, çıkarma, çarpma, bölme, VE sqrt DAHİL tüm Stage-2
+  arithmetic'i bu private context İÇİNDE çalışır.
+- Hiçbir mutable context caller'a expose EDİLMEZ.
+- Hesaplanmış non-finite return, mean, variance, standard deviation,
+  veya Sharpe, deterministik olarak fail eder (Bölüm 15.15 madde 6).
+- İstisnai bir Decimal davranışı üzerinden hesaplanmış negatif bir
+  variance, hiçbir zaman başarılı bir sonuç ÜRETMEZ — non-finite
+  post-check bunu da yakalar (variance matematiksel olarak asla
+  negatif olamaz, kareler toplamıdır; bu yalnızca bir savunma
+  katmanıdır).
+- İmplementasyon başladığında, paylaşılan bir private context
+  factory (Stage-1'in _stage1_decimal_context()'i ile AYNI shape,
+  aynı modül içinde) TERCİH EDİLİR — context helper'ı public olarak
+  expose EDİLMEZ.
+- Bu bölüm, zaten test edilmiş Stage-1 semantics'ini DEĞİŞTİRMEZ.
+```
+
+Empirik doğrulama (bu mikro-adımın preflight'inde, aynı context shape altında): `Decimal.sqrt()` bu context altında çalışır (`sqrt(4)=2`, `sqrt(2)` 28-basamak sonuç üretir); `traps=[]` altında sıfıra bölme `Infinity`/`NaN` üretir (raise ETMEZ), her ikisi de `.is_finite()` ile `False` döner — Stage-1'in "fault → non-finite → post-check ValueError" deseniyle birebir tutarlıdır.
+
+### 15.18 Purity ve Compatibility (LOCKED)
+
+`compute_periodic_returns` ve `compute_stage2_metrics`:
+
+```
+- Aynı geçerli input için deterministiktir.
+- Input'u mutate ETMEZ.
+- Wallclock time KULLANMAZ.
+- Randomness KULLANMAZ.
+- I/O yapmaz.
+- Hiçbir store'a query atmaz.
+- Replay'i çağırmaz.
+- Pencereleri aggregate etmez.
+- BacktestResult veya WindowResult'ı DEĞİŞTİRMEZ.
+- Rolling orchestration'a bir bağımlılık EKLEMEZ.
+- Non-zero-context Layer-2 implement edilmeden ÖNCE çalışabilir
+  (Bölüm 15.10 — aynı gerekçenin Stage-1'in Bölüm 15.8'de zaten
+  kilitli ilkesinin Stage-2'ye evidence-backed uzantısı).
+- Yalnızca standard-library Python ve Decimal kullanır.
+- Doğrudan bir BacktestResult kullanımı VE bağımsız bir
+  WindowResult.result kullanımı, hiçbir aggregation olmadan
+  desteklenir (Stage-1 ile aynı desen, Bölüm 15.8).
+- Cross-window veya candidate/trial aggregation İÇERMEZ.
+- Model/replay/store/rolling modüllerine hiçbir yeni coupling
+  YARATMAZ.
+```
+
+**Implementasyon Durumu — HENÜZ BAŞLAMADI:** Bu bölüm yalnızca KONTRATI kilitler. `src/crypto_quant_lab/validation/metrics.py`'ye bu mikro-adımda hiçbir kod EKLENMEMİŞTİR; `compute_periodic_returns`, `Stage2Metrics`, `compute_stage2_metrics` sembolleri HENÜZ MEVCUT DEĞİLDİR; hiçbir Stage-2 regression testi YAZILMAMIŞTIR. §28.E (bkz. Bölüm 28) bu kontratın implementasyon/test acceptance checklist'ini 0/29 olarak kaydeder.
+
+## 16. Return Series Semantics — Bölüm 15.9–15.18'de LOCKED (Annualization Hariç)
+
+Sharpe-ailesi metrikler bir return series gerektirir. `EquityPoint`, her candle availability'sinde bir örnek sağlar. MS1 zamanında bu bölümde açık bırakılan beş soru:
 
 ```
 - simple vs. log return
@@ -1094,7 +1499,21 @@ Sharpe-ailesi metrikler bir return series gerektirir. `EquityPoint`, her candle 
 - sıfır/negatif equity handling
 ```
 
-Bu sorular, Sharpe implementasyonundan **önce** dedicated bir metrics-contract mikro-adımında çözülür (Bölüm 22, Faz 6B).
+**Durum güncellemesi (FAZ6B — Return-Series + Per-Observation Sharpe Semantics Spec-Lock):** dördü artık Bölüm 15.9–15.18'de LOCKED'dır:
+
+```
+- simple vs. log return           -> simple return LOCKED (Bölüm 15.13)
+- periyodiklik                    -> candle-by-candle, per-observation,
+                                      resample YOK, annualize edilmez
+                                      (Bölüm 15.14)
+- risk-free rate varsayımı        -> explicit risk_free_per_period,
+                                      default Decimal("0") (Bölüm 15.11,
+                                      15.16)
+- sıfır/negatif equity handling   -> mevcut equity legal, ama non-pozitif
+                                      PAYDA fail-fast (Bölüm 15.13, 15.15)
+```
+
+**Yalnızca bir soru açık kalır:** `1h/4h için annualization faktörü` — bu, ayrı bir gelecekteki calendar/annualization kontratına ertelenmiştir (Bölüm 15.9). Bu doküman şu an için hiçbir `periods_per_year` değeri, calendar konvansiyonu, veya annualized Sharpe/Sortino/Calmar/CAGR formülü kilitlemez.
 
 ## 17. İleri Seviye Validation Tekniklerinin Bağımlılık Haritası (LOCKED — Hiçbiri Sessizce Taşınmaz)
 
@@ -1112,7 +1531,7 @@ Prerequisites: fold model + observation/outcome-horizon contract (17.1) + purge/
 
 ### 17.3 Sharpe-Ailesi Metrikler — Aşama 2 (Bölüm 15/16)
 
-Prerequisites: return-series contract (Bölüm 16) çözülmeli. Basit total-return/max-drawdown'dan **sonra**, ama foundation'ın (Bölüm 13) parçası değil.
+**Non-annualized, per-observation Sharpe'ın kontratı artık LOCKED'dır** (Bölüm 15.9–15.18) — return-series prerequisite'i (Bölüm 16) bu kilitle karşılanmıştır. **Production implementasyonu ve regression suite'i HENÜZ PENDING'dir** (bkz. Bölüm 23, 28.E — 0/29); bu satır hiçbir implementasyon iddiası taşımaz. Annualized Sharpe **bu kilidin dışındadır** — ayrı, henüz LOCKED edilmemiş bir calendar/annualization kontratına ihtiyaç duyar (Bölüm 15.9, 16). Sortino, Calmar, CAGR, Deflated Sharpe (17.4), PBO (17.5), multiple-testing corrections (17.6), ve parameter stability (17.7) bu kilitten **etkilenmez** ve **LATER IN FAZ 6** olarak deferred kalır — hiçbiri bu mikro-adımda başlanmış veya tamamlanmış olarak işaretlenmez. Basit total-return/max-drawdown'dan **sonra**, ama foundation'ın (Bölüm 13) parçası değil.
 
 ### 17.4 Deflated Sharpe — LATER IN FAZ 6
 
@@ -1261,21 +1680,30 @@ FAZ 6B — Context-Aware Extensions + Return-Series / Experiment Foundation
         implement edildiğini kaydeder.)
       - Stage-1 metrics (Bölüm 15.1–15.8), FAZ6A'nın zaten tamamlanmış
         bir bağımlılığı olarak FAZ6B'ye açık.
+      - Return-series semantics preflight (read-only, bkz. Bölüm 23) —
+        equity_curve'ün zaten evaluation-only olduğunu runtime kanıtıyla
+        doğruladı.
+      - Return-series + per-observation Sharpe kontratı (Bölüm
+        15.9–15.18) — LOCKED. Yalnızca kontrat; production
+        implementasyonu HENÜZ BAŞLAMADI (bkz. Bölüm 23, 28.E — 0/29).
 
     Kalan zorunlu bileşenler (HENÜZ PENDING):
+      - Stage-2 production implementasyonu (`compute_periodic_returns`,
+        `Stage2Metrics`, `compute_stage2_metrics` — Bölüm 15.9–15.18'de
+        LOCKED kontratın kodu) ve kendi regression suite'i.
       - Non-zero-context/context-aware Layer-2 pencere tasarımı ve
         implementasyonu (ayrı, henüz tanımlanmamış bir per-window
         context-boundary uzantısına ihtiyaç duyar — Bölüm 13).
-      - Return-series semantics (Bölüm 16 — açık sorular çözülmedi).
-      - Sharpe-ailesi foundation (Aşama 2, Bölüm 15/17.3) — exact
-        metrik listesi Bölüm 17.3/16'nın kendisidir, burada yeniden
-        icat edilmez.
+      - Annualized Sharpe/Sortino/Calmar/CAGR ve ilgili
+        calendar/annualization kontratı (ayrı, henüz LOCKED
+        edilmemiş — Bölüm 15.9, 16).
       - Candidate/trial abstraction (Bölüm 18) — experiment-foundation
         prerequisite'i olarak.
 
     Durum: FAZ6B — NOT COMPLETE (bkz. §22.2). Stage-1 metrics'in
-    tamamlanmış olması FAZ6B'yi TEK BAŞINA KAPATMAZ — yukarıdaki dört
-    kalan bileşen hâlâ pending'dir.
+    tamamlanmış olması, VE Stage-2 kontratının LOCKED olması, FAZ6B'yi
+    TEK BAŞINA KAPATMAZ — yukarıdaki dört kalan bileşen hâlâ
+    pending'dir.
 
 FAZ 6C — Advanced Overfitting Controls
     purging/embargo (horizon contract'a bağımlı, Bölüm 17.1), CPCV
@@ -1322,7 +1750,7 @@ FAZ 6D — Faz 6 Final Acceptance
 | Phase | Status | Completed scope | Remaining scope |
 |---|---|---|---|
 | FAZ6A | COMPLETE | temporal window/IS-OOS primitives (§28.A — 22/22), zero-context rolling OOS evaluation (§28.C — 12/12), Stage-1 metrics (§28.D — 18/18) | locked FAZ6A scope içinde yok |
-| FAZ6B | NOT COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6) | non-zero-context Layer-2, return-series/Sharpe (Aşama 2), candidate/trial abstraction |
+| FAZ6B | NOT COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe kontratı (§15.9–15.18, LOCKED, not implemented) | Stage-2 production implementasyonu (§28.E — 0/29), non-zero-context Layer-2, annualized Sharpe/Sortino/Calmar/CAGR kontratı, candidate/trial abstraction |
 | FAZ6C | NOT COMPLETE | yok | purging/embargo, CPCV, Deflated Sharpe, PBO, multiple-testing corrections, parameter stability |
 | FAZ6D | NOT STARTED | yok | Faz 6 final acceptance audit'i |
 
@@ -1474,17 +1902,52 @@ TAMAMLANDI:
   label'ların kullanıldığı kaydedildi. Docs-only; production kod,
   test, veya acceptance sayımı (§28.A/B/C/D) değişmedi.
 
+FAZ6B — RETURN-SERIES + PER-OBSERVATION SHARPE SEMANTICS PREFLIGHT
+(READ-ONLY) — TAMAMLANDI:
+  — `equity_curve`'ün zaten yalnızca evaluation-fazı noktalarını
+  içerdiğini (context candle'ların SIFIR EquityPoint ürettiği,
+  `replay.py`'deki `continue`/`append` sırasıyla runtime'da doğrulanmış)
+  tespit etti; bu nedenle Stage-2'nin ayrı bir evaluation-boundary
+  parametresine veya `BacktestResult` uzantısına ihtiyaç DUYMADIĞI
+  sonucuna vardı. Dönüş formülü, gözlem sayısı (N), payda-sıfır/negatif
+  davranışı, mean/sample-stdev/Sharpe konvansiyonu için evidence-backed
+  öneriler üretti; annualization'ı ayrı, henüz kilitlenmemiş bir konu
+  olarak bıraktı. Docs-only bulgu; hiçbir dosya değiştirilmedi — bu
+  preflight'in kendisi commit edilmedi, bulguları doğrudan aşağıdaki
+  spec-lock'a girdi oldu.
+
+FAZ6B — RETURN-SERIES + PER-OBSERVATION SHARPE SEMANTICS SPEC-LOCK —
+TAMAMLANDI:
+  — Yukarıdaki preflight'in bulgularını Bölüm 15.9–15.18'de LOCKED
+  olarak kaydetti: evaluation-domain inheritance kuralı (ikinci bir
+  filtre YOK, Bölüm 15.10), `compute_periodic_returns`/`Stage2Metrics`/
+  `compute_stage2_metrics` public API'si (Bölüm 15.11–15.12), N equity
+  noktası → N return ve initial_cash-seeded ilk return (Bölüm 15.13),
+  per-observation/non-annualized timestamp semantics (Bölüm 15.14),
+  validation/fail-fast sırası (Bölüm 15.15), arithmetic mean + sample
+  stdev (n-1) + non-annualized Sharpe formülleri (Bölüm 15.16), Stage-1
+  ile paylaşılan private Decimal-context (Bölüm 15.17), ve purity/
+  explicit-deferred-metrics sınırı (Bölüm 15.18). Bölüm 16, 17.3, 22
+  bu kilitle tutarlı hale getirildi; annualized Sharpe/Sortino/Calmar/
+  CAGR açıkça deferred kaldı. Yalnızca `VALIDATION_SPEC.md` değişti;
+  hiçbir production kod, `metrics.py` değişikliği, veya yeni test
+  içermedi — Stage-2 implementasyonu ve regression suite'i HENÜZ
+  BAŞLAMADI. §28.E acceptance grubu 0/29 olarak eklendi.
+
 Sonraki (henüz başlanmadı):
-  Return-series semantics preflight/spec-lock (Bölüm 16) — Sharpe-ailesi
-  implementasyonundan önceki, en yakın çözülmemiş bağımlılık. Non-zero-
-  context Layer-2 varyantı ayrı, paralel-eligible bir FAZ6B dalıdır —
-  return-series/Sharpe için bir prerequisite DEĞİLDİR (Bölüm 15.8'in
-  "Non-zero-context Layer-2 implement edilmeden ÖNCE çalışabilir"
-  ilkesiyle aynı gerekçe). Aşama 3 (Deflated Sharpe, PBO, multiple-testing,
-  parameter stability, Bölüm 17) ve candidate/trial abstraction (Bölüm 18),
-  Sharpe-ailesi (Aşama 2) tamamlanmadan başlatılmaz. Bu mikro-adımlardan
-  önce context-aware bir çok-pencereli runner veya Aşama 2/3 metrics'e
-  commit edilmez.
+  FAZ6B — Stage-2 return-series + per-observation Sharpe implementation
+  (Bölüm 15.9–15.18'de LOCKED kontratın kodu, `src/crypto_quant_lab/
+  validation/metrics.py`'ye eklenir; kendi regression suite'i, 28.E'nin
+  0/29'unu implementasyon/test exercised'a taşır). Non-zero-context
+  Layer-2 varyantı ayrı, paralel-eligible bir FAZ6B dalıdır — return-
+  series/Sharpe implementasyonu için bir prerequisite DEĞİLDİR (Bölüm
+  15.18'in "Non-zero-context Layer-2 implement edilmeden ÖNCE
+  çalışabilir" ilkesi). Annualized Sharpe/Sortino/Calmar/CAGR, ayrı bir
+  gelecekteki calendar/annualization kontratına ihtiyaç duyar — bu
+  implementasyonla birlikte BAŞLATILMAZ. Aşama 3 (Deflated Sharpe, PBO,
+  multiple-testing, parameter stability, Bölüm 17) ve candidate/trial
+  abstraction (Bölüm 18), Sharpe-ailesi implementasyonu tamamlanmadan
+  başlatılmaz.
 ```
 
 **MS3 scope (TAMAMLANDI — pre-flight'in kendisi, Bölüm 8.3'te kilitlendi):**
@@ -1567,9 +2030,9 @@ Aynı girdiler → aynı pencere sonuçları — mevcut `run_backtest_from_store
 - external LLM decision-making
 ```
 
-## 28. Acceptance Criteria — Dört Ayrı Grup (LOCKED)
+## 28. Acceptance Criteria — Beş Ayrı Grup (LOCKED)
 
-Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — Layer-2'nin kendi gelecekteki policy-freshness implementasyon acceptance checklist'i, henüz runtime/test exercised OLMAYAN ayrı bir liste olarak 28.C'de kaydedilir. Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D altındaki sayılar).
+Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — Layer-2'nin kendi gelecekteki policy-freshness implementasyon acceptance checklist'i, henüz runtime/test exercised OLMAYAN ayrı bir liste olarak 28.C'de kaydedilir. Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) kontrat acceptance checklist'i, henüz implementation/test exercised OLMAYAN ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 0/29) — 28.E'nin kilitlenmiş olması, Stage-2'nin implement edildiği anlamına **gelmez.** Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E altındaki sayılar). §28.A/B/C/D/E'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
 
 ### 28.A — LOCKED FOUNDATION ACCEPTANCE (Runner-Bağımsız)
 
@@ -1671,6 +2134,42 @@ Bu liste, Bölüm 15.1–15.8'de LOCKED olan Stage-1 metrics (total return + max
 18. Mevcut result modelleri, replay/store/rolling API'leri, ve ileri-seviye metrics kontratları DEĞİŞMEDEN/coupled-olmadan kalır. **PASS** — static kanıt: `git diff 76002ab..a265e44 -- src/crypto_quant_lab/backtest/ src/crypto_quant_lab/validation/rolling.py src/crypto_quant_lab/validation/windows.py` boştur; regression kanıtı: ilgili 105 test + tam suite 1468 DEĞİŞMEDEN yeşil; ayrıca `test_backtest_result_has_no_metrics_fields`, `_window_result_has_no_metrics_fields`, `_metrics_module_does_not_import_rolling`.
 
 **Stage-1 metrics foundation acceptance count: 18 / 18 implementation/test exercised.** Bu sayım, 28.A'nın (22), 28.B'nin (15/15), veya 28.C'nin (12/12) hiçbirine dahil değildir — ayrı bir sayımdır. **Bu, Aşama 2 (return-series/Sharpe), Aşama 3 (Deflated Sharpe/PBO/multiple-testing/parameter stability), context-aware Layer-2, veya Faz 6B/6C'nin tamamının tamamlandığı anlamına GELMEZ** — yalnızca Stage-1 (total return + max drawdown) foundation'ının kendi acceptance contract'ının karşılandığı anlamına gelir.
+
+### 28.E — STAGE-2 RETURN-SERIES + PER-OBSERVATION SHARPE ACCEPTANCE (0/29 IMPLEMENTATION/TEST EXERCISED)
+
+Bu liste, Bölüm 15.9–15.18'de LOCKED olan Stage-2 (return-series + per-observation Sharpe) exact kontratının gelecekteki implementasyon/test acceptance checklist'ini kaydeder. **Bu 29 kriterin HİÇBİRİ henüz implementation/test exercised DEĞİLDİR** — bu mikro-adım docs-only'dir; `src/crypto_quant_lab/validation/metrics.py`'ye hiçbir Stage-2 kodu eklenmemiştir, `tests/test_validation_metrics.py`'ye hiçbir Stage-2 testi eklenmemiştir. Aşağıdaki her madde, gelecekteki implementasyon mikro-adımının kendi regression suite'i tarafından kanıtlanacak bir gelecekteki gereksinimdir — burada **PASS** işaretlenmez.
+
+1. `compute_periodic_returns`, `Stage2Metrics`, `compute_stage2_metrics`, kilitli modül yolunda (`src/crypto_quant_lab/validation/metrics.py`, Stage-1 ile aynı modül) mevcut OLACAKTIR (Bölüm 15.11).
+2. `Stage2Metrics` frozen/slotted OLACAKTIR (Bölüm 15.12).
+3. `mean_return`, `return_stdev`, `sharpe_ratio` — üçü de Decimal ve finite OLMALIDIR; değilse TypeError/ValueError (Bölüm 15.12).
+4. `return_stdev >= Decimal("0")` bir value-object invariant'ı olarak enforce EDİLECEKTİR; negatifse ValueError (Bölüm 15.12).
+5. Yanlış `result` tipi deterministik olarak TypeError ile fail EDECEKTİR (Bölüm 15.15 madde 1).
+6. Non-finite veya non-positive `initial_cash`, hesaplamadan ÖNCE ValueError ile fail EDECEKTİR (Bölüm 15.15 madde 2-3).
+7. `equity_curve` boş OLMAMALI, her eleman bir `EquityPoint` OLMALI, her equity finite OLMALIDIR; değilse index-specific TypeError/ValueError (Bölüm 15.15 madde 5-7).
+8. Timestamp'ler strictly ascending OLMALIDIR; değilse ValueError (Bölüm 15.14, 15.15 madde 8).
+9. Terminal curve equity, `result.final_equity`'e eşit OLMALIDIR; değilse ValueError (Bölüm 15.15 madde 9).
+10. `equity_curve`, hem zero-context hem context-aware Layer-1 sonuçları için evaluation-only OLACAKTIR — context candle'lar HİÇBİR return gözlemine katkıda BULUNMAYACAKTIR (Bölüm 15.10).
+11. Stage-2, ikinci/bağımsız bir evaluation-boundary filtresi UYGULAMAYACAKTIR (Bölüm 15.10).
+12. Stage-2, bir `evaluation_start` metrics parametresi veya `BacktestResult`/`EquityPoint` uzantısı GEREKTİRMEYECEKTİR (Bölüm 15.10, 15.11).
+13. N equity noktası TAM OLARAK N return gözlemi ÜRETECEKTİR — N-1 DEĞİL (Bölüm 15.13).
+14. İlk return, `equity_curve[0].equity / initial_cash - Decimal("1")` ile, `initial_cash`'i implicit baseline olarak KULLANACAKTIR (Bölüm 15.13).
+15. Return formülü, exact `division-then-subtraction` operation sırasını KULLANACAKTIR; cebirsel bir rewrite'a sessizce GEÇİLMEYECEKTİR (Bölüm 15.13, 15.16).
+16. Float dönüşümü, log-return, quantization, cap/clip, veya sessiz repair/replace/filter/normalize İÇERMEYECEKTİR (Bölüm 15.13).
+17. Güncel equity sıfır veya negatif LEGAL kalacak ve `Decimal("-1")` veya daha küçük bir return ÜRETEBİLECEKTİR (Bölüm 15.13).
+18. Bir sonraki return'ün paydası olacak equity <= 0 ise, bu, o bölme işleminden ÖNCE index-specific ValueError ile deterministik olarak fail EDECEKTİR; seri sessizce KISALTILMAYACAKTIR (Bölüm 15.13, 15.15 madde 10).
+19. Cash, fills, PnL, fees, cost, funding, ve unrealized mark-to-market etkileri, bağımsız olarak yeniden hesaplanmadan `equity_curve`'den zaten yansıyan haliyle KULLANILACAKTIR (Bölüm 15.13).
+20. `compute_stage2_metrics`, sample-istatistikler için en az İKİ periyodik return (`len(returns) >= 2`) GEREKTİRECEKTİR; değilse ValueError (Bölüm 15.15 madde 4).
+21. `mean_return`, yalnızca arithmetic mean formülüyle (`sum(returns, Decimal("0")) / Decimal(n)`) HESAPLANACAKTIR — başka bir mean konvansiyonu KULLANILMAYACAKTIR (Bölüm 15.16).
+22. `return_stdev`, yalnızca sample standard deviation (`n - 1` payda) formülüyle HESAPLANACAKTIR — population variance KULLANILMAYACAKTIR (Bölüm 15.16).
+23. Sıfır standard deviation, Sharpe'ı TANIMSIZ kılacak ve deterministik ValueError fırlatacaktır — sıfır, None, NaN, veya Infinity DÖNDÜRÜLMEYECEKTİR (Bölüm 15.15 madde 7, 15.16).
+24. `risk_free_per_period`, explicit, finite bir Decimal parametre OLACAKTIR (default `Decimal("0")`); Decimal olmayan veya non-finite bir değer TypeError/ValueError ile fail EDECEKTİR (Bölüm 15.11, 15.15 madde 2-3).
+25. `sharpe_ratio`, `(mean_return - risk_free_per_period) / return_stdev` formülüyle, NON-ANNUALIZED ve boyutsuz bir per-observation rasyo olarak HESAPLANACAKTIR — annualization YAPILMAYACAKTIR (Bölüm 15.14, 15.16).
+26. Tüm Stage-2 arithmetic'i (toplama, çıkarma, çarpma, bölme, sqrt DAHİL), Stage-1 ile AYNI private Decimal context'i (`prec=28, ROUND_HALF_EVEN, Emin=-999999, Emax=999999, capitals=1, clamp=0, traps=[]`) içinde çalışacaktır; caller'ın ambient precision/rounding'i çıktıyı ETKİLEMEYECEKTİR (Bölüm 15.17).
+27. Hesaplanmış non-finite `mean_return`, `return_stdev`, veya `sharpe_ratio`, deterministik olarak ValueError ile REDDEDİLECEKTİR (Bölüm 15.15 madde 6, 15.17).
+28. Hesaplama pure, deterministik, input-mutate-etmeyen OLACAK; doğrudan bir `BacktestResult` kullanımı VE bağımsız bir `WindowResult.result` kullanımı, hiçbir aggregation olmadan DESTEKLENECEKTİR (Bölüm 15.18).
+29. Cross-window aggregation, candidate/trial aggregation, model/replay/store/rolling modüllerine yeni coupling, VE annualized Sharpe/Sortino/Calmar/CAGR/diğer sonraki-aşama metrikleri İÇERMEYECEK/İMA ETMEYECEKTİR (Bölüm 15.9, 15.18).
+
+**Stage-2 return-series + per-observation Sharpe acceptance count: 0 / 29 implementation/test exercised.** Bu sayım, 28.A'nın (22), 28.B'nin (15/15), 28.C'nin (12/12), veya 28.D'nin (18/18) hiçbirine dahil değildir/katlanmaz — ayrı bir sayımdır. **Bu kontratın LOCKED olması, Stage-2'nin implement edildiği, test edildiği, annualized metriklerin kilitlendiği, non-zero-context Layer-2'nin tamamlandığı, candidate/trial abstraction'ın var olduğu, veya FAZ6B/FAZ6C/Faz 6'nın tamamının tamamlandığı anlamına GELMEZ** — yalnızca Stage-2'nin exact kontratının dokümante edildiği anlamına gelir.
 
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
