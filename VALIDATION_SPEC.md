@@ -186,7 +186,7 @@ olmalıdır — mevcut `prepare_backtest_dataset`'in candle path'i için zaten g
 
 ### 8.3 LOCKED Mechanism — B2 (FAZ6A MS3 Pre-flight + MS4 Spec-Lock)
 
-**Durum: LOCKED (mimari/tasarım) VE Layer-1 için IMPLEMENTED + TESTED.** Bu bölüm, Bölüm 8/8.1'in açık bıraktığı kararı kilitler VE bu kararın Layer-1 (tek-pencere context-aware canonical replay + store-backed composition) implementasyonunun exact şeklini kaydeder — `run_backtest_replay`/`run_backtest_from_store` artık `evaluation_start: datetime | None = None` üzerinden bu bölümdeki ayrımı bilir, kendi regression suite'i ile test edilmiştir (Bölüm 8.3.11, 23; Bölüm 9 artık tarihsel/RESOLVED). Layer-2 (çok-pencereli orchestrator), zero-context için artık **IMPLEMENTED + TESTED**'dır (`run_rolling_backtest_from_store`, bkz. Bölüm 8.3.6, 13, 23, 28.C — 12/12); context-aware (non-zero-context) bir Layer-2 varyantı **HENÜZ implement edilmemiştir**.
+**Durum: LOCKED (mimari/tasarım) VE Layer-1 için IMPLEMENTED + TESTED.** Bu bölüm, Bölüm 8/8.1'in açık bıraktığı kararı kilitler VE bu kararın Layer-1 (tek-pencere context-aware canonical replay + store-backed composition) implementasyonunun exact şeklini kaydeder — `run_backtest_replay`/`run_backtest_from_store` artık `evaluation_start: datetime | None = None` üzerinden bu bölümdeki ayrımı bilir, kendi regression suite'i ile test edilmiştir (Bölüm 8.3.11, 23; Bölüm 9 artık tarihsel/RESOLVED). Layer-2 (çok-pencereli orchestrator), zero-context için artık **IMPLEMENTED + TESTED**'dır (`run_rolling_backtest_from_store`, bkz. Bölüm 8.3.6, 13, 23, 28.C — 12/12); context-aware (non-zero-context) bir Layer-2 varyantının exact kontratı artık Bölüm 8.3.16'da **LOCKED**'dır (`ContextAwareWindow`, `run_context_aware_rolling_backtest_from_store`) — implementasyonu **HENÜZ başlamamıştır** (bkz. Bölüm 23, 28.F — 0/22).
 
 **8.3.1 Context / Evaluation Aralıkları**
 
@@ -322,7 +322,7 @@ Layer 2 — Bağımsız pencereler üzerinde çalışan çok-pencereli
     kullanımı GÜVENSİZDİR.
 ```
 
-**Durum: LOCKED (mimari/tasarım) VE zero-context Layer-2 orchestrator için IMPLEMENTED + TESTED.** Bu bölüm, yukarıdaki (B)'nin exact mekanizmasını kilitler VE bu kararın **zero-context Layer-2** (bkz. Bölüm 13) implementasyonunun exact şeklini kaydeder — `src/crypto_quant_lab/validation/rolling.py`'deki `run_rolling_backtest_from_store`, `policy_factory: Callable[[], BacktestPolicy]` üzerinden bu bölümdeki mekanizmayı bilir, kendi regression suite'i ile test edilmiştir (FAZ6B MS2 implementasyonu `c363267`, test-hardening `c4af87c`; bkz. Bölüm 23, 28.C). **Non-zero-context (context-aware) bir Layer-2 varyantı bu implementasyonun kapsamında DEĞİLDİR** — ayrı bir spec-lock + implementasyon mikro-adımı gerektirir (bkz. bu bölümün altındaki "Implementasyon Durumu" notu).
+**Durum: LOCKED (mimari/tasarım) VE zero-context Layer-2 orchestrator için IMPLEMENTED + TESTED.** Bu bölüm, yukarıdaki (B)'nin exact mekanizmasını kilitler VE bu kararın **zero-context Layer-2** (bkz. Bölüm 13) implementasyonunun exact şeklini kaydeder — `src/crypto_quant_lab/validation/rolling.py`'deki `run_rolling_backtest_from_store`, `policy_factory: Callable[[], BacktestPolicy]` üzerinden bu bölümdeki mekanizmayı bilir, kendi regression suite'i ile test edilmiştir (FAZ6B MS2 implementasyonu `c363267`, test-hardening `c4af87c`; bkz. Bölüm 23, 28.C). **Non-zero-context (context-aware) bir Layer-2 varyantı bu implementasyonun kapsamında DEĞİLDİR** — freshness mekanizmasının non-zero-context reuse'u artık Bölüm 8.3.16'da LOCKED'dır, ama kendi implementasyonu ayrı bir mikro-adım gerektirir (bkz. bu bölümün altındaki "Implementasyon Durumu" notu, Bölüm 8.3.16, 28.F).
 
 **Karşılaştırılan alternatifler:**
 
@@ -522,7 +522,7 @@ Yukarıdaki her LOCKED invariant, bu implementasyon için kanıtlanmıştır:
   tam regression suite 1386/1386 PASS)
 ```
 
-**Kapsam sınırı (önemli):** bu implementasyon **zero-context**'tir — her pencere `evaluation_start = window.start` ile çalışır, yani context yoktur (bkz. Bölüm 8.3.1, 8.3.11, 13). Bu implementasyonun kanıtladığı şey, **`run_rolling_backtest_from_store` için** mekanik policy-freshness enforcement'ının doğru çalıştığıdır — repository-wide, arbitrary gelecekteki caller'lar veya gelecekteki context-aware Layer-2 varyantları için otomatik/global bir garanti DEĞİLDİR. Context-aware (non-zero-context, `context_start < evaluation_start`) Layer-2 pencereleri **implement edilmemiştir**; yeni bir passive context-window modeli bu mikro-adımda tanıtılmamıştır; böyle bir uzantı ayrı bir spec-lock + implementasyon mikro-adımı gerektirir.
+**Kapsam sınırı (önemli):** bu implementasyon **zero-context**'tir — her pencere `evaluation_start = window.start` ile çalışır, yani context yoktur (bkz. Bölüm 8.3.1, 8.3.11, 13). Bu implementasyonun kanıtladığı şey, **`run_rolling_backtest_from_store` için** mekanik policy-freshness enforcement'ının doğru çalıştığıdır — repository-wide, arbitrary gelecekteki caller'lar veya gelecekteki context-aware Layer-2 varyantları için otomatik/global bir garanti DEĞİLDİR. Context-aware (non-zero-context, `context_start < evaluation_start`) Layer-2 pencereleri **implement edilmemiştir**; bu mikro-adımda yeni bir passive context-window modeli tanıtılmamıştır — böyle bir model (`ContextAwareWindow`) ve onu kullanan orchestrator'ın exact kontratı artık Bölüm 8.3.16'da LOCKED'dır; kendi implementasyonu ayrı bir mikro-adım gerektirir (bkz. 28.F — 0/22).
 
 **8.3.7 Funding Range ve Zamanlama**
 
@@ -631,6 +631,406 @@ Her evaluation çağrısındaki `PolicyContext`, yalnızca o çağrının `as_of
 
 Exact exception mesaj string'leri bu dokümanda kilitlenmez — mevcut proje TypeError (yanlış tip) / ValueError (yanlış değer) konvansiyonu kullanılır. Bu liste artık implement edilmiş/test edilmiş davranışı doğru şekilde tarif eder (bkz. Bölüm 8.3.11, 23).
 
+**8.3.16 Non-Zero-Context Layer-2 — Exact Contract (LOCKED — Implementasyon PENDING)**
+
+**Durum: LOCKED (mimari/tasarım).** Implementasyon, regression suite'i, ve §28.F acceptance HENÜZ BAŞLAMAMIŞTIR (bkz. Bölüm 23, 28.F — 0/22). Bu bölüm, mevcut zero-context Layer-2 (`run_rolling_backtest_from_store`) ve mevcut context-aware Layer-1'in (`evaluation_start`, Bölüm 8.3.1–8.3.15) kaynak kodundan doğrudan doğrulanmış bir source-preflight'e dayanır — eski dokümantasyondan değil.
+
+**Source-preflight bulguları (kaynak koddan doğrulanmıştır):**
+
+```
+- Mevcut execution flow: window generation (TemporalWindow, windows.py)
+  -> rolling Layer-2 orchestration (run_rolling_backtest_from_store,
+  rolling.py) -> per-window policy_factory() çağrısı + object-identity
+  freshness kontrolü -> store-backed Layer-1 execution
+  (run_backtest_from_store, store_runner.py) -> replay/context warm-up
+  (run_backtest_replay, evaluation_start, replay.py) -> evaluation-only
+  ekonomik aktivite -> BacktestResult -> WindowResult -> opsiyonel
+  Stage-1/Stage-2 metrik hesaplama (metrics.py, WindowResult.result
+  üzerinden bağımsız).
+- run_rolling_backtest_from_store (rolling.py): windows: tuple[TemporalWindow, ...]
+  kabul eder; her pencere için requested_start=window.start,
+  requested_end=window.end, evaluation_start=window.start ile ÇAĞRILIR
+  — yani zero-context, `context_start == evaluation_start` özel
+  durumunun (Bölüm 8.3.1) doğrudan bir örneğidir. Duplicate/overlapping
+  pencereler REDDEDİLMEZ/sort edilmez/clip edilmez (kaynak: rolling.py
+  docstring'i ve test_duplicate_equal_windows_are_not_deduplicated,
+  test_overlapping_windows_are_not_sorted_clipped_merged_or_rejected).
+  policy_factory pencere-başına TAM OLARAK bir kez, I/O'dan ÖNCE
+  çağrılır; object-identity (never equality) reuse-detection; strongly
+  retained instance list; fail-fast, rollback yok, partial result yok.
+- run_backtest_from_store (store_runner.py) zaten `evaluation_start:
+  datetime | None = None` additive keyword-only parametresini bilir:
+  requested_start=context_start rolünü oynar, requested_end=
+  evaluation_end rolünü oynar, evaluation_start yeni ekonomik sınırdır.
+  Context candle'lar (open_time < evaluation_start) run_backtest_replay
+  döngüsünde `continue` ile SIFIR EquityPoint/fill/cost/funding/PnL
+  üretir (Bölüm 8.3.2, 15.10 — bağımsız olarak yeniden doğrulanmıştır,
+  replay.py satır ~371-394). Funding sorgusu yalnızca
+  [evaluation_start, evaluation_end) aralığındadır (Bölüm 8.3.7).
+  Stage A (I/O öncesi) + Stage B (candle I/O sonrası, funding I/O
+  öncesi) iki aşamalı evaluation_start validation'ı zaten mevcuttur.
+- Metrics compatibility (metrics.py, Bölüm 15.10): Stage-1/Stage-2
+  yalnızca result.equity_curve + result.initial_cash tüketir; ikisi de
+  hiçbir evaluation_start/context_start parametresi kabul etmez veya
+  ima etmez; equity_curve zaten evaluation-only olduğundan
+  (compute edilmiş her WindowResult.result için) ikinci bir
+  boundary-filtresi GEREKMEZ. Hiçbir metrics API/model değişikliği bu
+  kontrat için GEREKLİ DEĞİLDİR.
+```
+
+**Seçilen mimari:** mevcut `validation/rolling.py` modülünde, mevcut zero-context `run_rolling_backtest_from_store`'un semantics'ini DEĞİŞTİRMEDEN, additive bir ikinci public fonksiyon + yeni bir per-window context-boundary value object.
+
+**Reddedilen alternatifler (concrete gerekçelerle):**
+
+```
+1. Mevcut run_rolling_backtest_from_store'u yeni bir opsiyonel context
+   argümanıyla GENİŞLETMEK — REDDEDİLDİ: §28.C'nin 12/12 runtime/test
+   exercised zero-context sözleşmesini (exact signature, davranış,
+   hata mesajları) riske atar; iki farklı semantics (context'siz/
+   context'li) TEK fonksiyonda validation-sırası karmaşıklığı yaratır.
+   "Prefer an additive explicit API over changing established
+   zero-context semantics" strong preference'ıyla tutarsız.
+2. Açık yeni bir non-zero-context rolling fonksiyonu eklemek —
+   SEÇİLDİ: mevcut zero-context runner'ı hiç etkilemez, isim açıkça
+   ayırt edilebilir.
+3. Açık bir per-window context-boundary value object'i tanıtmak —
+   SEÇİLDİ: context_start'ı, iki paralel eş-uzunluklu tuple'ın (windows
+   + context_starts) index-eşleşme kırılganlığı olmadan, her pencere
+   için tek, açık, reproducible bir obje içinde taşır.
+4. Her pencere için context_start'ı tek bir uniform timedelta/context
+   span'den türetmek — REDDEDİLDİ (orchestrator'ın kendi mekanizması
+   olarak): Bölüm 8.3.13'ün "Context Boundary — Explicit, Auto-
+   Inference YOK" kilidini ihlal eder — context_start caller tarafından
+   AÇIKÇA seçilmelidir, otomatik türetilmemelidir. (Bir caller,
+   kendi kodunda context_start = window.start - span hesaplayıp
+   ContextAwareWindow'a açıkça geçirebilir — bu API'nin kendisi
+   böyle bir hesaplamayı YAPMAZ.)
+5. Context boundary'lerini bir callback/factory ile türetmek —
+   REDDEDİLDİ: "Prefer explicit, serializable/reproducible boundary
+   data over a hidden callback" strong preference'ı; bir callback
+   audit edilebilir/reproducible değildir.
+6. Mevcut window/result modellerini (TemporalWindow, TemporalSplit,
+   WindowResult, BacktestResult) DEĞİŞTİRMEK — REDDEDİLDİ: hiçbiri
+   context_start'ı taşımaya ihtiyaç duymaz; yeni, küçük, additive bir
+   value object (mevcut TemporalWindow'u compose ederek) bu ihtiyacı
+   hiçbirini değiştirmeden karşılar (Bölüm 21 Backward Compatibility,
+   8.3.12 ile tutarlı).
+7. Mevcut modelleri değiştirmeden boundary'leri AYRI, paralel argüman
+   olarak geçirmek (örn. windows + context_starts iki ayrı tuple) —
+   REDDEDİLDİ (primary mekanizma olarak): index-eşleşme kırılganlığı;
+   seçenek 3'ün tek-obje-per-pencere yaklaşımı daha güvenli.
+```
+
+**Exact Public API (LOCKED):**
+
+```
+Modül:  src/crypto_quant_lab/validation/rolling.py  (mevcut modül,
+        YENİ bir modül DEĞİL — Bölüm 4/21 compose-not-duplicate
+        prensibiyle tutarlı)
+
+@dataclass(frozen=True, slots=True)
+class ContextAwareWindow:
+    context_start: datetime
+    evaluation: TemporalWindow
+
+def run_context_aware_rolling_backtest_from_store(
+    store: HistoricalCandleStore,
+    windows: tuple[ContextAwareWindow, ...],
+    *,
+    policy_factory: Callable[[], BacktestPolicy],
+    exchange: str,
+    market_type: str,
+    symbol: str,
+    timeframe: str,
+    as_of_time: datetime,
+    config: BacktestConfig,
+    cost_model: CostModel,
+    funding_required: bool = False,
+    funding_store: HistoricalFundingStore | None = None,
+    funding_model: FundingModel | None = None,
+) -> tuple[WindowResult, ...]:
+    ...
+```
+
+```
+- İsim (`run_context_aware_rolling_backtest_from_store`), mevcut
+  zero-context `run_rolling_backtest_from_store` ile KARIŞTIRILAMAZ —
+  bu dokümanın kendi "context-aware" terminolojisiyle (§22 FAZ6B
+  başlığı, §8.3) birebir tutarlıdır.
+- Parametre listesi (windows'un tipi HARİÇ), zero-context runner'ın
+  parametre listesiyle POZİSYONEL OLARAK AYNIDIR — yalnızca
+  `windows: tuple[TemporalWindow, ...]` yerine
+  `windows: tuple[ContextAwareWindow, ...]`.
+- Dönüş tipi DEĞİŞMEDEN: tuple[WindowResult, ...] — WindowResult
+  (window: TemporalWindow, result: BacktestResult) modeline HİÇBİR
+  değişiklik yapılmaz.
+- İki public fonksiyon, freshness/validation/execution loop'unu
+  DUPLICATE ETMEMEK için bir private orchestration helper'ı paylaşır
+  (Bölüm 7'nin "Shared private validation/orchestration helpers are
+  allowed when they preserve the zero-context runner byte-for-byte
+  behaviorally" ilkesiyle tutarlı) — exact private helper imzası
+  implementasyon mikro-adımına ertelenir; LOCKED olan şey, zero-context
+  runner'ın §28.C'de kanıtlanmış davranışının bu refactor'dan SONRA da
+  byte-for-byte DEĞİŞMEDEN kalması gerekliliğidir (mevcut 28 test
+  DEĞİŞMEDEN yeşil kalmalıdır).
+- Package-root export YOK — mevcut zero-re-export convention'ıyla
+  tutarlı (validation/__init__.py DEĞİŞMEZ).
+```
+
+**`ContextAwareWindow` — exact value object (LOCKED):**
+
+```
+- Modül: src/crypto_quant_lab/validation/rolling.py (windows.py DEĞİL
+  — bu obje Layer-2 context-orchestration'a özgüdür, TemporalWindow/
+  TemporalSplit gibi genel-amaçlı, engine-agnostik bir primitive
+  DEĞİLDİR).
+- Field sırası: context_start (datetime), evaluation (TemporalWindow).
+- Frozen, slotted (mevcut TemporalWindow/TemporalSplit/WindowResult
+  convention'ıyla birebir aynı).
+- __post_init__ validation sırası:
+  1. evaluation bir TemporalWindow olmalıdır; değilse TypeError
+     (TemporalSplit'in TemporalWindow'u değiştirmediği gibi, bu obje
+     de TemporalWindow'u DEĞİŞTİRMEZ — onu compose eder).
+  2. context_start, genuine aware datetime olmalıdır (mevcut
+     datetime_to_epoch_us reuse edilir — TemporalWindow'un kendi
+     start/end validation'ıyla AYNI mekanizma); naive/pseudo-naive
+     → ValueError.
+  3. context_start <= evaluation.start olmalıdır; context_start >
+     evaluation.start → ValueError (Bölüm 8.3.1'in "context_start >
+     evaluation_start INVALID" kuralının birebir aynısı).
+     context_start == evaluation.start LEGAL'dir (Bölüm 8.3.1'in
+     "sıfır context" özel durumu, ayrı bir kod yolu değildir — bu
+     obje ZERO-context bir pencereyi de temsil edebilir, ama
+     dedicated zero-context runner o durum için hâlâ daha basit/
+     canonical API'dir).
+- Grid-alignment KONTROL EDİLMEZ burada — TemporalWindow'un kendisi
+  timeframe taşımaz (Bölüm 6: "Grid alignment is enforced by
+  TemporalSplit... TemporalWindow timeframe-agnostic'tir"); grid-
+  alignment kontrolü Layer-1'in kendi mevcut evaluation_start
+  validation'ına (store_runner.py, timeframe orchestrator argümanı
+  üzerinden) BIRAKILIR — ikinci bir data-access/validation yolu
+  YARATILMAZ.
+- Value equality/hashability: frozen dataclass default'ları (Stage-1/
+  Stage-2/TemporalWindow/TemporalSplit/WindowResult ile aynı desen).
+- WindowResult'a eşleme: WindowResult.window = <ilgili
+  ContextAwareWindow>.evaluation (TAM ContextAwareWindow DEĞİL) —
+  WindowResult modeli BÖYLECE DEĞİŞMEDEN kalır (Bölüm 21). context_start
+  bu nedenle WindowResult İÇİNDE saklanmaz; call sonrası auditability,
+  caller'ın kendi elindeki orijinal `windows: tuple[ContextAwareWindow, ...]`
+  girdisiyle — output ordering input ordering'i KORUDUĞU için —
+  index bazlı correlate edilerek sağlanır (zero-context runner'ın da
+  WindowResult.window == girdi TemporalWindow'u için zaten kullandığı
+  AYNI precedent).
+- Public'tir (validation/__init__.py'den re-export edilmez, ama modül
+  içinden doğrudan import edilebilir — mevcut Stage1Metrics/
+  Stage2Metrics/WindowResult precedent'iyle aynı).
+```
+
+**Boundary semantics (LOCKED — Bölüm 8.3.1/8.3.7/8.3.8'in birebir reuse'u):**
+
+```
+Context range:    [context_start, evaluation.start)
+Evaluation range: [evaluation.start, evaluation.end)
+
+context_start == evaluation.start   LEGAL (sıfır context)
+context_start > evaluation.start    INVALID (ContextAwareWindow
+                                     construction'da reddedilir)
+evaluation.start >= evaluation.end  INVALID (TemporalWindow'un kendi
+                                     __post_init__'i tarafından zaten
+                                     reddedilir)
+
+Candle store request per pencere: [context_start, evaluation.end) —
+  TEK bir run_backtest_from_store çağrısı (requested_start=
+  context_start, requested_end=evaluation.end, evaluation_start=
+  evaluation.start); context VE evaluation candle'ları AYNI çağrıda
+  yüklenir — ikinci bir store request YOK.
+Funding request per pencere: yalnızca [evaluation.start,
+  evaluation.end) — context için funding SORGULANMAZ/GEREKMEZ
+  (Bölüm 8.3.7'nin birebir reuse'u).
+
+İlk kullanılabilir context candle: context_start'a eşit veya ondan
+  sonraki ilk candle (Layer-1'in mevcut prepare_backtest_dataset
+  semantics'i, DEĞİŞMEDEN).
+İlk evaluation candle: open_time == evaluation.start olan candle
+  (dataset'in mevcut gapless-contiguity + grid-alignment garantisi
+  sayesinde var olduğu kanıtlanmıştır — ayrı bir arama YOK, Bölüm
+  8.3.1).
+Son evaluation candle: evaluation.end'den önceki, mevcut effective_end
+  clamp semantics'ine (Stage B, Bölüm 8.3.11) tabi son candle.
+
+Eksik/hizasız/gapped context candle → mevcut canonical candle quality
+  gate üzerinden FAIL (Bölüm 8.3.8, 24) — ikinci bir gate YOK.
+Context, dataset'in mevcut kapsamının ÖNCESİNE uzanıyorsa → mevcut
+  store-coverage/quality-gate FAIL semantics'i (özel bir durum
+  YOKTUR — context_start, Layer-1'in gözünden sıradan bir
+  requested_start'tır).
+
+Pencereler arası (input windows tuple boyunca):
+- Input window sırası KORUNUR — sıralama YOK.
+- Pencereler (evaluation aralıkları) overlap edebilir, dokunabilir,
+  veya duplicate olabilir — REDDEDİLMEZ/sort edilmez/clip edilmez
+  (zero-context Layer-2'nin mevcut, test-kanıtlı invariant'ının
+  birebir uzantısı: test_overlapping_windows_are_not_sorted_
+  clipped_merged_or_rejected, test_duplicate_equal_windows_are_not_
+  deduplicated).
+- Bir pencerenin context aralığı, başka bir pencerenin evaluation
+  veya context aralığıyla overlap edebilir — REDDEDİLMEZ (her pencere
+  bağımsız bir run_backtest_from_store çağrısıdır; aralarında hiçbir
+  paylaşılan ekonomik/feature state YOKTUR).
+```
+
+**Warm-up vs ekonomi (LOCKED — Bölüm 8.3.2–8.3.4'ün birebir reuse'u, ikinci bir mekanizma YOK):**
+
+```
+Context candle'lar:
+- policy.target_position ÇAĞIRAMAZ (koşulsuz, Bölüm 8.3.2).
+- policy-owned state'i (Type-H/Type-I, Bölüm 8.3.5) SESSİZCE ISITAMAZ
+  — Type-I otomatik warm-up hâlâ DESTEKLENMEZ.
+- Engine-owned market history'yi (PolicyContext.candles prefix'i)
+  BESLER — bu "warm-up"ın tek kanalıdır.
+- SIFIR fill, SIFIR cost, SIFIR funding, SIFIR equity point, SIFIR
+  PnL, SIFIR account-state mutasyonu üretir.
+final_equity ve Stage-1/Stage-2 metrikleri, YALNIZCA evaluation-fazı
+  ekonomisinden türetilir.
+Bu orchestrator, replay.py'de HİÇBİR yeni satır GEREKTİRMEZ — yalnızca
+  context_start/evaluation.start/evaluation.end'i mevcut
+  requested_start/evaluation_start/requested_end parametrelerine
+  FORWARD eder.
+```
+
+**Policy freshness / per-pencere izolasyon (LOCKED — Bölüm 8.3.6'nın birebir reuse'u):**
+
+```
+- policy_factory() pencere başına TAM OLARAK bir kez, o pencerenin
+  I/O'sundan HEMEN ÖNCE, input sırasında çağrılır.
+- Her sonuç, çağrılabilir target_position için I/O'dan ÖNCE
+  yapısal olarak kontrol edilir.
+- Reuse tespiti yalnızca object identity (`is`) ile — equality
+  DEĞİL; kabul edilen instance'lar orchestration boyunca strongly
+  retained tutulur.
+- policy_factory bir window argümanı ALMAZ (Callable[[], BacktestPolicy]
+  — zero-context ile AYNI imza).
+- Pencereler arası hiçbir engine-state/cash/pozisyon/mutable-collection
+  reuse'u YOKTUR (her pencere Layer-1'in kendi "fresh AccountState
+  per run" garantisiyle, Bölüm 8.3.3, bağımsızdır).
+- Sonuç aggregation YOK — WindowResult'lar düz bir tuple'a toplanır.
+- Çıktı sırası = girdi sırası.
+- Pencere N'de fail (construction/validation/execution): N ve
+  sonrası EXECUTE EDİLMEZ; önceki pencereler zaten execute edilmiş
+  OLABİLİR; rollback YOK; kısmi (partial) bir tuple DÖNDÜRÜLMEZ —
+  fonksiyon raise eder.
+- Pencere/context overlap'inden BAĞIMSIZDIR (yukarıdaki boundary
+  semantics).
+```
+
+**Validation / fail-fast sırası (LOCKED, exact):**
+
+```
+1. windows bir tuple olmalıdır; her eleman bir ContextAwareWindow
+   olmalıdır (index-specific TypeError) — ContextAwareWindow'un
+   KENDİ context_start/evaluation invariant'ları (yukarıda) ZATEN
+   construction anında kanıtlanmıştır; burada TEKRAR kontrol
+   EDİLMEZ (rolling.py'nin mevcut _require_windows_tuple'ının
+   TemporalWindow için izlediği AYNI prensip: "Does not duplicate
+   [the element's] own datetime/boundary validation, which already
+   ran at each instance's construction").
+2. policy_factory callable olmalıdır; değilse TypeError.
+3. Pencere başına, sırayla: policy_factory() çağrılır -> yapısal
+   target_position kontrolü (TypeError, index-specific) -> object-
+   identity reuse kontrolü (ValueError, index-specific) -> TEK bir
+   run_backtest_from_store(requested_start=window.context_start,
+   requested_end=window.evaluation.end, evaluation_start=
+   window.evaluation.start, ...) çağrısı. Bu çağrının KENDİ iç
+   validation zinciri (funding config -> evaluation_start Stage A ->
+   dataset prep/quality-gate -> evaluation_start Stage B -> funding
+   quality-gate -> replay) burada TEKRARLANMAZ/DUPLICATE EDİLMEZ.
+
+Hiçbir validation sessizce:
+- pencereleri sort ETMEZ
+- pencereleri dedupe ETMEZ
+- context'i clamp ETMEZ
+- timestamp repair ETMEZ
+- geçersiz pencereleri drop ETMEZ
+- fail eden bir pencereden SONRA devam ETMEZ
+- fail'den SONRA partial bir successful tuple DÖNDÜRMEZ
+```
+
+**Store / funding semantics:** yukarıdaki "Boundary semantics" ve "Warm-up vs ekonomi" bölümlerinde LOCKED — ikinci bir data-access yolu YOK, mevcut Layer-1 (`run_backtest_from_store`) TEK sahip kalır.
+
+**Output / compatibility (LOCKED):**
+
+```
+- tuple[WindowResult, ...] — girdi windows ile AYNI uzunlukta, AYNI
+  sırada (index i -> windows[i]).
+- WindowResult.window == windows[i].evaluation.
+- WindowResult.result == o pencerenin BacktestResult'ı.
+- context_start WindowResult İÇİNDE saklanmaz (yukarıda gerekçeli).
+- BacktestResult, EquityPoint, WindowResult, TemporalWindow,
+  TemporalSplit, ve mevcut zero-context run_rolling_backtest_from_store
+  DEĞİŞMEZ.
+- Cross-window aggregation, candidate/trial coupling, serialization/
+  persistence, veya optimizer coupling YOK.
+```
+
+**Metrics compatibility (LOCKED — Bölüm 15.10'un birebir uzantısı):** `compute_stage1_metrics`/`compute_periodic_returns`/`compute_stage2_metrics`, bu yeni orchestrator'ın ürettiği her `WindowResult.result` üzerinde, HİÇBİR değişiklik olmadan, bağımsız olarak çalışır — `equity_curve` zaten evaluation-only'dir (context candle'lar bu orchestrator için de SIFIR EquityPoint üretir, Bölüm 8.3.2/15.10 ile aynı runtime kanıtı). İkinci bir evaluation-boundary filtresi metrics katmanında GEREKMEZ/EKLENMEZ.
+
+**Purity / determinism (LOCKED):** girdi `windows`/`ContextAwareWindow`/`TemporalWindow` mutate edilmez (zaten frozen); `config` mutate edilmez; store data mutate edilmez; eşdeğer girdilerle tekrar çağrılar eşdeğer sonuç üretir; pencere execution'ı SEQUENTIAL'dır (paralel/distributed execution bu mikro-adımda TANITILMAZ, Bölüm 27).
+
+**Error semantics (kavramsal, Bölüm 8.3.15 ile aynı konvansiyon):** TypeError (yanlış tip) / ValueError (yanlış değer), index-specific mesajlar (etkilenen `windows[i]` index'ini içerir). Exact mesaj string'leri burada kilitlenmez — implementasyonun kendi regression suite'i tanımlar, mevcut proje konvansiyonuyla tutarlı.
+
+**Test kontratı (implementasyon mikro-adımı için gerekli minimum matris):**
+
+```
+- ContextAwareWindow: valid construction, field preservation, value
+  equality/hashability, frozen/slotted, yanlış tip (context_start,
+  evaluation), naive datetime, context_start > evaluation.start
+  reddi, context_start == evaluation.start kabulü, package-root
+  export yokluğu.
+- run_context_aware_rolling_backtest_from_store: yanlış top-level tip,
+  boş windows (izin verilir mi -> zero-context ile aynı davranış,
+  boş tuple -> boş tuple), index-0 ve later-index geçersiz eleman,
+  eşzamanlı çoklu ihlal (sıra kanıtı), duplicate/overlap reddedilmez,
+  policy_factory callable-değil reddi.
+- Context/evaluation davranışı: context candle'lar warm-up sağlar
+  (Type-H fixture), context candle'lar sıfır ekonomik etki üretir,
+  ilk evaluation candle warmed state kullanır, equity_curve yalnızca
+  evaluation noktaları içerir, exact interval sınırları, eksik
+  coverage, gapped context, pencereler arası context overlap,
+  context'in başka bir pencerenin evaluation aralığıyla overlap'i,
+  farklı pencereler için farklı context_start'lar.
+- İzolasyon/freshness: factory pencere başına tam bir kez, distinct
+  identity, later-index construction/execution failure, earlier
+  pencereden state taşınmaması, sonuçların input sırasını koruması,
+  cross-window aggregation yokluğu.
+- Compatibility: mevcut zero-context Layer-2 testleri DEĞİŞMEDEN
+  yeşil kalır; mevcut context-aware Layer-1 testleri DEĞİŞMEDEN yeşil
+  kalır; gerçek candle/funding store entegrasyonu; WindowResult.result
+  Stage-1/Stage-2'yi bağımsız kabul eder; ikinci bir metrics-boundary
+  filtresi yokluğu; result/window modelleri DEĞİŞMEDEN.
+- Temporal safety: hiçbir future candle availability'den önce
+  policy'ye görünmez; context evaluation sınırında TAM OLARAK biter;
+  hiçbir evaluation noktası kaybolmaz; hiçbir context noktası
+  equity_curve'e girmez; sonraki bir pencere önceki bir sonucu
+  etkilemez; timezone-aware UTC davranışı.
+
+Testler deterministik olmalıdır: wall-clock/randomness/network/float/
+external-service/order-dependence/mutable-global-fixture YOK.
+```
+
+**Implementasyon dosya kapsamı (planlama bilgisi — şimdi değiştirilmez):**
+
+```
+Production: src/crypto_quant_lab/validation/rolling.py (tek dosya).
+Test: tests/test_validation_rolling_backtest.py (mevcut dosya
+  genişletilir — yeni, ilgisiz bir test framework'ü YARATILMAZ).
+Documentation (combined closure için): VALIDATION_SPEC.md.
+Açıkça YASAK: ROADMAP.md, pyproject.toml, backtest/ altındaki her şey,
+  windows.py, metrics.py, herhangi bir __init__.py, herhangi bir
+  başka production/test/spec/status dosyası.
+```
+
+**Explicit exclusions (bu kontrat kapsamında DEĞİL):** candidate/trial abstraction, optimizer/grid search, parameter search, train/select/test orchestration, annualized Sharpe, Sortino, Calmar, CAGR, downside deviation, purging/embargo, CPCV, Deflated Sharpe, PBO, multiple-testing correction, parameter stability, cross-window metric aggregation, paralel/distributed execution, persistence/reporting/serialization, CLI/API endpoint'leri, live/paper trading. Stage-1, Stage-2, Layer-1, ve zero-context Layer-2 kontratlarının hiçbiri bu mikro-adımda DEĞİŞTİRİLMEZ.
+
 ## 9. Current API Limitation Audit (Bölüm 8'in Kaynak Doğrulaması) — TARİHSEL, RESOLVED
 
 **Durum: RESOLVED (Layer-1 implementasyonuyla, bkz. Bölüm 8.3.11, 23).** Bu bölüm, B2 mekanizmasının Layer-1 implementasyonundan **ÖNCEKİ** (MS1 zamanındaki) kaynak-kod audit bulgusunu, B2'nin gerekçesini korumak için **tarihsel kayıt** olarak saklar. `run_backtest_replay`/`run_backtest_from_store` artık bu bölümdeki ayrımı `evaluation_start` parametresi üzerinden bilir (implement edildi + test edildi).
@@ -733,13 +1133,15 @@ Bu, henüz **tam walk-forward optimization değildir** (Bölüm 14) — bu ayrı
   (factory-based) LOCKED'dır VE artık **zero-context Layer-2 için
   İMPLEMENT EDİLMİŞ + TEST EDİLMİŞTİR** (`run_rolling_backtest_from_store`,
   bkz. Bölüm 23, 28.C — 12/12). Context-aware (non-zero-context) bir
-  Layer-2 varyantı HENÜZ İMPLEMENT EDİLMEMİŞTİR.
+  Layer-2 varyantının exact kontratı artık Bölüm 8.3.16'da LOCKED'dır
+  (`ContextAwareWindow`, `run_context_aware_rolling_backtest_from_store`)
+  — ama implementasyonu HENÜZ BAŞLAMAMIŞTIR (bkz. Bölüm 23, 28.F — 0/22).
 - MS2 (temporal-window primitives) bu karara bağımlı DEĞİLDİR — tamamen
   pure/store-free'dir ve bağımsız olarak inşa edilebilir (implement
   edildi, bkz. Bölüm 23).
 ```
 
-Context/lookback kullanmayan trivial bir policy için, bugünkü `run_backtest_from_store`'un pencere-başına bağımsız çağrılması **zaten doğru sonucu üretir** (Bölüm 11) — bunu artık **tek-pencereli (Layer 1) bir runner contract'ı** olarak kilitlemek mümkündür, çünkü warm-up implementasyonu tamamlanmıştır. Çok-pencereli (Layer 2) rolling orchestrator, zero-context için artık **implement edilmiş ve test edilmiştir** (`run_rolling_backtest_from_store`) — her pencere `requested_start=window.start, requested_end=window.end, evaluation_start=window.start` ile çalışır, yani `context_start < evaluation_start` DEĞİLDİR. Context-aware (non-zero-context) bir Layer-2 runner, ayrı, henüz tasarlanmamış bir per-window context-boundary uzantısına bağımlı kalır; o uzantı spec-lock edilip implement edilmeden context-aware bir çok-pencereli runner'a commit edilmez.
+Context/lookback kullanmayan trivial bir policy için, bugünkü `run_backtest_from_store`'un pencere-başına bağımsız çağrılması **zaten doğru sonucu üretir** (Bölüm 11) — bunu artık **tek-pencereli (Layer 1) bir runner contract'ı** olarak kilitlemek mümkündür, çünkü warm-up implementasyonu tamamlanmıştır. Çok-pencereli (Layer 2) rolling orchestrator, zero-context için artık **implement edilmiş ve test edilmiştir** (`run_rolling_backtest_from_store`) — her pencere `requested_start=window.start, requested_end=window.end, evaluation_start=window.start` ile çalışır, yani `context_start < evaluation_start` DEĞİLDİR. Context-aware (non-zero-context) bir Layer-2 runner'ın per-window context-boundary uzantısı artık Bölüm 8.3.16'da spec-lock edilmiştir (`ContextAwareWindow`) — implementasyon HENÜZ BAŞLAMAMIŞTIR; o implementasyon tamamlanmadan context-aware bir çok-pencereli runner'a commit edilmez.
 
 ## 14. Walk-Forward Terminolojisi (LOCKED — Precision)
 
@@ -1749,21 +2151,25 @@ FAZ 6B — Context-Aware Extensions + Return-Series / Experiment Foundation
         EDİLMİŞTİR: `compute_periodic_returns`, `Stage2Metrics`,
         `compute_stage2_metrics` (commit `e4cedf9`; bkz. Bölüm 23,
         28.E — 29/29).
+      - Non-zero-context Layer-2 source-preflight + exact kontrat
+        (Bölüm 8.3.16) — LOCKED: `ContextAwareWindow`,
+        `run_context_aware_rolling_backtest_from_store`. Yalnızca
+        kontrat; production implementasyonu HENÜZ BAŞLAMAMIŞTIR
+        (bkz. Bölüm 23, 28.F — 0/22).
 
     Kalan zorunlu bileşenler (HENÜZ PENDING):
-      - Non-zero-context/context-aware Layer-2 pencere tasarımı ve
-        implementasyonu (ayrı, henüz tanımlanmamış bir per-window
-        context-boundary uzantısına ihtiyaç duyar — Bölüm 13).
+      - Non-zero-context Layer-2 production implementasyonu ve kendi
+        regression suite'i (Bölüm 8.3.16'da LOCKED kontratın kodu).
       - Annualized Sharpe/Sortino/Calmar/CAGR ve ilgili
         calendar/annualization kontratı (ayrı, henüz LOCKED
         edilmemiş — Bölüm 15.9, 16).
       - Candidate/trial abstraction (Bölüm 18) — experiment-foundation
         prerequisite'i olarak.
 
-    Durum: FAZ6B — NOT COMPLETE (bkz. §22.2). Stage-1 metrics'in VE
-    Stage-2 (return-series + per-observation Sharpe) implementasyonunun
-    tamamlanmış olması FAZ6B'yi TEK BAŞINA KAPATMAZ — yukarıdaki üç
-    kalan bileşen hâlâ pending'dir.
+    Durum: FAZ6B — NOT COMPLETE (bkz. §22.2). Stage-1/Stage-2
+    implementasyonlarının tamamlanmış olması, VE non-zero-context
+    Layer-2 kontratının LOCKED olması, FAZ6B'yi TEK BAŞINA KAPATMAZ —
+    yukarıdaki üç kalan bileşen hâlâ pending'dir.
 
 FAZ 6C — Advanced Overfitting Controls
     purging/embargo (horizon contract'a bağımlı, Bölüm 17.1), CPCV
@@ -1810,7 +2216,7 @@ FAZ 6D — Faz 6 Final Acceptance
 | Phase | Status | Completed scope | Remaining scope |
 |---|---|---|---|
 | FAZ6A | COMPLETE | temporal window/IS-OOS primitives (§28.A — 22/22), zero-context rolling OOS evaluation (§28.C — 12/12), Stage-1 metrics (§28.D — 18/18) | locked FAZ6A scope içinde yok |
-| FAZ6B | NOT COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED) | non-zero-context Layer-2, annualized Sharpe/Sortino/Calmar/CAGR kontratı, candidate/trial abstraction |
+| FAZ6B | NOT COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 exact kontratı (§8.3.16, §28.F — 0/22, LOCKED, implementation pending) | non-zero-context Layer-2 implementasyonu, annualized Sharpe/Sortino/Calmar/CAGR kontratı, candidate/trial abstraction |
 | FAZ6C | NOT COMPLETE | yok | purging/embargo, CPCV, Deflated Sharpe, PBO, multiple-testing corrections, parameter stability |
 | FAZ6D | NOT STARTED | yok | Faz 6 final acceptance audit'i |
 
@@ -2030,15 +2436,36 @@ CLOSURE — TAMAMLANDI:
   yansıtacak şekilde günceledi. Docs-only; production kod veya test
   değişikliği içermedi.
 
+FAZ6B — NON-ZERO-CONTEXT LAYER-2 SOURCE PREFLIGHT + EXACT CONTRACT
+LOCK — TAMAMLANDI:
+  — Mevcut zero-context Layer-2 (`run_rolling_backtest_from_store`) ve
+  context-aware Layer-1'in (`evaluation_start`, Bölüm 8.3.1–8.3.15)
+  kaynak kodunu doğrudan doğrulayan bir source-preflight yaptı; 7
+  mimari alternatifi karşılaştırdı ve seçti/reddetti; exact kontratı
+  Bölüm 8.3.16'da LOCKED olarak kaydetti: `ContextAwareWindow`
+  (frozen, slots, `src/crypto_quant_lab/validation/rolling.py`) +
+  `run_context_aware_rolling_backtest_from_store` (aynı modül, mevcut
+  zero-context runner'ı DEĞİŞTİRMEYEN additive bir ikinci public
+  fonksiyon); boundary/warm-up/freshness/validation/store-funding/
+  output/metrics-compatibility/purity semantiklerinin tamamını, mevcut
+  Layer-1/Layer-2 mekanizmalarının birebir reuse'u olarak (hiçbir yeni
+  ekonomi/warm-up mekanizması icat etmeden) kilitledi. Implementasyon
+  için gerekli test kontratını ve exact dosya kapsamını kaydetti. §28.F
+  acceptance grubunu, kontrattan türetilen 22 kriterle, 0/22 olarak
+  ekledi. Docs-only; production kod, `rolling.py` değişikliği, veya
+  yeni test içermedi.
+
 Sonraki (henüz başlanmadı):
-  Non-zero-context Layer-2 mimarisi/kontrat preflight'i (read-only) —
-  ayrı, henüz tanımlanmamış bir per-window context-boundary uzantısının
-  ihtiyaçlarını, mevcut zero-context orchestrator'a (Bölüm 8.3.6, 13)
-  göre tasarım alanını belirler. Bu doküman güncellemesi o preflight'i
-  BAŞLATMAZ/TASARLAMAZ. Candidate/trial abstraction (Bölüm 18), o
-  preflight'ten sonra kuyrukta kalır. Annualized Sharpe/Sortino/Calmar/
-  CAGR, ayrı bir gelecekteki calendar/annualization kontratına ihtiyaç
-  duyar — bu sıralamanın bir parçası değildir ve burada başlatılmaz.
+  Non-zero-context Layer-2 implementasyonu + regression suite +
+  post-implementation audit + documentation/acceptance closure, TEK
+  bir combined delivery olarak (Bölüm 8.3.16'da LOCKED kontratın kodu,
+  `src/crypto_quant_lab/validation/rolling.py`'ye eklenir; kendi
+  regression suite'i `tests/test_validation_rolling_backtest.py`'yi
+  genişletir; 28.F'nin 0/22'sini implementasyon/test exercised'a
+  taşır). Candidate/trial abstraction (Bölüm 18), bu delivery'den sonra
+  kuyrukta kalır. Annualized Sharpe/Sortino/Calmar/CAGR, ayrı bir
+  gelecekteki calendar/annualization kontratına ihtiyaç duyar — bu
+  sıralamanın bir parçası değildir ve burada başlatılmaz.
 ```
 
 **MS3 scope (TAMAMLANDI — pre-flight'in kendisi, Bölüm 8.3'te kilitlendi):**
@@ -2121,9 +2548,9 @@ Aynı girdiler → aynı pencere sonuçları — mevcut `run_backtest_from_store
 - external LLM decision-making
 ```
 
-## 28. Acceptance Criteria — Beş Ayrı Grup (LOCKED)
+## 28. Acceptance Criteria — Altı Ayrı Grup (LOCKED)
 
-Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — Layer-2'nin kendi gelecekteki policy-freshness implementasyon acceptance checklist'i, henüz runtime/test exercised OLMAYAN ayrı bir liste olarak 28.C'de kaydedilir. Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E altındaki sayılar). §28.A/B/C/D/E'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
+Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin exact kontrat acceptance checklist'i, henüz implementation/test exercised OLMAYAN ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 0/22) — 28.F'nin kilitlenmiş olması, non-zero-context Layer-2'nin implement edildiği anlamına **gelmez.** Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F altındaki sayılar). §28.A/B/C/D/E/F'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
 
 ### 28.A — LOCKED FOUNDATION ACCEPTANCE (Runner-Bağımsız)
 
@@ -2261,6 +2688,35 @@ Bu liste, Bölüm 15.9–15.18'de LOCKED olan Stage-2 (return-series + per-obser
 29. Cross-window aggregation, candidate/trial aggregation, model/replay/store/rolling modüllerine yeni coupling, ve annualized Sharpe/Sortino/Calmar/CAGR/diğer sonraki-aşama metrikleri içermez/ima etmez. **PASS (davranışsal + static)** — `test_stage2_no_cross_window_aggregation_occurs`, `_no_candidate_trial_aggregation_symbols_exist` (absence-of-symbol kanıtı, kod incelemesiyle), `test_metrics_module_still_does_not_import_rolling`, `test_backtest_result_has_no_stage2_fields`, `_window_result_has_no_stage2_fields`; static kanıt: `git diff da31ec7..e4cedf9 -- src/crypto_quant_lab/backtest/ src/crypto_quant_lab/validation/rolling.py src/crypto_quant_lab/validation/windows.py src/crypto_quant_lab/validation/__init__.py` boştur; `metrics.py` kaynağında `sharpe`/`sortino`/`calmar`/`cagr`/`periods_per_year`/`annualiz` dizgilerinden yalnızca `sharpe_ratio`/`compute_stage2_metrics` ve docstring'deki açık exclusion cümleleri geçer — Sortino/Calmar/CAGR/annualization için hiçbir sembol veya formül yoktur.
 
 **Stage-2 return-series + per-observation Sharpe acceptance count: 29 / 29 implementation/test exercised.** Bu sayım, 28.A'nın (22), 28.B'nin (15/15), 28.C'nin (12/12), veya 28.D'nin (18/18) hiçbirine dahil değildir/katlanmaz — ayrı bir sayımdır. **29/29 olması ŞUNLARI TAMAMLAMAZ:** annualized Sharpe; Sortino/Calmar/CAGR; Stage-3 kontrolleri (Deflated Sharpe, PBO, multiple-testing corrections, parameter stability); non-zero-context Layer-2; candidate/trial abstraction; FAZ6B; Faz 6'nın tamamı — yalnızca Stage-2'nin (return-series + per-observation Sharpe) kendi implementasyon/test acceptance contract'ının karşılandığı anlamına gelir.
+
+### 28.F — NON-ZERO-CONTEXT LAYER-2 ACCEPTANCE (0/22 IMPLEMENTATION/TEST EXERCISED)
+
+Bu liste, Bölüm 8.3.16'da LOCKED olan non-zero-context Layer-2 (`ContextAwareWindow`, `run_context_aware_rolling_backtest_from_store`) exact kontratının gelecekteki implementasyon/test acceptance checklist'ini kaydeder. **Bu, contract-readiness kaydıdır — implementasyon kanıtı DEĞİLDİR.** Bu 22 kriterin HİÇBİRİ henüz implementation/test exercised DEĞİLDİR; bu mikro-adım docs-only'dir; `src/crypto_quant_lab/validation/rolling.py`'ye hiçbir non-zero-context kod eklenmemiştir, `tests/test_validation_rolling_backtest.py`'ye hiçbir yeni test eklenmemiştir. Aşağıdaki her madde, gelecekteki implementasyon mikro-adımının kendi regression suite'i tarafından kanıtlanacak bir gelecekteki gereksinimdir — burada **PASS** işaretlenmez.
+
+1. `ContextAwareWindow` (`context_start: datetime`, `evaluation: TemporalWindow`), kilitli modül yolunda (`src/crypto_quant_lab/validation/rolling.py`) frozen/slotted olarak mevcut OLACAKTIR (Bölüm 8.3.16).
+2. `context_start`, genuine aware datetime OLMALIDIR; naive/pseudo-naive/non-datetime → TypeError/ValueError.
+3. `evaluation`, bir `TemporalWindow` OLMALIDIR; değilse TypeError.
+4. `context_start <= evaluation.start` invariant'ı enforce EDİLECEKTİR; `context_start > evaluation.start` → ValueError; `context_start == evaluation.start` (sıfır context) LEGAL kalacaktır.
+5. `run_context_aware_rolling_backtest_from_store`, kilitli modül yolunda, kilitli signature ile mevcut OLACAKTIR; mevcut `run_rolling_backtest_from_store` DEĞİŞMEDEN kalacaktır.
+6. `windows` bir `tuple[ContextAwareWindow, ...]` OLMALIDIR; yanlış top-level tip veya yanlış-tipli eleman (index-specific) → TypeError, herhangi bir I/O'dan ÖNCE.
+7. `policy_factory` callable OLMALIDIR; değilse TypeError, herhangi bir I/O'dan ÖNCE.
+8. `policy_factory`, pencere başına TAM OLARAK bir kez, o pencerenin I/O'sundan HEMEN ÖNCE, input sırasında ÇAĞRILACAKTIR.
+9. Her factory sonucu, çağrılabilir `target_position` için I/O'dan ÖNCE yapısal olarak KONTROL EDİLECEKTİR; geçersizse index-specific TypeError.
+10. Reuse tespiti yalnızca object identity (`is`) ile YAPILACAKTIR — equality DEĞİL; reuse edilmiş bir instance, etkilenen pencere I/O'sundan ÖNCE index-specific ValueError ile REDDEDİLECEKTİR; distinct-ama-equality-eşit instance'lar KABUL EDİLECEKTİR.
+11. Kabul edilen policy instance'ları, orchestration boyunca strongly retained TUTULACAKTIR.
+12. Her pencere, TEK bir `run_backtest_from_store` çağrısına (`requested_start=context_start, requested_end=evaluation.end, evaluation_start=evaluation.start`) delege EDECEKTİR — ikinci/forked bir replay engine YARATILMAYACAKTIR.
+13. Context candle'lar SIFIR policy çağrısı, SIFIR fill, SIFIR cost, SIFIR funding etkisi, SIFIR equity point, SIFIR PnL, SIFIR account-state mutasyonu ÜRETECEKTİR — mevcut, zaten test edilmiş Layer-1 B2 mekanizmasının reuse'u yoluyla, ikinci bir warm-up mekanizması İCAT EDİLMEDEN.
+14. Ekonomik muhasebe, her pencere için bağımsız olarak, TAM OLARAK `evaluation.start`'ta taze BAŞLAYACAKTIR.
+15. `equity_curve`/`final_equity`/Stage-1/Stage-2 çıktıları, YALNIZCA evaluation-fazı ekonomisini YANSITACAKTIR.
+16. Pencereler, tam olarak input sırasında EXECUTE EDİLECEKTİR; sort/dedupe/clamp/normalize/overlap-reddi YAPILMAYACAKTIR — hem pencere (evaluation) hem de context aralıkları için.
+17. Pencere N'de fail (construction/validation/execution): N ve sonrası EXECUTE EDİLMEYECEKTİR; önceki pencereler zaten execute edilmiş OLABİLİR; rollback YAPILMAYACAKTIR; partial bir tuple DÖNDÜRÜLMEYECEKTİR — fonksiyon raise EDECEKTİR.
+18. Funding, gerekli olduğunda, YALNIZCA `[evaluation.start, evaluation.end)` üzerinden sorgulanacak/gate edilecektir — context aralığı için ASLA — mevcut Layer-1 funding kontratının değişmeden reuse'u yoluyla.
+19. Çıktı `tuple[WindowResult, ...]` OLACAKTIR, girdi ile AYNI uzunlukta/sırada; `WindowResult.window == windows[i].evaluation`; `WindowResult.result` o pencerenin `BacktestResult`'ı OLACAKTIR.
+20. `BacktestResult`, `EquityPoint`, `WindowResult`, `TemporalWindow`, `TemporalSplit`, ve mevcut zero-context `run_rolling_backtest_from_store` DEĞİŞMEDEN/byte-for-byte-compatible KALACAKTIR.
+21. Cross-window aggregation, candidate/trial coupling, veya ek bir metrics-boundary filtresi TANITILMAYACAKTIR; `WindowResult.result`, Stage-1 VE Stage-2 metriklerini bağımsız olarak, HİÇBİR değişiklik olmadan KABUL EDECEKTİR.
+22. Hesaplama/orchestration pure, deterministik, input-mutate-etmeyen OLACAKTIR; store data mutate EDİLMEYECEKTİR; eşdeğer girdilerle tekrar çağrılar eşdeğer sonuç ÜRETECEKTİR; execution SEQUENTIAL kalacaktır (paralel/distributed execution bu mikro-adımda TANITILMAYACAKTIR).
+
+**Non-zero-context Layer-2 acceptance count: 0 / 22 implementation/test exercised — contract readiness only.** Bu sayım, 28.A'nın (22 — farklı bir grup, aynı sayı tesadüfen), 28.B'nin (15/15), 28.C'nin (12/12), 28.D'nin (18/18), veya 28.E'nin (29/29) hiçbirine dahil değildir/katlanmaz — ayrı bir sayımdır. **Bu kontratın LOCKED olması, non-zero-context Layer-2'nin implement edildiği, test edildiği, annualized metriklerin kilitlendiği, candidate/trial abstraction'ın var olduğu, veya FAZ6B/Faz 6'nın tamamının tamamlandığı anlamına GELMEZ** — yalnızca non-zero-context Layer-2'nin exact kontratının dokümante edildiği anlamına gelir.
 
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
