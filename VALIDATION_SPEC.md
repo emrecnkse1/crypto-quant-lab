@@ -759,17 +759,279 @@ Context/lookback kullanmayan trivial bir policy için, bugünkü `run_backtest_f
 
 (A), **"walk-forward optimization" olarak adlandırılmaz** — yalnızca "rolling fixed-policy temporal evaluation" veya benzeri dürüst bir isimle anılır. Bu repo (A)'yı (B)'den önce inşa edebilir; ama ikisi asla karıştırılmaz.
 
-## 15. Metrics Foundation — Staged Bağımlılık (LOCKED)
+## 15. Metrics Foundation — Staged Bağımlılık (LOCKED) — Stage-1 Exact Contract LOCKED (FAZ6B MS4)
 
 `BacktestResult` **değişmeden** kalır (Bölüm 4). Metrikler `equity_curve`'den **dışarıda** türetilir.
 
-**Aşama 1 (foundation, NOW):** total return (`final_equity/initial_cash - 1`), max drawdown — `equity_curve`'den doğrudan, ek bağımlılık gerektirmeden hesaplanabilir.
+**Aşama 1 (foundation): total return + max drawdown — exact formül, API, validation ve edge-case davranışı artık Bölüm 15.1–15.8'de LOCKED'dır (FAZ6B MS4, docs-only).** `equity_curve`'den doğrudan, ek runtime bağımlılık gerektirmeden hesaplanabilir. **Bu bir implementasyon değildir** — `src/crypto_quant_lab/validation/metrics.py` bu mikro-adımda kodlanmaz, hiçbir test yazılmaz. Implementasyon, kendi regression suite'i ile test edilecek, ayrı bir gelecekteki mikro-adımdır (Bölüm 23, 28.D).
 
 **Aşama 2 (LATER IN FAZ 6, kendi dedicated contract mikro-adımı):** return-series / Sharpe foundation — Bölüm 16'daki açık sorular **önce** çözülmelidir; formül burada gelişigüzel kilitlenmez.
 
 **Aşama 3 (LATER IN FAZ 6):** Deflated Sharpe, PBO, multiple-testing corrections, parameter stability — Bölüm 17.
 
 **Faz 6'nın "foundation" tamamlanma tanımı, Sharpe'ı kalıcı olarak göz ardı edip yalnızca total-return/max-drawdown ile tanımlanmaz** — Aşama 2/3, Bölüm 22'deki alt-faz yapısında **explicit olarak** yer alır, yalnızca implementasyon sırası ertelenir.
+
+**15.1 Aşama 1 Kapsamı (LOCKED — Yalnızca Bu İkisi)**
+
+Aşama 1, **kesinlikle ve yalnızca** şunlardan oluşur:
+
+```
+1. Total return
+2. Maximum drawdown
+```
+
+Bu kontrattan **açıkça hariç tutulur** (hiçbiri burada formül-kilitlenmez, hiçbiri bu mikro-adımda tasarlanmaz):
+
+```
+- Periodic return series (Bölüm 16 — açık sorular, çözülmedi)
+- Mean/volatility
+- Sharpe (Bölüm 15 Aşama 2, 17.3)
+- Sortino
+- Calmar
+- CAGR/annualization
+- Win rate
+- Profit factor
+- Exposure
+- Turnover
+- Benchmark-relative metrikler
+- Cross-window aggregation
+- Candidate/trial aggregation (Bölüm 18)
+- Optimizer/grid-search (Bölüm 27)
+- Multiple-testing corrections (Bölüm 17.6, 20)
+- İleri seviye Faz 6 metrics/kontrolleri (Bölüm 17 — Deflated Sharpe, PBO, purging/embargo, CPCV, parameter stability)
+```
+
+**15.2 Public API (LOCKED — Kavram ve İsimler; Implementasyon Değil)**
+
+```
+Modül:  src/crypto_quant_lab/validation/metrics.py
+
+@dataclass(frozen=True, slots=True)
+class Stage1Metrics:
+    total_return: Decimal
+    max_drawdown: Decimal
+
+def compute_stage1_metrics(result: BacktestResult) -> Stage1Metrics:
+    ...
+```
+
+```
+- Public import path: crypto_quant_lab.validation.metrics
+- validation/__init__.py DEĞİŞMEDEN kalır (mevcut zero-re-export
+  convention'ıyla tutarlı — windows.py, rolling.py ile aynı desen).
+- BacktestResult DEĞİŞMEDEN kalır (Bölüm 4, 21).
+- WindowResult DEĞİŞMEDEN kalır (Bölüm 28.C) — hiçbir result modeline
+  metrics field'ı EKLENMEZ.
+- Aynı compute_stage1_metrics fonksiyonu hem doğrudan bir BacktestResult
+  üzerinde, hem de bağımsız bir WindowResult.result üzerinde çalışır —
+  hiçbir per-window metrics wrapper veya cross-window aggregate
+  TANITILMAZ.
+```
+
+Bu mikro-adım yalnızca API'yi kilitler — `metrics.py` modülü veya içindeki hiçbir sembol bu mikro-adımda YARATILMAZ.
+
+**15.3 `Stage1Metrics` Değer Invariant'ları (LOCKED)**
+
+Doğrudan `Stage1Metrics` construction'ı şunları validate eder:
+
+```
+- total_return bir Decimal olmalıdır; değilse TypeError.
+- max_drawdown bir Decimal olmalıdır; değilse TypeError.
+- Her iki değer de finite olmalıdır; değilse ValueError.
+- max_drawdown >= Decimal("0") olmalıdır; negatifse ValueError.
+- total_return'ün yapay bir alt veya üst sınırı YOKTUR.
+- max_drawdown'ın yapay bir üst sınırı YOKTUR (bkz. 15.6).
+```
+
+Nesne frozen, slotted, value-equal ve normal frozen-dataclass davranışıyla hashable'dır. Yüzde string'i veya float field TANITILMAZ — yalnızca `Decimal`.
+
+**15.4 `compute_stage1_metrics` Input Validation ve Fail-Fast Sırası (LOCKED)**
+
+`compute_stage1_metrics`, `result` argümanını mevcut repo'nun concrete-type `isinstance` convention'ı ile kabul eder — `isinstance(result, BacktestResult)`, subclass'ları REDDETMEZ (repo'da zaten `isinstance` her yerde bu şekilde kullanılır; bu, structural/duck-type bir kabul DEĞİLDİR, tam tersini iddia etmek yanlıştır).
+
+Deterministik validation, tam olarak bu sırada:
+
+```
+1. result bir BacktestResult olmalıdır; değilse TypeError.
+2. initial_cash finite olmalıdır; değilse ValueError.
+3. initial_cash > 0 olmalıdır; değilse ValueError.
+4. final_equity finite olmalıdır; değilse ValueError.
+5. equity_curve boş OLMAMALIDIR; boşsa ValueError.
+6. Her curve elemanı bir EquityPoint olmalıdır; geçersiz eleman,
+   index'i içeren bir TypeError fırlatır.
+7. Her equity_curve[i].equity finite olmalıdır; geçersiz değer,
+   index'i içeren bir ValueError fırlatır.
+8. Equity-point timestamp'leri strictly ascending olmalıdır;
+   değilse ValueError.
+9. equity_curve[-1].equity == final_equity olmalıdır; değilse
+   ValueError.
+
+Yalnızca TÜM validasyonlar geçtikten SONRA metrikler hesaplanır.
+```
+
+**Gerekçe:**
+
+```
+- Maximum drawdown path-dependent'tir ve en az bir equity gözlemi
+  olmadan dürüst şekilde ifade edilemez — bu yüzden boş curve
+  REDDEDİLİR (Bölüm 15.6 ile tutarlı).
+- Boş bir curve için, final_equity'den materyal olarak farklı bir
+  drawdown "0" döndürmek yanıltıcı olurdu.
+- Curve sırası drawdown'ı etkiler — bu yüzden doğrudan inşa edilmiş,
+  sırasız/tutarsız BacktestResult'lar sessizce kabul edilmez.
+- Total return ve drawdown, birbiriyle tutarsız terminal değerlerden
+  hesaplanmamalıdır (equity_curve[-1] != final_equity).
+- Canonical replay (Bölüm 8.3, 21) bu koşulların TÜMÜNÜ zaten sağlar
+  (build_backtest_result'ın kendi invariant'ları üzerinden) — bu
+  nedenle bu liste replay'e bir değişiklik DEĞİLDİR, yalnızca public
+  metrics-boundary'sinde bir savunma katmanıdır (defense-in-depth).
+```
+
+Bu liste, Stage-1'in kullanmadığı hiçbir `BacktestResult` field'ının (örn. `fill_count`, `trade_count`, `total_cost`) revalidation'ını içermez — mevcut repo kontratı bunu zaten gerektirmiyorsa, bu mikro-adım onu icat etmez.
+
+**15.5 Total-Return Kontratı (LOCKED)**
+
+Exact formül ve operation sırası:
+
+```
+total_return = final_equity / initial_cash - Decimal("1")
+```
+
+```
+- Çıktı bir Decimal fraction'dır (örn. Decimal("0.05") == +%5).
+- Pozitif = kâr. Negatif = zarar. Sıfır = başabaş.
+- Bu bir percentage-point sayısı DEĞİLDİR ve bir absolute PnL
+  DEĞİLDİR.
+- final_equity ve initial_cash'ten hesaplanır — first-to-last
+  equity-curve return'den DEĞİL.
+- Bu nedenle canonical final_equity'de zaten yansıyan transaction
+  cost, funding, realized PnL, unrealized PnL, ve final
+  mark-to-market etkilerini otomatik olarak içerir.
+- Hesaplama sonrası kasıtlı bir quantization/rounding adımı
+  UYGULANMAZ (Bölüm 15.7'deki context'in doğal precision'ı dışında).
+- Negatif final_equity legal'dir, bu yüzden total_return
+  Decimal("-1")'den küçük olabilir.
+- initial_cash <= 0, bölmeden ÖNCE reddedilir (Bölüm 15.4, madde 3).
+- total_pnl / initial_cash, canonical sonuçlar için cebirsel olarak
+  eşdeğer OLABİLİR (build_backtest_result'ın total_pnl == final_equity
+  - initial_cash invariant'ı nedeniyle) — ama bu, canonical
+  implementasyon formülü DEĞİLDİR; yukarıdaki exact operation sırası
+  kilitlidir.
+```
+
+**Sessizce şuna geçilmez:**
+
+```
+(final_equity - initial_cash) / initial_cash
+```
+
+çünkü finite-precision Decimal operation sırası farklı bir son basamak üretebilir. Kilitlenen exact operation sırası (önce bölme, sonra çıkarma) SABİT kalır.
+
+**15.6 Maximum-Drawdown Kontratı (LOCKED)**
+
+Maximum drawdown, **non-negative bir relative magnitude**'dur — signed negatif bir sayı DEĞİLDİR, absolute bir currency tutarı DEĞİLDİR.
+
+Exact algoritma:
+
+```python
+peak = initial_cash
+max_drawdown = Decimal("0")
+
+for point in equity_curve:
+    if point.equity > peak:
+        peak = point.equity
+    else:
+        drawdown = (peak - point.equity) / peak
+        if drawdown > max_drawdown:
+            max_drawdown = drawdown
+
+return max_drawdown
+```
+
+```
+- initial_cash, curve-öncesi bir implicit baseline'dır ve ilk peak'i
+  seed eder.
+- Bu, curve'ün kendisinde bir initial-cash noktası olmadığı için
+  aksi halde gizli kalacak bir ilk-noktadaki (immediate) kaybı
+  yakalar.
+- Baseline'dan sonra yalnızca canonical equity değerleri walk edilir.
+- Input tuple sırası, yalnızca strict timestamp-order validation'dan
+  (Bölüm 15.4, madde 8) SONRA kullanılır.
+- Bir drawdown'ın sayılması için recovery GEREKMEZ.
+- Flat veya monotonically rising equity → 0.
+- initial_cash'e eşit veya üzerindeki tek bir nokta → 0.
+- initial_cash'in ALTINDAKİ tek bir nokta → kendi immediate relative
+  drawdown'ı.
+- Birden fazla historical peak-to-trough decline'ın EN BÜYÜĞÜ
+  döndürülür.
+- Maximum drawdown her zaman >= 0'dır.
+- Maximum drawdown 1'de CAP'LENMEZ.
+- Equity, pozitif bir peak'ten SONRA negatife dönerse, drawdown 1'i
+  AŞABİLİR.
+- Pozitif bir peak'ten sıfıra tam bir decline → 1.
+- Stage-1'e hiçbir absolute-currency drawdown DAHİL EDİLMEZ.
+- Hiçbir drawdown duration, recovery time, veya peak/trough
+  timestamp'i DAHİL EDİLMEZ.
+```
+
+`initial_cash > 0` validate edildiğinden (Bölüm 15.4, madde 3) ve peak, ondan seed edilen bir running maximum olduğundan (yalnızca artabilir), sıfır veya negatif bir peak'e bölme **hiçbir zaman** oluşamaz.
+
+**15.7 Decimal-Context Determinism (LOCKED)**
+
+Metrik çıktıları, caller'ın mutable global Decimal context'ine bağımlı BIRAKILMAZ.
+
+```
+Private Stage-1 computation context:
+
+Context(
+    prec=28,
+    rounding=ROUND_HALF_EVEN,
+    traps=[],
+)
+
+Tüm Stage-1 bölme aritmetiği şunun içinde çalışır:
+
+localcontext(private_stage1_context)
+```
+
+```
+- Precision: 28 significant decimal digit.
+- Rounding: ROUND_HALF_EVEN.
+- Context, metrics modülü tarafından explicit olarak inşa edilir —
+  caller'ın ambient state'inden KOPYALANMAZ.
+- Bir caller'ın getcontext().prec veya rounding mode'unu değiştirmesi,
+  Stage-1 çıktısını DEĞİŞTİRMEMELİDİR.
+- Hiçbir float conversion oluşmaz.
+- Hiçbir NumPy/pandas kullanılmaz (Bölüm 27).
+- Hiçbir ek .quantize() adımı uygulanmaz.
+- Non-terminating bölme, yalnızca kilitlenen 28-digit computation
+  context'ine göre rounded olur.
+- Hesaplama sonrası çıktılar finite OLMALIDIR; non-finite bir
+  hesaplanmış çıktı, deterministik olarak ValueError ile reddedilir.
+- Decimal aritmetik hataları (fault), sessizce başarılı bir
+  non-finite metrik ÜRETMEMELİDİR.
+```
+
+Exact `Context(...)` constructor'ı, ambient state'ten tam bağımsız olmak için ek explicit exponent/clamp field'larına ihtiyaç duyarsa, bunlar Python'un standart deterministik `Context` default'ları kullanılarak kaydedilir — Stage-1'de caller-configurable bir precision İCAT EDİLMEZ.
+
+**15.8 Purity ve Compatibility (LOCKED)**
+
+`compute_stage1_metrics`:
+
+```
+- Aynı geçerli input için deterministiktir.
+- Input'u mutate ETMEZ.
+- Wallclock time KULLANMAZ.
+- Randomness KULLANMAZ.
+- I/O yapmaz.
+- Hiçbir store'a query atmaz.
+- Replay'i çağırmaz.
+- Pencereleri aggregate etmez.
+- BacktestResult veya WindowResult'ı DEĞİŞTİRMEZ.
+- Rolling orchestration'a bir bağımlılık EKLEMEZ.
+- Non-zero-context Layer-2 implement edilmeden ÖNCE çalışabilir.
+- Yalnızca standard-library Python ve Decimal kullanır.
+```
 
 ## 16. Return Series Semantics — Açık Sorular (Kilitlenmez)
 
@@ -934,8 +1196,13 @@ FAZ 6B — Context/Warm-up + Metrics + Experiment Foundation
     mekanizması (Bölüm 8.3.6) LOCKED'dır VE zero-context Layer-2
     çok-pencereli orchestrator [run_rolling_backtest_from_store] artık
     İMPLEMENT EDİLMİŞ + TEST EDİLMİŞTİR (bkz. Bölüm 23, 28.C — 12/12).
-    Bu alt-fazda kalan iş: context-aware (non-zero-context) Layer-2
-    varyantı, return-series/Sharpe contract, candidate/trial abstraction
+    Stage-1 metrics (total return + max drawdown) exact kontratı artık
+    Bölüm 15.1–15.8'de LOCKED'dır (FAZ6B MS4, bkz. Bölüm 23, 28.D) —
+    ama production implementasyonu (`Stage1Metrics`,
+    `compute_stage1_metrics`) HENÜZ BAŞLAMAMIŞTIR. Bu alt-fazda kalan
+    iş: Stage-1 metrics implementasyonu + kendi regression suite'i,
+    context-aware (non-zero-context) Layer-2 varyantı,
+    return-series/Sharpe contract (Aşama 2), candidate/trial abstraction
     — hepsi HENÜZ PENDING.
 
 FAZ 6C — Advanced Overfitting Controls
@@ -1008,12 +1275,31 @@ FAZ6B MS2:
   Layer-2 acceptance/status reconciliation (bu doküman güncellemesi) —
   TAMAMLANDI.
 
+FAZ6B MS3:
+  STAGE-1 METRICS FOUNDATION PRE-FLIGHT (READ-ONLY) — TAMAMLANDI
+  — total return/max drawdown için mevcut kod/spec kanıtını okudu;
+  total-return formülünün kısmen LOCKED, max-drawdown'ın formül/edge-case
+  seviyesinde HİÇ LOCKED OLMADIĞINI tespit etti; production implementasyonu
+  bu belirsizlik çözülmeden önermedi. Generic OOS runner'dan önce MS3'ün
+  (Bölüm 8.3) izlediği aynı "önce pre-flight, sonra spec-lock" precedent'i.
+
+FAZ6B MS4:
+  STAGE-1 METRICS FOUNDATION CONTRACT-LOCK — TAMAMLANDI
+  — total return ve max drawdown için exact formülü, `Stage1Metrics`/
+  `compute_stage1_metrics` public API'sini, input validation/fail-fast
+  sırasını, ve private Decimal-context determinism kontratını Bölüm
+  15.1–15.8'de LOCKED olarak kaydetti. Docs-only; production kod,
+  `metrics.py` implementasyonu, veya yeni test içermedi.
+
 Sonraki (henüz başlanmadı):
+  Stage-1 metrics production implementasyonu (`src/crypto_quant_lab/
+  validation/metrics.py`) + kendi regression suite'i (Bölüm 15, 28.D).
   Context-aware (non-zero-context, `context_start < evaluation_start`)
   bir Layer-2 varyantı — ayrı bir per-window context-boundary tasarımına
-  (henüz tanımlanmamış) ihtiyaç duyar; metrics foundation (Bölüm 15/16);
-  candidate/trial abstraction (Bölüm 18). Bu mikro-adımlardan önce
-  context-aware bir çok-pencereli runner veya metrics'e commit edilmez.
+  (henüz tanımlanmamış) ihtiyaç duyar; return-series/Sharpe contract
+  (Aşama 2, Bölüm 16); candidate/trial abstraction (Bölüm 18). Bu
+  mikro-adımlardan önce context-aware bir çok-pencereli runner, Stage-1
+  metrics implementasyonu, veya Aşama 2 metrics'e commit edilmez.
 ```
 
 **MS3 scope (TAMAMLANDI — pre-flight'in kendisi, Bölüm 8.3'te kilitlendi):**
@@ -1096,9 +1382,9 @@ Aynı girdiler → aynı pencere sonuçları — mevcut `run_backtest_from_store
 - external LLM decision-making
 ```
 
-## 28. Acceptance Criteria — Üç Ayrı Grup (LOCKED)
+## 28. Acceptance Criteria — Dört Ayrı Grup (LOCKED)
 
-Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — Layer-2'nin kendi gelecekteki policy-freshness implementasyon acceptance checklist'i, henüz runtime/test exercised OLMAYAN ayrı bir liste olarak 28.C'de kaydedilir. Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C altındaki sayılar).
+Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — Layer-2'nin kendi gelecekteki policy-freshness implementasyon acceptance checklist'i, henüz runtime/test exercised OLMAYAN ayrı bir liste olarak 28.C'de kaydedilir. Stage-1 metrics'in (total return + max drawdown) gelecekteki implementasyon acceptance checklist'i de, henüz runtime/test exercised OLMAYAN ayrı bir liste olarak 28.D'de kaydedilir — implementasyon HENÜZ BAŞLAMAMIŞTIR. Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D altındaki sayılar).
 
 ### 28.A — LOCKED FOUNDATION ACCEPTANCE (Runner-Bağımsız)
 
@@ -1155,7 +1441,7 @@ Bu kriterlerin hepsi artık **Layer-1** (tek-pencere context-aware canonical rep
 
 **Durum:** Bölüm 8.3'teki B2 kilidi Layer-1 için **implement edilmiş ve test edilmiştir** (bkz. Bölüm 23) — bu 15 kriterin hepsi artık **runtime/test exercised**'dır. Bu, Layer-2 (çok-pencereli orchestrator) veya Faz 6A'nın tamamının tamamlandığı anlamına **GELMEZ** — yalnızca context-aware Layer-1 acceptance contract'ının karşılandığı anlamına gelir.
 
-**İleri seviye Faz 6 kategorileri (28.A/28.B/28.C'nin hiçbirine dahil DEĞİL, ayrı ve pending):** purging/embargo (17.1), CPCV (17.2), Sharpe-ailesi/return-series (16, 17.3), Deflated Sharpe (17.4), PBO (17.5), multiple-testing corrections (17.6), parameter stability (17.7), candidate/trial abstraction (18).
+**İleri seviye Faz 6 kategorileri (28.A/28.B/28.C/28.D'nin hiçbirine dahil DEĞİL, ayrı ve pending):** purging/embargo (17.1), CPCV (17.2), Sharpe-ailesi/return-series (16, 17.3), Deflated Sharpe (17.4), PBO (17.5), multiple-testing corrections (17.6), parameter stability (17.7), candidate/trial abstraction (18).
 
 ### 28.C — ZERO-CONTEXT LAYER-2 POLICY-FRESHNESS ACCEPTANCE (12/12 RUNTIME/TEST EXERCISED)
 
@@ -1175,6 +1461,31 @@ Bu liste, Bölüm 8.3.6'da LOCKED olan factory-based policy-instance-freshness m
 12. İkinci/forked bir replay engine yaratılmaz — canonical `run_backtest_replay` compose edilmeye devam eder (Bölüm 4, 21). **PASS** — `rolling.py` yalnızca `run_backtest_from_store`'u import eder (`run_backtest_replay` doğrudan hiç import/çağrılmaz); her pencere TEK bir `run_backtest_from_store` çağrısına delege eder; `test_rolling_output_matches_direct_per_window_composition` bağımsız direct-call kompozisyonuyla byte-identical `BacktestResult` eşitliğini kanıtlar.
 
 **Zero-context Layer-2 policy-freshness acceptance count: 12 / 12 runtime/test exercised.** Bu sayım, 28.A'nın (22) veya 28.B'nin (15/15) hiçbirine dahil değildir — ayrı bir sayımdır. **Bu, context-aware (non-zero-context) bir Layer-2 varyantının, metrics foundation'ının, veya Faz 6B/6C'nin tamamının tamamlandığı anlamına GELMEZ** — yalnızca zero-context rolling fixed-policy orchestrator'ın kendi acceptance contract'ının karşılandığı anlamına gelir.
+
+### 28.D — STAGE-1 METRICS FOUNDATION ACCEPTANCE (0/18 IMPLEMENTATION/TEST EXERCISED)
+
+Bu liste, Bölüm 15.1–15.8'de LOCKED olan Stage-1 metrics (total return + max drawdown) exact kontratının, gelecekteki implementasyon mikro-adımı tarafından karşılanması gereken acceptance kriterlerini kaydeder. **Bu 18 kriterin HİÇBİRİ bugün implementation/test exercised DEĞİLDİR** — `src/crypto_quant_lab/validation/metrics.py` kodlanmamıştır, `Stage1Metrics`/`compute_stage1_metrics` mevcut değildir, bu mikro-adım hiçbir yeni test eklememiştir (docs-only, bkz. Bölüm 23). Bu liste yalnızca Bölüm 15'in kontratını, gelecekteki implementasyon için somut, test edilebilir maddelere çevirir — **bunları LOCKED yapmaz, yalnızca kaydeder;** exact mekanizma zaten Bölüm 15.1–15.8'de LOCKED'dır.
+
+1. `Stage1Metrics` ve `compute_stage1_metrics`, kilitli modül yolunda (`src/crypto_quant_lab/validation/metrics.py`) mevcuttur.
+2. `Stage1Metrics` frozen/slotted'dır ve kendi field invariant'larını enforce eder (Bölüm 15.3).
+3. Yanlış `result` tipi deterministik olarak fail eder (`TypeError`).
+4. Non-finite veya non-positive `initial_cash`, hesaplamadan ÖNCE fail eder (`ValueError`).
+5. Non-finite `final_equity` veya curve equity'si deterministik olarak fail eder (`ValueError`).
+6. Boş equity curve reddedilir (`ValueError`).
+7. Geçersiz curve elemanları, kendi index'leriyle birlikte reddedilir (`TypeError`).
+8. Curve timestamp'leri strictly ascending olmalıdır; değilse fail eder (`ValueError`).
+9. Son curve equity'si `final_equity`'e eşit olmalıdır; değilse fail eder (`ValueError`).
+10. Total return, exact kilitli formülü ve Decimal-fraction convention'ını kullanır (Bölüm 15.5).
+11. Total return, canonical final-equity ekonomik etkilerini yeniden hesaplamadan içerir.
+12. Maximum drawdown, peak'i `initial_cash`'ten seed eder (Bölüm 15.6).
+13. Flat/rising, immediate loss, multiple drawdowns, full loss, recovery, ve final-trough case'leri, kilitlendiği gibi davranır.
+14. Negatif equity, 1'i aşan bir drawdown üretebilir; yapay bir üst sınır yoktur.
+15. Çıktılar, ambient Decimal precision/rounding'den bağımsızdır ve kilitli private context'i kullanır (Bölüm 15.7).
+16. Hesaplama pure, deterministik, yalnızca-Decimal'dır ve input'u mutate etmez (Bölüm 15.8).
+17. Doğrudan `BacktestResult` kullanımı VE bağımsız `WindowResult.result` kullanımı, hiçbir aggregation olmadan desteklenir.
+18. Mevcut result modelleri, replay/store/rolling API'leri, ve ileri-seviye metrics kontratları DEĞİŞMEDEN/coupled-olmadan kalır.
+
+**Stage-1 metrics foundation acceptance count: 0 / 18 implementation/test exercised.** Bu sayım, 28.A'nın (22), 28.B'nin (15/15), veya 28.C'nin (12/12) hiçbirine dahil değildir — ayrı, henüz implement edilmemiş bir gelecekteki-iş kaydıdır.
 
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
