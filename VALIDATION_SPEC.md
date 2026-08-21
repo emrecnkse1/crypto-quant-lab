@@ -186,7 +186,7 @@ olmalıdır — mevcut `prepare_backtest_dataset`'in candle path'i için zaten g
 
 ### 8.3 LOCKED Mechanism — B2 (FAZ6A MS3 Pre-flight + MS4 Spec-Lock)
 
-**Durum: LOCKED (mimari/tasarım) VE Layer-1 için IMPLEMENTED + TESTED.** Bu bölüm, Bölüm 8/8.1'in açık bıraktığı kararı kilitler VE bu kararın Layer-1 (tek-pencere context-aware canonical replay + store-backed composition) implementasyonunun exact şeklini kaydeder — `run_backtest_replay`/`run_backtest_from_store` artık `evaluation_start: datetime | None = None` üzerinden bu bölümdeki ayrımı bilir, kendi regression suite'i ile test edilmiştir (Bölüm 8.3.11, 23; Bölüm 9 artık tarihsel/RESOLVED). Layer-2 (çok-pencereli orchestrator) **HENÜZ implement edilmemiştir** (Bölüm 8.3.6, 13, 23).
+**Durum: LOCKED (mimari/tasarım) VE Layer-1 için IMPLEMENTED + TESTED.** Bu bölüm, Bölüm 8/8.1'in açık bıraktığı kararı kilitler VE bu kararın Layer-1 (tek-pencere context-aware canonical replay + store-backed composition) implementasyonunun exact şeklini kaydeder — `run_backtest_replay`/`run_backtest_from_store` artık `evaluation_start: datetime | None = None` üzerinden bu bölümdeki ayrımı bilir, kendi regression suite'i ile test edilmiştir (Bölüm 8.3.11, 23; Bölüm 9 artık tarihsel/RESOLVED). Layer-2 (çok-pencereli orchestrator), zero-context için artık **IMPLEMENTED + TESTED**'dır (`run_rolling_backtest_from_store`, bkz. Bölüm 8.3.6, 13, 23, 28.C — 12/12); context-aware (non-zero-context) bir Layer-2 varyantı **HENÜZ implement edilmemiştir**.
 
 **8.3.1 Context / Evaluation Aralıkları**
 
@@ -296,7 +296,7 @@ History-reconstructibility, **açık bir caller/policy-author sorumluluğudur** 
 
 **Type-I policy'ler global olarak yasaklanmaz** — normal (context-aware olmayan) backtest'lerde tamamen legaldir; yalnızca context-aware evaluation'ın otomatik warm-up garantisinden **yararlanamazlar.**
 
-**8.3.6 Policy Instance Freshness — LOCKED (Factory-Based Mekanizma, FAZ6B MS1)**
+**8.3.6 Policy Instance Freshness — LOCKED (Factory-Based Mekanizma, FAZ6B MS1) VE Zero-Context Layer-2 İçin IMPLEMENTED + TESTED (FAZ6B MS2)**
 
 History-reconstructibility (8.3.5) ile policy-instance-freshness **iki farklı sorundur:**
 
@@ -322,7 +322,7 @@ Layer 2 — Bağımsız pencereler üzerinde çalışan çok-pencereli
     kullanımı GÜVENSİZDİR.
 ```
 
-**Durum: LOCKED (mimari/tasarım) — mekanizma seçimi ve exact kontrat.** Bu bölüm, yukarıdaki (B)'nin gelecekteki Layer-2 orchestrator'ı için exact mekanizmasını kilitler. **Bu bir implementasyon değildir** — `policy_factory` bu mikro-adımda kodlanmaz, bir type alias/production parametre eklenmez, hiçbir test yazılmaz, ve Layer-2 orchestrator'ın kendisi henüz mevcut değildir. Implementasyon, kendi regression suite'i ile test edilecek, ayrı bir gelecekteki mikro-adımdır (Bölüm 23, 28.C).
+**Durum: LOCKED (mimari/tasarım) VE zero-context Layer-2 orchestrator için IMPLEMENTED + TESTED.** Bu bölüm, yukarıdaki (B)'nin exact mekanizmasını kilitler VE bu kararın **zero-context Layer-2** (bkz. Bölüm 13) implementasyonunun exact şeklini kaydeder — `src/crypto_quant_lab/validation/rolling.py`'deki `run_rolling_backtest_from_store`, `policy_factory: Callable[[], BacktestPolicy]` üzerinden bu bölümdeki mekanizmayı bilir, kendi regression suite'i ile test edilmiştir (FAZ6B MS2 implementasyonu `c363267`, test-hardening `c4af87c`; bkz. Bölüm 23, 28.C). **Non-zero-context (context-aware) bir Layer-2 varyantı bu implementasyonun kapsamında DEĞİLDİR** — ayrı bir spec-lock + implementasyon mikro-adımı gerektirir (bkz. bu bölümün altındaki "Implementasyon Durumu" notu).
 
 **Karşılaştırılan alternatifler:**
 
@@ -474,6 +474,55 @@ için AYNI objeyi döndürdüğünde bunu MEKANİK OLARAK REDDETMELİDİR.
   run_backtest_from_store kullanıcıları) geriye dönük uyumlu kalır —
   hiçbir mevcut çağrı sitesi bu mikro-adımdan etkilenmez.
 ```
+
+**Implementasyon Durumu — Zero-Context Layer-2 İçin IMPLEMENTED + TESTED (FAZ6B MS2, bkz. Bölüm 23, 28.C):**
+
+Yukarıdaki mekanizma `src/crypto_quant_lab/validation/rolling.py`'de implement edilmiştir (commit `c363267`; regression-hardening commit `c4af87c`), kendi regression suite'i `tests/test_validation_rolling_backtest.py`'de (28 test, tümü PASS). Public production şekli:
+
+```
+WindowResult(window: TemporalWindow, result: BacktestResult)   # frozen, slots
+
+run_rolling_backtest_from_store(
+    store, windows: tuple[TemporalWindow, ...], *,
+    policy_factory: Callable[[], BacktestPolicy],
+    exchange, market_type, symbol, timeframe, as_of_time, config, cost_model,
+    funding_required=False, funding_store=None, funding_model=None,
+) -> tuple[WindowResult, ...]
+```
+
+Yukarıdaki her LOCKED invariant, bu implementasyon için kanıtlanmıştır:
+
+```
+- factory pencere-başına tam olarak bir kez, lazy, sıralı çağrılır
+  (test_exactly_one_factory_call_per_window_in_order)
+- her sonuç, çağrılabilir target_position için yapısal olarak kontrol
+  edilir; geçersizse etkilenen pencere I/O'sundan ÖNCE TypeError
+  (test_invalid_factory_output_is_rejected_before_affected_window_runs)
+- kabul edilen instance'lar orchestration boyunca strongly retained
+  tutulur — weakref-tabanlı regression bunu doğrudan kanıtlar
+  (test_prior_accepted_policies_remain_strongly_retained_throughout_orchestration)
+- reuse tespiti yalnızca object identity (`is`) üzerinden yapılır,
+  equality/hashing DEĞİL; aynı obje reuse edilirse etkilenen pencere
+  I/O'sundan ÖNCE ValueError
+  (test_same_object_factory_output_is_rejected_before_affected_window_runs)
+- distinct ama equality-eşit instance'lar kabul edilir
+  (test_distinct_but_equality_equal_policy_instances_are_accepted)
+- factory exception'ları wrap/swallow edilmeden, AYNI obje olarak
+  propagate eder — object-identity ile kanıtlanmıştır
+  (test_factory_exception_propagates_as_original_object)
+- fail-fast: pencere N fail ederse N ve sonrası execute edilmez,
+  önceki pencereler zaten execute edilmiş olabilir, rollback/partial-
+  result YOK
+  (test_earlier_windows_execute_and_no_subsequent_window_executes_on_failure)
+- her başarılı pencere, tek bir run_backtest_from_store çağrısına
+  delege eder — ikinci/forked bir replay engine yoktur
+  (test_rolling_output_matches_direct_per_window_composition)
+- mevcut tek-pencere API'ler (run_backtest_replay, run_backtest_from_store)
+  ve küresel BacktestPolicy Protocol'ü DEĞİŞMEDEN kalır (git diff boş;
+  tam regression suite 1386/1386 PASS)
+```
+
+**Kapsam sınırı (önemli):** bu implementasyon **zero-context**'tir — her pencere `evaluation_start = window.start` ile çalışır, yani context yoktur (bkz. Bölüm 8.3.1, 8.3.11, 13). Bu implementasyonun kanıtladığı şey, **`run_rolling_backtest_from_store` için** mekanik policy-freshness enforcement'ının doğru çalıştığıdır — repository-wide, arbitrary gelecekteki caller'lar veya gelecekteki context-aware Layer-2 varyantları için otomatik/global bir garanti DEĞİLDİR. Context-aware (non-zero-context, `context_start < evaluation_start`) Layer-2 pencereleri **implement edilmemiştir**; yeni bir passive context-window modeli bu mikro-adımda tanıtılmamıştır; böyle bir uzantı ayrı bir spec-lock + implementasyon mikro-adımı gerektirir.
 
 **8.3.7 Funding Range ve Zamanlama**
 
@@ -671,7 +720,7 @@ YOK: fitting, optimizer, candidate selection.
 
 Bu, henüz **tam walk-forward optimization değildir** (Bölüm 14) — bu ayrım kilitlidir.
 
-**Tek-pencereli (Layer 1) context-aware evaluation artık implement edilmiş + test edilmiştir** (Bölüm 8.3.11, 23). Mimari Bölüm 8.3'te LOCKED'dır (B2) VE `run_backtest_from_store`/`run_backtest_replay` kodu artık `evaluation_start` üzerinden context/evaluation ayrımını bilir — Bölüm 8/9'un audit bulgusu artık tarihsel/RESOLVED'dır: history-reconstructible (Type-H) bir `BacktestPolicy` (özellikle lookback/rolling-feature kullanan bir policy), `run_backtest_from_store(requested_start=context_start, evaluation_start=OOS.start, ...)` ile doğrudan, doğru şekilde değerlendirilebilir (bkz. Bölüm 8.3.5 için Type-H niteliğinin caller/policy-author sorumluluğu kaldığı). **Ama GENERIC, çok-pencereli (Layer 2) bir rolling OOS runner bugün implement edilmiş değildir** — bu, warm-up mekanizması yüzünden değil, ayrı bir policy-instance-freshness ihtiyacı yüzündendir. Bu nedenle:
+**Tek-pencereli (Layer 1) context-aware evaluation artık implement edilmiş + test edilmiştir** (Bölüm 8.3.11, 23). Mimari Bölüm 8.3'te LOCKED'dır (B2) VE `run_backtest_from_store`/`run_backtest_replay` kodu artık `evaluation_start` üzerinden context/evaluation ayrımını bilir — Bölüm 8/9'un audit bulgusu artık tarihsel/RESOLVED'dır: history-reconstructible (Type-H) bir `BacktestPolicy` (özellikle lookback/rolling-feature kullanan bir policy), `run_backtest_from_store(requested_start=context_start, evaluation_start=OOS.start, ...)` ile doğrudan, doğru şekilde değerlendirilebilir (bkz. Bölüm 8.3.5 için Type-H niteliğinin caller/policy-author sorumluluğu kaldığı). **Çok-pencereli (Layer 2) bir rolling OOS runner artık zero-context için implement edilmiş + test edilmiştir** (`run_rolling_backtest_from_store`, bkz. Bölüm 8.3.6, 23, 28.C) — **ama GENERIC/context-aware (non-zero-context) bir varyant bugün implement edilmiş değildir.** Bu nedenle:
 
 ```
 - Fixed-policy temporal evaluation FAZ6A'nın bir HEDEFİDİR (Bölüm 22).
@@ -679,16 +728,18 @@ Bu, henüz **tam walk-forward optimization değildir** (Bölüm 14) — bu ayrı
   Layer-1 İMPLEMENTASYONU TAMAMLANMIŞTIR. Tek-pencereli (Layer 1)
   context-aware canonical replay + store-backed composition
   IMPLEMENTED + TESTED'dır (bkz. Bölüm 23); çok-pencereli (Layer 2)
-  rolling OOS orchestrator ayrıca policy-instance-freshness
-  mekanizmasına (Bölüm 8.3.6, Bölüm 19) ihtiyaç duyar — bu mekanizma
-  artık Bölüm 8.3.6'da (factory-based) LOCKED'dır, ama HENÜZ İMPLEMENT
-  EDİLMEMİŞTİR (bkz. Bölüm 23, 28.C).
+  rolling OOS orchestrator, policy-instance-freshness mekanizmasına
+  (Bölüm 8.3.6, Bölüm 19) ihtiyaç duyuyordu — bu mekanizma Bölüm 8.3.6'da
+  (factory-based) LOCKED'dır VE artık **zero-context Layer-2 için
+  İMPLEMENT EDİLMİŞ + TEST EDİLMİŞTİR** (`run_rolling_backtest_from_store`,
+  bkz. Bölüm 23, 28.C — 12/12). Context-aware (non-zero-context) bir
+  Layer-2 varyantı HENÜZ İMPLEMENT EDİLMEMİŞTİR.
 - MS2 (temporal-window primitives) bu karara bağımlı DEĞİLDİR — tamamen
   pure/store-free'dir ve bağımsız olarak inşa edilebilir (implement
   edildi, bkz. Bölüm 23).
 ```
 
-Context/lookback kullanmayan trivial bir policy için, bugünkü `run_backtest_from_store`'un pencere-başına bağımsız çağrılması **zaten doğru sonucu üretir** (Bölüm 11) — bunu artık **tek-pencereli (Layer 1) bir runner contract'ı** olarak kilitlemek mümkündür, çünkü warm-up implementasyonu tamamlanmıştır. Generic/çok-pencereli (Layer 2) bir runner ise Layer-1'in tamamlanmasından SONRA bile ayrı bir policy-instance-freshness mekanizmasına bağımlı kalır (Bölüm 8.3.6); o mekanizmanın İMPLEMENTASYONU tamamlanmadan çok-pencereli bir runner'a commit edilmez.
+Context/lookback kullanmayan trivial bir policy için, bugünkü `run_backtest_from_store`'un pencere-başına bağımsız çağrılması **zaten doğru sonucu üretir** (Bölüm 11) — bunu artık **tek-pencereli (Layer 1) bir runner contract'ı** olarak kilitlemek mümkündür, çünkü warm-up implementasyonu tamamlanmıştır. Çok-pencereli (Layer 2) rolling orchestrator, zero-context için artık **implement edilmiş ve test edilmiştir** (`run_rolling_backtest_from_store`) — her pencere `requested_start=window.start, requested_end=window.end, evaluation_start=window.start` ile çalışır, yani `context_start < evaluation_start` DEĞİLDİR. Context-aware (non-zero-context) bir Layer-2 runner, ayrı, henüz tasarlanmamış bir per-window context-boundary uzantısına bağımlı kalır; o uzantı spec-lock edilip implement edilmeden context-aware bir çok-pencereli runner'a commit edilmez.
 
 ## 14. Walk-Forward Terminolojisi (LOCKED — Precision)
 
@@ -796,6 +847,10 @@ Bu MS1'de **inşa edilmez.** Ama neden Faz 6'nın ilerideki bölümlerinin buna 
 - her pencere kendi bağımsız quality/funding gate'inden geçer (Bölüm 4, 24)
 - OOS fresh economic state (Bölüm 11)
 - as_of_time'ın mevcut anti-lookahead semantics'i her pencerede korunur
+- aynı mutable policy instance'ının bağımsız evaluation pencereleri
+  arasında yeniden kullanılması, run_rolling_backtest_from_store için
+  artık ENGINE-ENFORCEABLE'dır — object-identity tabanlı mekanik
+  reddetme (Bölüm 8.3.6, 23, 28.C — factory-based, IMPLEMENTED + TESTED)
 ```
 
 **Research-process riskleri (henüz code ile enforce edilemez):**
@@ -809,12 +864,13 @@ Bu MS1'de **inşa edilmez.** Ama neden Faz 6'nın ilerideki bölümlerinin buna 
 - context-aware evaluation'ın history-reconstructible (Type-H) olmayan bir
   BacktestPolicy ile kullanılması (Bölüm 8.3.5) — mekanik olarak tespit
   edilemez, yalnızca policy-author disiplinine bağlıdır
-- aynı mutable policy instance'ının bağımsız evaluation pencereleri
-  arasında yeniden kullanılması (Bölüm 8.3.6) — Layer-1 tek-pencere
-  run'da caller disiplinine bağlıdır; Layer-2 çok-pencereli orchestrator
-  için mekanik enforcement mekanizması (factory-based, Bölüm 8.3.6'da
-  LOCKED) artık tasarlanmıştır, ama henüz implement edilmemiştir — bu
-  nedenle bu risk bugün hâlâ yalnızca disiplinle önlenir
+- aynı mutable policy instance'ının bağımsız pencereler arasında yeniden
+  kullanılması: Layer-1 tek-pencere run'da hâlâ caller disiplinine
+  bağlıdır (bu Layer-1 API'sine mekanik bir kontrol eklenmedi); ve
+  run_rolling_backtest_from_store DIŞINDA, gelecekte yazılacak herhangi
+  bir başka orchestrator/caller için de mekanik enforcement otomatik
+  DEĞİLDİR — yukarıdaki engine-enforceable madde yalnızca
+  run_rolling_backtest_from_store'un kendisi için geçerlidir
 ```
 
 ## 20. Multiple Testing — Kayıt Prensibi (LOCKED, İmplementasyon Yok)
@@ -861,6 +917,8 @@ CostModel/FundingModel:  unchanged
 
 **Bu MS1/MS4, `run_backtest_from_store`/`run_backtest_replay`'in public signature'larının sonsuza kadar literal olarak aynı kalacağını GARANTİ ETMEZ** — yalnızca, herhangi bir gelecekteki değişikliğin additive/geriye-uyumlu olacağını ve kendi regression suite'inden geçeceğini kilitler. `evaluation_start` eklemesi bu garantiyi doğrulamıştır: additive, geriye-uyumlu (legacy-equivalence regression testleriyle kanıtlanmıştır) ve kendi regression suite'inden geçmiştir. Herhangi bir gelecekteki extension syntax'ı bu dokümanda tasarlanmaz.
 
+**`run_rolling_backtest_from_store` (FAZ6B MS2, `src/crypto_quant_lab/validation/rolling.py`) aynı compose-not-duplicate prensibine tabidir ve onu doğrulamıştır:** `run_backtest_replay`/`run_backtest_from_store` public signature'larına HİÇBİR değişiklik yapmadan, tamamen yeni/ayrı bir modülde eklenmiştir; her pencere için tek bir `run_backtest_from_store` çağrısına delege eder, ikinci bir replay/accounting/execution engine yaratmaz; tam regression suite (mevcut 1358 + yeni 28 = 1386 test) DEĞİŞMEDEN yeşil kalır.
+
 ## 22. Faz 6 Alt-Faz Yapısı (LOCKED — "Foundation" ≠ "Faz 6 Complete")
 
 ```
@@ -872,10 +930,13 @@ FAZ 6B — Context/Warm-up + Metrics + Experiment Foundation
     OOS context/warm-up API implementasyonu (exact mekanizma — B2 —
     Bölüm 8.3'te LOCKED; Layer-1 [tek-pencere context-aware canonical
     replay + store-backed composition] artık İMPLEMENT EDİLMİŞ +
-    TEST EDİLMİŞTİR, bkz. Bölüm 23, 28.B). Bu alt-fazda kalan iş:
-    Layer-2 çok-pencereli orchestrator (policy-instance-freshness
-    mekanizmasına bağımlı, Bölüm 8.3.6), return-series/Sharpe contract,
-    candidate/trial abstraction — hepsi HENÜZ PENDING.
+    TEST EDİLMİŞTİR, bkz. Bölüm 23, 28.B). Policy-instance-freshness
+    mekanizması (Bölüm 8.3.6) LOCKED'dır VE zero-context Layer-2
+    çok-pencereli orchestrator [run_rolling_backtest_from_store] artık
+    İMPLEMENT EDİLMİŞ + TEST EDİLMİŞTİR (bkz. Bölüm 23, 28.C — 12/12).
+    Bu alt-fazda kalan iş: context-aware (non-zero-context) Layer-2
+    varyantı, return-series/Sharpe contract, candidate/trial abstraction
+    — hepsi HENÜZ PENDING.
 
 FAZ 6C — Advanced Overfitting Controls
     purging/embargo (horizon contract'a bağımlı), CPCV, Deflated Sharpe,
@@ -930,11 +991,29 @@ FAZ6B MS1:
   sınırını Bölüm 8.3.6'da LOCKED olarak kaydetti. Docs-only; production
   kod, `policy_factory` implementasyonu, veya yeni test içermedi.
 
+FAZ6B MS2:
+  ROLLING FIXED-POLICY LAYER-2 ORCHESTRATOR (ZERO-CONTEXT) — TAMAMLANDI
+  — Bölüm 8.3.6'da LOCKED olan factory-based policy-instance-freshness
+  mekanizmasını, zero-context (`evaluation_start = window.start`) bir
+  çok-pencereli orchestrator olarak implement etti (commit `c363267`):
+  - `WindowResult` (frozen, slots) + `run_rolling_backtest_from_store`
+    — TAMAMLANDI (src/crypto_quant_lab/validation/rolling.py,
+    tests/test_validation_rolling_backtest.py — 26 test)
+  - post-commit implementasyon audit'i — PASS
+  Ardından test-hardening (commit `c4af87c`) — TAMAMLANDI: strong-retention
+  kanıtı weakref-tabanlı hale getirildi, exception-propagation object-identity
+  ile kanıtlandı, query-count coupling kaldırıldı, WindowResult immutability
+  ve TemporalSplit-reddi testleri eklendi (tests/test_validation_rolling_backtest.py
+  — 28 test). 28.B Layer-1 acceptance/status reconciliation gibi, 28.C
+  Layer-2 acceptance/status reconciliation (bu doküman güncellemesi) —
+  TAMAMLANDI.
+
 Sonraki (henüz başlanmadı):
-  `policy_factory`'nin production implementasyonu + Layer-2 çok-pencereli
-  (multi-window) validation orchestrator'ın kendisi + kendi regression
-  suite'i (Bölüm 8.3.6, 28.C). Bu mikro-adımdan önce generic/çok-pencereli
-  bir OOS runner'a commit edilmez.
+  Context-aware (non-zero-context, `context_start < evaluation_start`)
+  bir Layer-2 varyantı — ayrı bir per-window context-boundary tasarımına
+  (henüz tanımlanmamış) ihtiyaç duyar; metrics foundation (Bölüm 15/16);
+  candidate/trial abstraction (Bölüm 18). Bu mikro-adımlardan önce
+  context-aware bir çok-pencereli runner veya metrics'e commit edilmez.
 ```
 
 **MS3 scope (TAMAMLANDI — pre-flight'in kendisi, Bölüm 8.3'te kilitlendi):**
@@ -970,7 +1049,7 @@ MS3'ün seçtiği B2 mekanizması, Bölüm 11'de zaten kilitlenmiş şu invarian
 - candle/funding data quality gate bypass edilemez (Bölüm 24)
 ```
 
-B2'nin Layer-1 implementasyonu artık **tamamlanmıştır** (yukarıda). Bunun ötesi (generic/çok-pencereli [Layer-2] OOS runner implementasyonu, walk-forward window advance, metrics foundation implementasyonu, 6B/6C mikro-adımları) **Layer-2'nin kendi policy-instance-freshness mekanizmasına (Bölüm 8.3.6) bağımlı olduğu için burada detaylandırılmaz** — o mekanizma tamamlanmadan bir generic/çok-pencereli OOS runner'a **commit edilmez.**
+B2'nin Layer-1 implementasyonu artık **tamamlanmıştır** (yukarıda). Zero-context Layer-2 [`run_rolling_backtest_from_store`] implementasyonu da artık **tamamlanmıştır** (bkz. yukarıdaki FAZ6B MS2 kaydı, Bölüm 28.C). Bunun ötesi (context-aware/non-zero-context Layer-2 varyantı, walk-forward window advance, metrics foundation implementasyonu, 6B/6C'nin kalan mikro-adımları) burada detaylandırılmaz — context-aware bir Layer-2 varyantı, kendi ayrı per-window context-boundary tasarımı spec-lock edilip implement edilmeden **commit edilmez.**
 
 ## 24. Data / Ekonomik Bütünlük (LOCKED)
 
@@ -1054,7 +1133,7 @@ Bu MS1 ile lock edilebilen, MS2 gibi pure primitive'lerin temelini oluşturan ko
 
 Bu kriterlerin hepsi artık **Layer-1** (tek-pencere context-aware canonical replay + store-backed composition) için **RUNTIME/TEST EXERCISED**'dır — implementasyon (`src/crypto_quant_lab/backtest/replay.py`, `store_runner.py`) ve kendi regression suite'i (`tests/test_backtest_replay_context_evaluation.py` — 22 test, `tests/test_backtest_store_runner_context_evaluation.py` — 21 test) tamamlanmıştır.
 
-**Bu, generic/çok-pencereli (Layer-2) bir OOS runner'ın hazır olduğu anlamına GELMEZ** — Layer-2 ayrıca policy-instance-freshness mekanizmasına (Bölüm 8.3.6, 19) ihtiyaç duyar, bu HENÜZ implement edilmemiştir. Ayrıca criterion 14'ün history-reconstructible (Type-H) niteliği, hâlâ mekanik olarak enforce edilemeyen bir semantic/caller precondition'dır (Bölüm 8.3.5) — bu, testlerin "kanıtladığı" bir şey değildir, yalnızca testlerin VARSAYDIĞI (Type-H policy fixture'ları kullanan) bir disiplin sınırıdır. **Foundation locked acceptance count'una (28.A) hâlâ dahil edilmezler** — bu ayrı bir sayımdır.
+**Bu, generic/context-aware (non-zero-context) bir Layer-2 OOS runner'ın hazır olduğu anlamına GELMEZ** — zero-context Layer-2 (`run_rolling_backtest_from_store`) artık implement edilmiş + test edilmiştir (Bölüm 8.3.6, 28.C — 12/12), ama context-aware bir varyant HENÜZ implement edilmemiştir. Ayrıca criterion 14'ün history-reconstructible (Type-H) niteliği, hâlâ mekanik olarak enforce edilemeyen bir semantic/caller precondition'dır (Bölüm 8.3.5) — bu, testlerin "kanıtladığı" bir şey değildir, yalnızca testlerin VARSAYDIĞI (Type-H policy fixture'ları kullanan) bir disiplin sınırıdır. **Foundation locked acceptance count'una (28.A) hâlâ dahil edilmezler** — bu ayrı bir sayımdır.
 
 1. Legal pre-OOS context, candle quality gate'ten geçmiş (quality-gated) olmalıdır (Bölüm 8.2, 24).
 2. Context, evaluation edilen pencere ile aynı exact partition'a (exchange/market_type/symbol/timeframe) ait olmalıdır (Bölüm 8.2).
@@ -1078,24 +1157,24 @@ Bu kriterlerin hepsi artık **Layer-1** (tek-pencere context-aware canonical rep
 
 **İleri seviye Faz 6 kategorileri (28.A/28.B/28.C'nin hiçbirine dahil DEĞİL, ayrı ve pending):** purging/embargo (17.1), CPCV (17.2), Sharpe-ailesi/return-series (16, 17.3), Deflated Sharpe (17.4), PBO (17.5), multiple-testing corrections (17.6), parameter stability (17.7), candidate/trial abstraction (18).
 
-### 28.C — FUTURE LAYER-2 POLICY-FRESHNESS ACCEPTANCE (0/12 RUNTIME/TEST EXERCISED)
+### 28.C — ZERO-CONTEXT LAYER-2 POLICY-FRESHNESS ACCEPTANCE (12/12 RUNTIME/TEST EXERCISED)
 
-Bu liste, Bölüm 8.3.6'da LOCKED olan factory-based policy-instance-freshness mekanizmasının, gelecekteki Layer-2 implementasyon mikro-adımı tarafından karşılanması gereken acceptance kriterlerini kaydeder. **Bunların HİÇBİRİ bugün runtime/test exercised DEĞİLDİR** — `policy_factory` kodlanmamıştır, Layer-2 orchestrator mevcut değildir, bu mikro-adım hiçbir yeni test eklememiştir (docs-only, bkz. Bölüm 23). Bu liste yalnızca Bölüm 8.3.6'nın kontratını, gelecekteki implementasyon için somut, test edilebilir maddelere çevirir — **bunları LOCKED yapmaz, yalnızca kaydeder;** exact mekanizma zaten Bölüm 8.3.6'da LOCKED'dır.
+Bu liste, Bölüm 8.3.6'da LOCKED olan factory-based policy-instance-freshness mekanizmasının, **zero-context Layer-2 orchestrator** (`run_rolling_backtest_from_store`, `src/crypto_quant_lab/validation/rolling.py`, commit `c363267`; test-hardening `c4af87c`) tarafından karşılandığını kaydeder. **Bu 12 kriterin hepsi artık runtime/test exercised'dır** — `tests/test_validation_rolling_backtest.py`'de 28 test (tümü PASS); davranışsal kriterler doğrudan regression testleriyle, "değişmedi"/"coupled değil" türü kriterler ise static/scope kanıtı (`git diff` boş) + tam regression suite uyumluluğuyla (1386/1386 PASS) kanıtlanır. Bu kanıt **yalnızca zero-context slice içindir** — context-aware (non-zero-context) bir Layer-2 varyantı için otomatik/global bir garanti değildir (bkz. Bölüm 8.3.6, 13).
 
-1. Sabit bir canonical pencere sırası için, execute edilen her pencere başına tam olarak bir factory çağrısı yapılır.
-2. Factory çağrı sırası deterministiktir ve canonical pencere sırasıyla eşleşir.
-3. Her pencere, önceki/sonraki hiçbir pencereyle paylaşılmayan, distinct bir policy instance kullanır.
-4. Bir factory iki pencere için aynı objeyi (object identity) döndürürse, bu durum etkilenen pencere execute edilmeden ÖNCE reddedilir.
-5. Yapısal olarak geçersiz bir factory sonucu (çağrılabilir `target_position` sağlamayan), etkilenen pencere execute edilmeden ÖNCE reddedilir.
-6. Factory exception'ları sessizce yutulmaz veya başarılı/kısmi bir sonuca dönüştürülmez.
-7. Stateful (Type-I) bir fixture policy, bağımsız pencereler arasında SIFIR state carryover gösterir (regression testiyle kanıtlanır).
-8. Mevcut tek-pencere API'ler (`run_backtest_replay`, `run_backtest_from_store`) DEĞİŞMEDEN kalır — bu kriterler onları etkilemez.
-9. Küresel `BacktestPolicy` Protocol'ü (Bölüm 8.3.5) DEĞİŞMEDEN kalır.
-10. Bu mekanizma, Type-I otomatik warm-up SAĞLADIĞINI veya Type-H niteliğini mekanik olarak ENFORCE ETTİĞİNİ iddia etmez (Bölüm 8.3.5, 8.3.6).
-11. Bu mekanizmanın implementasyonu, metrics, candidate/trial aggregation, optimizer, veya herhangi bir advanced-validation tekniğiyle (Bölüm 17) COUPLE edilmez.
-12. İkinci/forked bir replay engine yaratılmaz — canonical `run_backtest_replay` compose edilmeye devam eder (Bölüm 4, 21).
+1. Sabit bir canonical pencere sırası için, execute edilen her pencere başına tam olarak bir factory çağrısı yapılır. **PASS** — `run_rolling_backtest_from_store`'daki `for index, window in enumerate(windows): policy = policy_factory()` döngüsü; `test_exactly_one_factory_call_per_window_in_order`.
+2. Factory çağrı sırası deterministiktir ve canonical pencere sırasıyla eşleşir. **PASS** — aynı döngü, `enumerate(windows)` input sırasını korur; `test_exactly_one_factory_call_per_window_in_order`, `test_multiple_windows_preserve_exact_input_order`.
+3. Her pencere, önceki/sonraki hiçbir pencereyle paylaşılmayan, distinct bir policy instance kullanır. **PASS** — reuse-detection döngüsü + `seen_policies: list[BacktestPolicy]`; `test_same_object_factory_output_is_rejected_before_affected_window_runs` (negatif), `test_stateful_fixture_shows_zero_cross_window_state_carryover` (pozitif), `test_prior_accepted_policies_remain_strongly_retained_throughout_orchestration` (weakref-tabanlı strong-retention kanıtı).
+4. Bir factory iki pencere için aynı objeyi (object identity) döndürürse, bu durum etkilenen pencere execute edilmeden ÖNCE reddedilir. **PASS** — `if policy is previous_policy: raise ValueError(...)`, `run_backtest_from_store` çağrısından ÖNCE; `test_same_object_factory_output_is_rejected_before_affected_window_runs` (boundary-set üzerinden etkilenen pencerenin sıfır I/O yaptığı kanıtlanır).
+5. Yapısal olarak geçersiz bir factory sonucu (çağrılabilir `target_position` sağlamayan), etkilenen pencere execute edilmeden ÖNCE reddedilir. **PASS** — `_require_valid_policy_result`, `run_backtest_from_store` çağrısından ÖNCE; `test_invalid_factory_output_is_rejected_before_affected_window_runs`.
+6. Factory exception'ları sessizce yutulmaz veya başarılı/kısmi bir sonuca dönüştürülmez. **PASS** — `policy_factory()` çağrısının etrafında hiçbir try/except yoktur (kod incelemesiyle doğrulanır); `test_factory_exception_propagates_as_original_object` bunu `excinfo.value is expected_exception` ile — yalnızca type/mesaj değil, exact object identity ile — kanıtlar.
+7. Stateful (Type-I) bir fixture policy, bağımsız pencereler arasında SIFIR state carryover gösterir (regression testiyle kanıtlanır). **PASS** — `test_stateful_fixture_shows_zero_cross_window_state_carryover`. **Not:** bu yalnızca freshness'i kanıtlar — Type-I otomatik warm-up'ın DESTEKLENDİĞİ anlamına gelmez (bkz. madde 10, Bölüm 8.3.5, 8.3.6).
+8. Mevcut tek-pencere API'ler (`run_backtest_replay`, `run_backtest_from_store`) DEĞİŞMEDEN kalır — bu kriterler onları etkilemez. **PASS** — `git diff b626f5c..c363267 -- src/crypto_quant_lab/backtest/` boştur; `tests/test_backtest_replay_context_evaluation.py` (22 test) ve `tests/test_backtest_store_runner_context_evaluation.py` (21 test) DEĞİŞMEDEN yeşil kalır (regression suite'in parçası).
+9. Küresel `BacktestPolicy` Protocol'ü (Bölüm 8.3.5) DEĞİŞMEDEN kalır. **PASS** — `git diff b626f5c..c363267 -- src/crypto_quant_lab/backtest/policy.py` boştur; `tests/test_backtest_policy.py` DEĞİŞMEDEN yeşil kalır (tam regression suite'in parçası).
+10. Bu mekanizma, Type-I otomatik warm-up SAĞLADIĞINI veya Type-H niteliğini mekanik olarak ENFORCE ETTİĞİNİ iddia etmez (Bölüm 8.3.5, 8.3.6). **PASS** — `rolling.py`'de warm-up kodu YOKTUR; `_require_valid_policy_result`'ın docstring'i "bu asla semantik doğruluk, Type-H, veya Type-I geçerliliğini kanıtladığını iddia etmez" diye açıkça kaydeder. Bu, absence-of-claim bir kriterdir — runtime testle değil, kod/docstring incelemesiyle kanıtlanır.
+11. Bu mekanizmanın implementasyonu, metrics, candidate/trial aggregation, optimizer, veya herhangi bir advanced-validation tekniğiyle (Bölüm 17) COUPLE edilmez. **PASS** — `rolling.py` metrics/candidate/optimizer/Bölüm-17 kavramlarına hiçbir import veya referans içermez (kod incelemesiyle doğrulanır, absence-of-coupling kriteri).
+12. İkinci/forked bir replay engine yaratılmaz — canonical `run_backtest_replay` compose edilmeye devam eder (Bölüm 4, 21). **PASS** — `rolling.py` yalnızca `run_backtest_from_store`'u import eder (`run_backtest_replay` doğrudan hiç import/çağrılmaz); her pencere TEK bir `run_backtest_from_store` çağrısına delege eder; `test_rolling_output_matches_direct_per_window_composition` bağımsız direct-call kompozisyonuyla byte-identical `BacktestResult` eşitliğini kanıtlar.
 
-**Future Layer-2 policy-freshness acceptance count: 0 / 12 runtime/test exercised.** Bu sayım, 28.A'nın (22) veya 28.B'nin (15/15) hiçbirine dahil değildir — ayrı, henüz implement edilmemiş bir gelecekteki-iş kaydıdır.
+**Zero-context Layer-2 policy-freshness acceptance count: 12 / 12 runtime/test exercised.** Bu sayım, 28.A'nın (22) veya 28.B'nin (15/15) hiçbirine dahil değildir — ayrı bir sayımdır. **Bu, context-aware (non-zero-context) bir Layer-2 varyantının, metrics foundation'ının, veya Faz 6B/6C'nin tamamının tamamlandığı anlamına GELMEZ** — yalnızca zero-context rolling fixed-policy orchestrator'ın kendi acceptance contract'ının karşılandığı anlamına gelir.
 
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
