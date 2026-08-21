@@ -1,5 +1,6 @@
 import gc
-from dataclasses import dataclass
+import weakref
+from dataclasses import FrozenInstanceError, dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -14,7 +15,7 @@ from crypto_quant_lab.market_data.models import Candle
 from crypto_quant_lab.storage.base import HistoricalCandle
 from crypto_quant_lab.storage.sqlite import SQLiteHistoricalCandleStore
 from crypto_quant_lab.validation.rolling import WindowResult, run_rolling_backtest_from_store
-from crypto_quant_lab.validation.windows import TemporalWindow
+from crypto_quant_lab.validation.windows import TemporalSplit, TemporalWindow
 
 EXCHANGE = "binance"
 MARKET_TYPE = "usdm_perp"
@@ -149,6 +150,19 @@ def _coverage(start, end):
     return FundingCoverageInterval(start_time=start, end_time=end)
 
 
+def _query_boundaries(counting_store):
+    """Distinct `(start_time, end_time)` pairs across all recorded `store.query()` calls.
+
+    Deliberately count-agnostic: `prepare_backtest_dataset` may perform any
+    number of internal reads per window (today: a quality-then-dataset
+    double-read) — that internal read count is Layer-1's own implementation
+    detail, not this orchestrator's contract. Collapsing to a boundary set
+    still proves exact per-window boundary forwarding and exact
+    executed/not-executed membership, without coupling to that count.
+    """
+    return {(call["start_time"], call["end_time"]) for call in counting_store.query_calls}
+
+
 def _rolling(
     store,
     windows,
@@ -202,6 +216,12 @@ def test_window_result_equality_is_value_based():
     assert a == b
 
 
+def test_window_result_is_frozen():
+    result = WindowResult(window=W0, result=_VALID_RESULT)
+    with pytest.raises(FrozenInstanceError):
+        result.window = W1
+
+
 # --- input validation: windows container ---
 
 
@@ -231,6 +251,15 @@ def test_invalid_window_element_at_index_0_is_rejected_before_activity():
 def test_invalid_window_element_at_later_index_is_detected_upfront():
     with pytest.raises(TypeError, match=r"windows\[1\]"):
         _rolling(_PoisonCandleStore(), (W0, "not a window"), policy_factory=_never_called_factory)
+
+
+def test_temporal_split_element_is_rejected_before_activity():
+    # TemporalSplit is a distinct, non-repurposed concept (VALIDATION_SPEC.md
+    # Bölüm 8.3.12) — passing one as a `windows` element must be rejected by
+    # the same upfront TemporalWindow-only validation, not silently accepted.
+    split = TemporalSplit(in_sample=W0, out_of_sample=W1, timeframe=TIMEFRAME)
+    with pytest.raises(TypeError, match=r"windows\[0\]"):
+        _rolling(_PoisonCandleStore(), (split,), policy_factory=_never_called_factory)
 
 
 def test_non_callable_policy_factory_is_rejected_before_store_io():
@@ -281,16 +310,17 @@ def test_forwards_exact_time_boundaries_per_window(tmp_path):
     counting_store = _CountingCandleStore(_candle_store(tmp_path))
     windows = (W0, W1)
     _rolling(counting_store, windows, policy_factory=_flat_policy)
-    # prepare_backtest_dataset performs its own quality-then-dataset double
-    # read per window (store_runner.py docstring) — 2 store.query() calls
-    # per window, both carrying that window's exact boundaries.
-    assert len(counting_store.query_calls) == 4
-    for call in counting_store.query_calls[:2]:
-        assert call["start_time"] == W0.start
-        assert call["end_time"] == W0.end
-    for call in counting_store.query_calls[2:]:
-        assert call["start_time"] == W1.start
-        assert call["end_time"] == W1.end
+
+    assert len(counting_store.query_calls) > 0
+    assert _query_boundaries(counting_store) == {(W0.start, W0.end), (W1.start, W1.end)}
+
+    # canonical window order is preserved regardless of how many internal
+    # reads each window took: every W0-boundary call precedes every
+    # W1-boundary call.
+    call_boundaries = [(c["start_time"], c["end_time"]) for c in counting_store.query_calls]
+    last_w0_index = max(i for i, b in enumerate(call_boundaries) if b == (W0.start, W0.end))
+    first_w1_index = min(i for i, b in enumerate(call_boundaries) if b == (W1.start, W1.end))
+    assert last_w0_index < first_w1_index
 
 
 def test_zero_context_all_window_candles_are_evaluation_candles(tmp_path):
@@ -358,7 +388,8 @@ def test_same_object_factory_output_is_rejected_before_affected_window_runs(tmp_
     with pytest.raises(ValueError, match=r"windows\[1\]"):
         _rolling(counting_store, (W0, W1), policy_factory=factory)
 
-    assert len(counting_store.query_calls) == 2  # only window 0 executed (2 reads/window)
+    # only window 0 executed; window 1 (the affected window) has no query at all
+    assert _query_boundaries(counting_store) == {(W0.start, W0.end)}
 
 
 def test_invalid_factory_output_is_rejected_before_affected_window_runs(tmp_path):
@@ -371,20 +402,36 @@ def test_invalid_factory_output_is_rejected_before_affected_window_runs(tmp_path
     with pytest.raises(TypeError, match=r"windows\[1\].*target_position"):
         _rolling(counting_store, (W0, W1), policy_factory=factory)
 
-    assert len(counting_store.query_calls) == 2  # only window 0 executed (2 reads/window)
+    # only window 0 executed; window 1 (the affected window) has no query at all
+    assert _query_boundaries(counting_store) == {(W0.start, W0.end)}
 
 
-def test_factory_exception_propagates_unchanged(tmp_path):
-    store = _candle_store(tmp_path)
+def test_factory_exception_propagates_as_original_object(tmp_path):
+    counting_store = _CountingCandleStore(_candle_store(tmp_path))
 
     class _CustomFactoryError(Exception):
         pass
 
-    def factory():
-        raise _CustomFactoryError("boom")
+    expected_exception = _CustomFactoryError("boom")
+    call_count = 0
 
-    with pytest.raises(_CustomFactoryError, match="boom"):
-        _rolling(store, (W0,), policy_factory=factory)
+    def factory():
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return _flat_policy()
+        raise expected_exception
+
+    with pytest.raises(_CustomFactoryError) as excinfo:
+        _rolling(counting_store, (W0, W1), policy_factory=factory)
+
+    # not merely the same type/message — the exact same exception object,
+    # proving no wrap/re-raise/translation happened
+    assert excinfo.value is expected_exception
+
+    # window 0 executed; window 1 (the affected window, whose factory call
+    # raised) has no query at all
+    assert _query_boundaries(counting_store) == {(W0.start, W0.end)}
 
 
 def test_stateful_fixture_shows_zero_cross_window_state_carryover(tmp_path):
@@ -410,20 +457,48 @@ def test_stateful_fixture_shows_zero_cross_window_state_carryover(tmp_path):
     assert [p.calls for p in created] == [2, 2, 2]  # each window's policy starts fresh
 
 
-def test_reuse_detection_survives_gc_pressure_between_windows(tmp_path):
+def test_prior_accepted_policies_remain_strongly_retained_throughout_orchestration(tmp_path):
+    """Every earlier accepted policy instance must survive a forced GC pass.
+
+    Uses `weakref.ref` — never a strong reference — to observe each prior
+    instance from the test side. A hypothetical implementation that retained
+    only bare `id(policy)` ints (or only the immediately previous loop
+    variable) would let an earlier instance become collectible once the
+    orchestrator itself no longer references it; a forced `gc.collect()`
+    partway through orchestration would then free it, and its weakref would
+    go dead. With 4 windows, by the time window 2's factory call happens the
+    orchestrator's own loop variable has already moved on twice, so window
+    0's liveness at that point depends entirely on the orchestrator's own
+    retention — not on any accidental protection from a still-live local.
+    """
     store = _candle_store(tmp_path)
-    windows = (W0, W1, W2)
-    made_ids = []
+    windows = (W0, W1, W2, W3)
+
+    weak_refs: list[weakref.ReferenceType] = []
+    call_count = 0
 
     def factory():
-        policy = _flat_policy()
-        made_ids.append(id(policy))
+        nonlocal call_count
         gc.collect()
+        for index, ref in enumerate(weak_refs):
+            assert ref() is not None, (
+                f"policy from windows[{index}] was garbage collected before orchestration "
+                "finished — it was not strongly retained"
+            )
+        call_count += 1
+        policy = _flat_policy()  # a fresh, weak-referenceable instance every call
+        weak_refs.append(weakref.ref(policy))
         return policy
 
     result = _rolling(store, windows, policy_factory=factory)
-    assert len(result) == 3
-    assert len(set(made_ids)) == 3  # no id() collisions despite gc pressure
+
+    # every prior instance's liveness was already checked, while orchestration
+    # was still in progress, inside `factory()` itself above — retention is
+    # only contractually required for the duration of orchestration (Bölüm
+    # 8.3.6), not after `run_rolling_backtest_from_store` has returned, so no
+    # post-return liveness assertion is made here.
+    assert len(result) == 4
+    assert call_count == 4
 
 
 # --- fail-fast / partial-execution boundary ---
@@ -445,9 +520,9 @@ def test_earlier_windows_execute_and_no_subsequent_window_executes_on_failure(tm
     with pytest.raises(ValueError, match=r"windows\[2\]"):
         _rolling(counting_store, windows, policy_factory=factory)
 
-    # windows 0 and 1 executed (their candle queries happened, 2 reads/window);
-    # windows 2 and 3 did not
-    assert len(counting_store.query_calls) == 4
+    # windows 0 and 1 (earlier) each have at least one query; window 2
+    # (affected) and window 3 (later) have none
+    assert _query_boundaries(counting_store) == {(W0.start, W0.end), (W1.start, W1.end)}
 
 
 # --- canonical-engine preservation ---
