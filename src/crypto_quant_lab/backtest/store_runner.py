@@ -35,6 +35,24 @@ double-read `prepare_backtest_dataset` already performs for candles) and
 re-validated for exact `exchange`/`market_type`/`symbol` partition match —
 closing the one gap FUNDING-SPEC MS10's low-level replay could not close on
 its own (a plain `Candle` carries no `exchange`/`market_type`).
+
+`evaluation_start` is an additive, keyword-only, defaulted parameter
+(VALIDATION_SPEC.md Bölüm 8.3, locked B2 mechanism), composing the
+already-implemented `run_backtest_replay(..., evaluation_start=...)`
+boundary: `requested_start` continues to mean the loaded historical/context
+start, `requested_end` the loaded/evaluation range end (subject to the
+existing `effective_end` clamp), and `evaluation_start` is the new economic
+start passed straight through to canonical replay — this module never
+implements context-candle skipping itself, that mechanism belongs entirely
+to `replay.py`. When supplied, the economic funding query/quality range's
+lower bound becomes `evaluation_start` instead of `candles[0].open_time`;
+its upper bound is unchanged. `evaluation_start` is validated in two
+stages: once from raw arguments before any store I/O (genuine/aware/
+grid-aligned, within `[requested_start, requested_end)`), and once against
+the actual prepared candle tuple after candle I/O but strictly before any
+funding I/O — `prepare_backtest_dataset` may clamp `requested_end` down to
+an earlier `effective_end`, so the raw check alone cannot guarantee at
+least one evaluation candle remains.
 """
 
 from datetime import datetime
@@ -45,11 +63,14 @@ from crypto_quant_lab.backtest.models import BacktestConfig, BacktestResult
 from crypto_quant_lab.backtest.policy import BacktestPolicy
 from crypto_quant_lab.backtest.replay import run_backtest_replay
 from crypto_quant_lab.data_quality.feature_availability import feature_availability_time
+from crypto_quant_lab.data_quality.time import is_grid_aligned
 from crypto_quant_lab.funding.calculator import FundingModel
 from crypto_quant_lab.funding.models import HistoricalFundingEvent
 from crypto_quant_lab.funding.quality import build_funding_data_quality_report_from_store
 from crypto_quant_lab.funding.store import HistoricalFundingStore
+from crypto_quant_lab.market_data.models import Candle
 from crypto_quant_lab.storage.base import HistoricalCandleStore
+from crypto_quant_lab.storage.sqlite_codec import datetime_to_epoch_us
 
 
 def _validate_funding_configuration(
@@ -78,6 +99,70 @@ def _validate_funding_configuration(
             raise ValueError("funding_store must not be supplied when funding_required=False")
         if funding_model is not None:
             raise ValueError("funding_model must not be supplied when funding_required=False")
+
+
+def _validate_evaluation_start_configuration(
+    evaluation_start: datetime | None,
+    *,
+    timeframe: str,
+    requested_start: datetime,
+    requested_end: datetime,
+) -> None:
+    """Reject an invalid `evaluation_start` before any store I/O (Stage A).
+
+    `None` means no context — no new checks, exact legacy behavior. An
+    explicit boundary must be a genuine, aware, grid-aligned datetime within
+    `[requested_start, requested_end)`. This is necessary but not
+    sufficient: `prepare_backtest_dataset` may later clamp `requested_end`
+    down to an earlier `effective_end`, which only the prepared candle
+    tuple reveals — see `_validate_evaluation_start_against_candles`.
+    """
+    if evaluation_start is None:
+        return
+
+    evaluation_start_us = datetime_to_epoch_us(evaluation_start)
+
+    if not is_grid_aligned(evaluation_start, timeframe):
+        raise ValueError(
+            f"evaluation_start is not aligned to the {timeframe!r} grid: {evaluation_start!r}"
+        )
+
+    requested_start_us = datetime_to_epoch_us(requested_start)
+    requested_end_us = datetime_to_epoch_us(requested_end)
+
+    if not (requested_start_us <= evaluation_start_us < requested_end_us):
+        raise ValueError(
+            "evaluation_start must satisfy requested_start <= evaluation_start < "
+            f"requested_end, got evaluation_start={evaluation_start!r}, "
+            f"requested_start={requested_start!r}, requested_end={requested_end!r}"
+        )
+
+
+def _validate_evaluation_start_against_candles(
+    evaluation_start: datetime | None, *, candles: tuple[Candle, ...]
+) -> None:
+    """Re-check `evaluation_start` against the actual prepared candles (Stage B).
+
+    Runs after candle I/O but strictly before any funding I/O. Only the
+    upper bound is re-checked — `prepare_backtest_dataset` never shifts the
+    start (`candles[0].open_time == requested_start`) and timeframe is
+    invariant, so Stage A's lower-bound/type/grid checks already stand; only
+    the true, possibly-clamped `effective_end` was unknowable before candle
+    I/O.
+    """
+    if evaluation_start is None:
+        return
+
+    evaluation_start_us = datetime_to_epoch_us(evaluation_start)
+    run_end = feature_availability_time(candles[-1])
+    run_end_us = datetime_to_epoch_us(run_end)
+
+    if evaluation_start_us >= run_end_us:
+        raise ValueError(
+            "evaluation_start must leave at least one evaluation candle in the prepared "
+            f"dataset: evaluation_start={evaluation_start!r} is not before "
+            f"feature_availability_time(candles[-1])={run_end!r}"
+        )
 
 
 def _query_canonical_funding_events(
@@ -158,20 +243,34 @@ def run_backtest_from_store(
     funding_required: bool = False,
     funding_store: HistoricalFundingStore | None = None,
     funding_model: FundingModel | None = None,
+    evaluation_start: datetime | None = None,
 ) -> BacktestResult:
     """Run a deterministic backtest over `store`'s quality-gated data for `[requested_start, requested_end)`.
 
     `funding_required` is validated first, before any store I/O at all —
-    see `_validate_funding_configuration`. When `funding_required=True`,
-    the funding-aware path is: candle dataset prepared as always, then the
-    canonical funding range/quality-gate/event-query composition in
-    `_query_canonical_funding_events`, then a single funding-aware
-    `run_backtest_replay` call — no postprocessing, no result mutation.
+    see `_validate_funding_configuration`. `evaluation_start` (`None` by
+    default — exact legacy behavior) is then validated from raw arguments,
+    also before any store I/O — see `_validate_evaluation_start_configuration`.
+    When `funding_required=True`, the funding-aware path is: candle dataset
+    prepared as always, then `evaluation_start` re-validated against the
+    actual prepared candles (`_validate_evaluation_start_against_candles`,
+    strictly before any funding I/O), then the canonical funding range/
+    quality-gate/event-query composition in `_query_canonical_funding_events`
+    — whose lower bound is `evaluation_start` if supplied, else
+    `candles[0].open_time` — then a single funding-aware `run_backtest_replay`
+    call with `evaluation_start` forwarded unchanged — no postprocessing, no
+    result mutation.
     """
     _validate_funding_configuration(
         funding_required=funding_required,
         funding_store=funding_store,
         funding_model=funding_model,
+    )
+    _validate_evaluation_start_configuration(
+        evaluation_start,
+        timeframe=timeframe,
+        requested_start=requested_start,
+        requested_end=requested_end,
     )
 
     candles = prepare_backtest_dataset(
@@ -184,10 +283,13 @@ def run_backtest_from_store(
         requested_end=requested_end,
         as_of_time=as_of_time,
     )
+    _validate_evaluation_start_against_candles(evaluation_start, candles=candles)
 
     funding_events: tuple[HistoricalFundingEvent, ...] = ()
     if funding_required:
-        funding_run_start = candles[0].open_time
+        funding_run_start = (
+            evaluation_start if evaluation_start is not None else candles[0].open_time
+        )
         funding_run_end = feature_availability_time(candles[-1])
         funding_events = _query_canonical_funding_events(
             funding_store,
@@ -206,4 +308,5 @@ def run_backtest_from_store(
         cost_model=cost_model,
         funding_events=funding_events,
         funding_model=funding_model,
+        evaluation_start=evaluation_start,
     )
