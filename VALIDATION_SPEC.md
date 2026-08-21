@@ -1232,39 +1232,133 @@ CostModel/FundingModel:  unchanged
 
 ## 22. Faz 6 Alt-Faz Yapısı (LOCKED — "Foundation" ≠ "Faz 6 Complete")
 
+**Capability Ownership Model (LOCKED — FAZ6 Phase-Status Reconciliation mikro-adımıyla eklendi):** Bir deliverable'ın hangi alt-faza ait olduğu, bu bölümdeki (§22) authoritative capability listesi tarafından belirlenir — **historical microstep/commit label prefix'i tarafından değil.** `FAZ6B MS2` (zero-context rolling orchestrator) ve `FAZ6B MS3`–`MS5` (Stage-1 metrics) label'ları, bu iş **FAZ6B-numaralı workstream'de** yürütüldüğü için bu şekilde adlandırılmıştır (gerekçe: §22.1) — ama capability'nin kendisi (fixed-policy rolling OOS evaluation, basic return/drawdown metrics), aşağıdaki FAZ6A tanımına göre **FAZ6A-owned**'dır. Historical microstep/commit label'lar **yeniden yazılmaz veya fabrikasyon edilmez** (§22.1); yalnızca capability-ownership'in doğru okunması gereken kaynak bu bölümdür (§22), §23'teki microstep log değil.
+
 ```
 FAZ 6A — Temporal Validation Foundation
     temporal window primitive, IS/OOS split, fixed-policy rolling OOS
     evaluation, basic return/drawdown metrics.
 
-FAZ 6B — Context/Warm-up + Metrics + Experiment Foundation
-    OOS context/warm-up API implementasyonu (exact mekanizma — B2 —
-    Bölüm 8.3'te LOCKED; Layer-1 [tek-pencere context-aware canonical
-    replay + store-backed composition] artık İMPLEMENT EDİLMİŞ +
-    TEST EDİLMİŞTİR, bkz. Bölüm 23, 28.B). Policy-instance-freshness
-    mekanizması (Bölüm 8.3.6) LOCKED'dır VE zero-context Layer-2
-    çok-pencereli orchestrator [run_rolling_backtest_from_store] artık
-    İMPLEMENT EDİLMİŞ + TEST EDİLMİŞTİR (bkz. Bölüm 23, 28.C — 12/12).
-    Stage-1 metrics (total return + max drawdown) exact kontratı
-    Bölüm 15.1–15.8'de LOCKED'dır (FAZ6B MS4) VE artık production
-    implementasyonu [`Stage1Metrics`, `compute_stage1_metrics`]
-    İMPLEMENT EDİLMİŞ + TEST EDİLMİŞTİR (FAZ6B MS5, bkz. Bölüm 23,
-    28.D — 18/18). Bu alt-fazda kalan iş: context-aware (non-zero-context)
-    Layer-2 varyantı, return-series/Sharpe contract (Aşama 2),
-    Aşama 3 (Deflated Sharpe, PBO, multiple-testing, parameter stability),
-    candidate/trial abstraction — hepsi HENÜZ PENDING.
+    Durum: FAZ6A — COMPLETE (bkz. §22.2 Phase-Status Table; kanıt ve
+    tam kapsam sınırı için bkz. §22.3).
+
+FAZ 6B — Context-Aware Extensions + Return-Series / Experiment Foundation
+    Tamamlanan bileşenler:
+      - B2 Layer-1 context/evaluation mimarisi (Bölüm 8.3, LOCKED) VE
+        `evaluation_start` — İMPLEMENT EDİLMİŞ + TEST EDİLMİŞTİR
+        (bkz. Bölüm 23, 28.B — 15/15).
+      - Context-aware replay/store-backed tek-pencere execution
+        (`run_backtest_replay`/`run_backtest_from_store`).
+      - Type-H semantic caller precondition (Bölüm 8.3.5) — LOCKED.
+      - Factory-based policy-instance-freshness kontratı (Bölüm 8.3.6)
+        — LOCKED.
+      - Mevcut zero-context rolling orchestrator
+        (`run_rolling_backtest_from_store`) için runtime freshness
+        enforcement — İMPLEMENT EDİLMİŞ + TEST EDİLMİŞTİR (bkz. Bölüm
+        23, 28.C — 12/12). (Zero-context rolling orchestrator'ın
+        kendisi FAZ6A-owned bir capability'dir — Bölüm 8.3.6, 13; bu
+        madde yalnızca freshness-mekanizmasının FAZ6B'de LOCKED/
+        implement edildiğini kaydeder.)
+      - Stage-1 metrics (Bölüm 15.1–15.8), FAZ6A'nın zaten tamamlanmış
+        bir bağımlılığı olarak FAZ6B'ye açık.
+
+    Kalan zorunlu bileşenler (HENÜZ PENDING):
+      - Non-zero-context/context-aware Layer-2 pencere tasarımı ve
+        implementasyonu (ayrı, henüz tanımlanmamış bir per-window
+        context-boundary uzantısına ihtiyaç duyar — Bölüm 13).
+      - Return-series semantics (Bölüm 16 — açık sorular çözülmedi).
+      - Sharpe-ailesi foundation (Aşama 2, Bölüm 15/17.3) — exact
+        metrik listesi Bölüm 17.3/16'nın kendisidir, burada yeniden
+        icat edilmez.
+      - Candidate/trial abstraction (Bölüm 18) — experiment-foundation
+        prerequisite'i olarak.
+
+    Durum: FAZ6B — NOT COMPLETE (bkz. §22.2). Stage-1 metrics'in
+    tamamlanmış olması FAZ6B'yi TEK BAŞINA KAPATMAZ — yukarıdaki dört
+    kalan bileşen hâlâ pending'dir.
 
 FAZ 6C — Advanced Overfitting Controls
-    purging/embargo (horizon contract'a bağımlı), CPCV, Deflated Sharpe,
-    PBO, multiple-testing corrections, parameter stability.
+    purging/embargo (horizon contract'a bağımlı, Bölüm 17.1), CPCV
+    (17.2), Deflated Sharpe (17.4), PBO (17.5), multiple-testing
+    corrections (17.6), parameter stability (17.7). Bu liste
+    FAZ6C-owned'dır ve yalnızca bu maddeleri kapsar — Sharpe-ailesi
+    foundation'ın kendisi (17.3) ve candidate/trial abstraction (18)
+    FAZ6B-owned'dır (yukarıda); FAZ6C yalnızca onların ÜZERİNE inşa
+    edilen ileri seviye kontrolleri kapsar.
+
+    Durum: FAZ6C — NOT COMPLETE. Hiçbir madde başlanmış veya tamamlanmış
+    olarak işaretlenmez.
 
 FAZ 6D — Faz 6 Final Acceptance
     tüm binding BACKTEST_SPEC Bölüm 26 maddelerinin ya implement edildiğinin
     ya da (yalnızca approved bir BACKTEST_SPEC revizyonuyla) yeniden
     kapsamlandığının audit'i.
+
+    Durum: FAZ6D — NOT STARTED.
 ```
 
 **LOCKED:** 6A'nın tamamlanması **Faz 6'nın tamamlanması anlamına gelmez.** `BACKTEST_SPEC.md` Bölüm 26'daki her madde ya implement edilir ya da yalnızca dokümante edilmiş bir spec revizyonu ile yeniden kapsamlandırılır — sessizce "foundation yeterli" denip kapatılmaz.
+
+### 22.1 Historical Microstep Label vs. Capability Ownership (LOCKED)
+
+`§23`'teki microstep log, `FAZ6B MS2` (zero-context rolling orchestrator, commit `c363267`/`c4af87c`) ve `FAZ6B MS3`–`MS5` (Stage-1 metrics pre-flight/lock/implementation, commit `76002ab`/`a265e44`/`05eaa2b`) label'larını kullanır — bu label'lar **tarihsel olarak doğrudur ve yeniden yazılmaz, yeniden numaralandırılmaz, veya fabrikasyon edilmiş yeni bir label ile değiştirilmez.** Bu iş, aşağıdaki gerekçelerle FAZ6B-numaralı workstream'de yürütüldü:
+
+```
+- Policy-instance-freshness (Bölüm 8.3.6), zero-context rolling
+  orchestrator'ın inşası için cross-cutting bir prerequisite'ti ve
+  FAZ6B MS1'de spec-lock edilmişti (bkz. §22'nin FAZ6B "Tamamlanan
+  bileşenler" listesi) — orchestrator'ın implementasyonu (MS2)
+  doğal olarak aynı numaralı workstream'in devamı olarak yürütüldü.
+- Context/evaluation mimarisi (B2, Bölüm 8.3) ve metrics staging
+  (Bölüm 15) aynı dönemde, birbiriyle ilişkili olarak geliştiriliyordu
+  — mikro-adım numaralandırması bu geliştirme sırasını, nihai capability
+  ownership'i değil, yansıtır.
+```
+
+**Prosedürel label, §22'de kilitlenen nihai capability-ownership'i EZMEZ (override etmez).** Bir okuyucu "FAZ6B MS2/MS3/MS4/MS5 nerede tamamlandı" sorusuna `§23`'ten cevap bulur; "hangi capability hangi alt-faza AİTTİR" sorusuna ise yalnızca `§22`'den cevap bulur — bu iki soru farklıdır ve bu doküman onları artık karıştırmaz.
+
+### 22.2 Faz 6 Phase-Status Table (LOCKED — Kompakt Özet)
+
+| Phase | Status | Completed scope | Remaining scope |
+|---|---|---|---|
+| FAZ6A | COMPLETE | temporal window/IS-OOS primitives (§28.A — 22/22), zero-context rolling OOS evaluation (§28.C — 12/12), Stage-1 metrics (§28.D — 18/18) | locked FAZ6A scope içinde yok |
+| FAZ6B | NOT COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6) | non-zero-context Layer-2, return-series/Sharpe (Aşama 2), candidate/trial abstraction |
+| FAZ6C | NOT COMPLETE | yok | purging/embargo, CPCV, Deflated Sharpe, PBO, multiple-testing corrections, parameter stability |
+| FAZ6D | NOT STARTED | yok | Faz 6 final acceptance audit'i |
+
+Bu tablo, §28.A/B/C/D'nin bağımsız acceptance sayımlarını **birleşik bir yüzdeye veya tek bir sayıya dönüştürmez** — her grup kendi bağımsız kanıtını korur; bu tablo yalnızca hangi grubun hangi alt-fazın kanıtı olduğunu özetler.
+
+### 22.3 FAZ6A Completion — Kapsam ve Kanıt (LOCKED)
+
+**FAZ6A: COMPLETE.** Bu, yukarıdaki FAZ6A tanımının (temporal window primitive, IS/OOS split, fixed-policy rolling OOS evaluation, basic return/drawdown metrics) dört maddesinin **tamamının** implement edilmiş, test edilmiş ve dokümante edilmiş olduğu anlamına gelir:
+
+```
+1. TemporalWindow primitive — implemented/tested/documented
+   (src/crypto_quant_lab/validation/windows.py, Bölüm 6, §28.A).
+2. TemporalSplit IS/OOS primitive — implemented/tested/documented
+   (src/crypto_quant_lab/validation/windows.py, Bölüm 7, §28.A).
+3. Zero-context rolling fixed-policy OOS evaluation — implemented/
+   tested/documented: WindowResult, run_rolling_backtest_from_store,
+   zero-context Layer-2 için policy freshness (§8.3.6, §13); §28.C —
+   12/12 PASS.
+4. Basic Stage-1 metrics — implemented/tested/documented:
+   Stage1Metrics, compute_stage1_metrics, total return, maximum
+   drawdown (§15.1–15.8); §28.D — 18/18 PASS.
+```
+
+Bu tamamlanma **capability-based**'dir — §28.A'nın 22 maddesi, §28.C'nin 12 maddesi ve §28.D'nin 18 maddesi ayrı, bağımsız sayımlar olarak **DEĞİŞMEDEN** kalır; bu bölüm onları yeni birleşik bir sayıya katlamaz.
+
+**FAZ6A completion açıkça ŞUNLARI İDDİA ETMEZ:**
+
+```
+- Context-aware / non-zero-context rolling'in tamamlandığını
+  (bu FAZ6B-owned'dır, §22).
+- Stage-2 (return-series/Sharpe) veya Stage-3 (Deflated Sharpe/PBO/
+  multiple-testing/parameter stability) metriklerinin tamamlandığını.
+- FAZ6B, FAZ6C, veya genel Faz 6'nın tamamlandığını.
+```
+
+**Zero-context'in yeterliliği (gerekçe):** Bölüm 13'ün kendi ifadesiyle, context/lookback kullanmayan bir policy için mevcut per-window `run_backtest_from_store` çağrısı **zaten doğru sonucu üretir** — bu nedenle zero-context rolling, FAZ6A'nın "fixed-policy rolling OOS evaluation" maddesini baseline seviyede karşılar. Context/warm-up (Layer-1 VE non-zero-context Layer-2) FAZ6B'nin kendi başlığında ("Context-Aware Extensions...") açıkça sahiplenilen bir **uzantıdır** — FAZ6A'nın dört maddesinden hiçbiri context-awareness'i zorunlu kılmaz.
 
 ## 23. Faz 6 Mikro-Adım Sırası — Yalnızca Yakın Vade (Bağlayıcı)
 
@@ -1354,14 +1448,43 @@ FAZ6B MS5:
   - 28.D Stage-1 acceptance/status reconciliation (bu doküman
     güncellemesi) — TAMAMLANDI
 
+FAZ6 PHASE-GATE AND NEXT-DEPENDENCY AUDIT (READ-ONLY) — TAMAMLANDI:
+  — Bu doküman ve §23'ün kendisi (o zamanki hâli), ROADMAP.md, ve
+  production/test surface'ları okunarak bağımsız bir phase-gate audit'i
+  yapıldı. Bulgu: FAZ6A capability gate PASS, FAZ6B capability gate
+  FAIL; §22'nin FAZ6A bulleti ile FAZ6B başlığı/bulleti arasında, ve
+  §23'ün FAZ6B-prefixed microstep label'ları ile §22'nin FAZ6A capability
+  tanımı arasında bir ownership-wording ambiguity tespit edildi. Docs-only,
+  read-only; hiçbir dosya değiştirilmedi.
+
+FAZ6 PHASE-STATUS RECONCILIATION — FAZ6A/FAZ6B OWNERSHIP AND COMPLETION —
+TAMAMLANDI:
+  — Yukarıdaki audit'in bulduğu ownership-wording ambiguity'yi çözdü:
+  §22'yi bir "Capability Ownership Model" ile genişletti (§22, 22.1,
+  22.2, 22.3); FAZ6A'yı capability-based olarak explicit COMPLETE ilan
+  etti; FAZ6B'nin başlığını/bulletini yeniden yazarak Stage-1 metrics'in
+  artık ambiguous şekilde FAZ6B'ye ait görünmesini giderdi ve FAZ6B'yi
+  explicit NOT COMPLETE ilan etti (kalan: non-zero-context Layer-2,
+  return-series/Sharpe, candidate/trial abstraction); Aşama 3'ü
+  (Deflated Sharpe/PBO/multiple-testing/parameter stability) yalnızca
+  FAZ6C-owned olarak netleştirdi (önceden hem FAZ6B'nin "kalan iş"
+  listesinde hem FAZ6C bulletinde görünüyordu); kompakt bir phase-status
+  tablosu ekledi (§22.2). Historical `FAZ6B MS2`–`MS5` label'ları
+  DEĞİŞTİRİLMEDİ/yeniden yazılmadı — yalnızca §22.1'de neden bu
+  label'ların kullanıldığı kaydedildi. Docs-only; production kod,
+  test, veya acceptance sayımı (§28.A/B/C/D) değişmedi.
+
 Sonraki (henüz başlanmadı):
-  Context-aware (non-zero-context, `context_start < evaluation_start`)
-  bir Layer-2 varyantı — ayrı bir per-window context-boundary tasarımına
-  (henüz tanımlanmamış) ihtiyaç duyar; return-series/Sharpe contract
-  (Aşama 2, Bölüm 16); Aşama 3 (Deflated Sharpe, PBO, multiple-testing,
-  parameter stability, Bölüm 17); candidate/trial abstraction (Bölüm 18).
-  Bu mikro-adımlardan önce context-aware bir çok-pencereli runner veya
-  Aşama 2/3 metrics'e commit edilmez.
+  Return-series semantics preflight/spec-lock (Bölüm 16) — Sharpe-ailesi
+  implementasyonundan önceki, en yakın çözülmemiş bağımlılık. Non-zero-
+  context Layer-2 varyantı ayrı, paralel-eligible bir FAZ6B dalıdır —
+  return-series/Sharpe için bir prerequisite DEĞİLDİR (Bölüm 15.8'in
+  "Non-zero-context Layer-2 implement edilmeden ÖNCE çalışabilir"
+  ilkesiyle aynı gerekçe). Aşama 3 (Deflated Sharpe, PBO, multiple-testing,
+  parameter stability, Bölüm 17) ve candidate/trial abstraction (Bölüm 18),
+  Sharpe-ailesi (Aşama 2) tamamlanmadan başlatılmaz. Bu mikro-adımlardan
+  önce context-aware bir çok-pencereli runner veya Aşama 2/3 metrics'e
+  commit edilmez.
 ```
 
 **MS3 scope (TAMAMLANDI — pre-flight'in kendisi, Bölüm 8.3'te kilitlendi):**
@@ -1552,3 +1675,22 @@ Bu liste, Bölüm 15.1–15.8'de LOCKED olan Stage-1 metrics (total return + max
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
 ROADMAP.md'deki bir sonraki faz **Faz 7 — İlk Funding/Basis araştırması**dır. Faz 7'nin güvenilir olabilmesi için, en azından Bölüm 22'deki FAZ6A (temporal split + rolling fixed-policy OOS evaluation + basic return/drawdown metrikleri) tamamlanmış olmalıdır — bu, Faz 7'nin IS'te seçilen bir funding/basis sinyalini gerçekten görülmemiş bir OOS penceresinde kontrol edebilmesi için minimum güven sınırıdır. Faz 6'nın daha ileri maddeleri (CPCV/PBO/DSR), Faz 7'nin **başlaması** için zorunlu değildir, ama FAZ6A'nın kendisi zorunludur. Bu doküman Faz 7'nin strateji tasarımını **yapmaz.**
+
+**Durum güncellemesi (FAZ6 Phase-Status Reconciliation ile):**
+
+```
+- Yukarıdaki minimum FAZ6A ön koşulu artık KARŞILANMIŞTIR (§22.3 —
+  FAZ6A: COMPLETE).
+- Faz 7 HENÜZ BAŞLAMAMIŞTIR — bu doküman Faz 7'yi başlatmaz, tasarlamaz,
+  veya scope etmez.
+- FAZ6A'nın karşılanmış olması, kalan FAZ6B/FAZ6C işinin atlandığı veya
+  tamamlandığı anlamına GELMEZ — proje, Faz 7'ye başlamadan ÖNCE Faz
+  6'nın geri kalanını (FAZ6B: non-zero-context Layer-2, return-series/
+  Sharpe, candidate/trial abstraction; FAZ6C: advanced overfitting
+  controls) tamamlamaya devam EDEBİLİR (bu doküman bir sıralama
+  zorunluluğu icat etmez).
+- CPCV/PBO/DSR'nin Faz 7'nin başlaması için zorunlu olmadığına dair
+  yukarıdaki cümle DEĞİŞMEMİŞTİR/genişletilmemiştir — bu bölüm yalnızca
+  FAZ6A'nın artık karşılanmış olduğunu kaydeder, başka hiçbir izin
+  genişletmez.
+```
