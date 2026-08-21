@@ -296,7 +296,7 @@ History-reconstructibility, **açık bir caller/policy-author sorumluluğudur** 
 
 **Type-I policy'ler global olarak yasaklanmaz** — normal (context-aware olmayan) backtest'lerde tamamen legaldir; yalnızca context-aware evaluation'ın otomatik warm-up garantisinden **yararlanamazlar.**
 
-**8.3.6 Policy Instance Freshness (Ayrı Bir Konu)**
+**8.3.6 Policy Instance Freshness — LOCKED (Factory-Based Mekanizma, FAZ6B MS1)**
 
 History-reconstructibility (8.3.5) ile policy-instance-freshness **iki farklı sorundur:**
 
@@ -319,13 +319,161 @@ Layer 1 — TEK context-aware canonical replay run'ı
 Layer 2 — Bağımsız pencereler üzerinde çalışan çok-pencereli
     (multi-window) validation orchestrator:
     aynı mutable policy instance'ının pencereler arası yeniden
-    kullanımı GÜVENSİZDİR. Mekanik enforcement için bir
-    `policy_factory`-benzeri mekanizma (Callable[[], BacktestPolicy],
-    orchestrator tarafından pencere başına bir kez çağrılır) doğru
-    gelecekteki enforcement noktasıdır.
+    kullanımı GÜVENSİZDİR.
 ```
 
-**Bu MS4, bir `policy_factory` implement etmez veya tam tasarlamaz.** Yalnızca gelecekteki güvenli multi-window orchestration'dan **önce** gerekli bir bağımlılık olarak kaydedilir. **Layer 1 (tek context-aware run) bu mekanizmayı beklemez** — B2'nin spec-lock'u ve implementasyonu Layer 2'yi beklemeden ilerleyebilir.
+**Durum: LOCKED (mimari/tasarım) — mekanizma seçimi ve exact kontrat.** Bu bölüm, yukarıdaki (B)'nin gelecekteki Layer-2 orchestrator'ı için exact mekanizmasını kilitler. **Bu bir implementasyon değildir** — `policy_factory` bu mikro-adımda kodlanmaz, bir type alias/production parametre eklenmez, hiçbir test yazılmaz, ve Layer-2 orchestrator'ın kendisi henüz mevcut değildir. Implementasyon, kendi regression suite'i ile test edilecek, ayrı bir gelecekteki mikro-adımdır (Bölüm 23, 28.C).
+
+**Karşılaştırılan alternatifler:**
+
+```
+1. Caller-discipline-only (mekanik enforcement yok) — REDDEDİLDİ (tek
+   mekanizma olarak): Layer 2, tanım gereği caller'ın doğrudan görmediği
+   bir orchestration loop'udur (pencereler otomatik ilerler) — Layer 1'in
+   "tek run, tek caller" varsayımı burada geçerli değildir; sessiz
+   cross-window leakage riski (Bölüm 19) mekanik bir kontrol olmadan
+   tespit edilemez kalır.
+
+2. Global BacktestPolicy.reset() zorunluluğu — REDDEDİLDİ: Bölüm 8.3.5
+   zaten Faz-4-locked BacktestPolicy contract'ının KÜRESEL olarak
+   değişmeyeceğini kilitler; yeni bir zorunlu metot eklemek bu kilidi
+   ihlal eder ve mevcut/gelecekteki tüm context-aware-olmayan policy
+   kullanımını (Faz 4/5) geriye dönük olarak kırar.
+
+3. Clone/copy-based duplication (deepcopy/copy ile pencere başına bir
+   kopya) — REDDEDİLDİ: Bölüm 8.3.5, deepcopy/introspection/hidden
+   reset'i engine garantisi olarak zaten "ÖNERİLMEZ/TASARLANMAZ" diye
+   kilitler — aynı gerekçe geçerlidir (keyfi bir Python objesinin doğru
+   şekilde kopyalanabileceği genel olarak garanti edilemez).
+
+4. Factory-based per-window construction (Callable[[], BacktestPolicy],
+   orchestrator tarafından pencere başına bir kez çağrılır) — LOCKED.
+   Gerekçe: mevcut repo'nun additive-extension convention'ıyla tutarlı
+   (yeni bir dependency-injection noktası, mevcut hiçbir contract'ı
+   değiştirmez); object identity üzerinden mekanik olarak enforce
+   edilebilir (aşağıda); policy-author'a normal `__init__`'ini kullanma
+   özgürlüğü bırakır (Bölüm 8.3.5'in caller-disiplini prensibiyle
+   tutarlı).
+
+5. Orchestrator'ın hazır (prebuilt) tek bir policy instance kabul etmesi
+   — REDDEDİLDİ (Layer-2'nin TEK girdisi olarak): bu tam olarak yukarıdaki
+   GÜVENSİZ senaryodur — aynı instance'ın pencereler arası paylaşılmasına
+   yapısal olarak izin verir. Layer 1'in mevcut `run_backtest_replay`/
+   `run_backtest_from_store` API'si için (tek pencere, tek caller-supplied
+   instance) hâlâ doğru ve DEĞİŞMEDEN kalır (aşağıda) — yalnızca Layer-2
+   orchestrator'ın tek girdisi olarak reddedilir.
+```
+
+**Locked mekanizma: factory-based per-window construction.**
+
+**Factory şekli:**
+
+```
+Kavramsal şekil: Callable[[], BacktestPolicy]
+```
+
+Bu mikro-adım yalnızca kavramı kilitler — bir type alias, production parametre adı, veya kod eklenmez. Dokümanda bu mekanizmadan bahsederken `policy_factory` ismi kullanılır (Bölüm 18, 19 ile tutarlı) — exact production parametre/argüman adı implementasyon mikro-adımına ertelenir (Bölüm 8.3.11'in `evaluation_start` için izlediği "kavram kilitlenir, exact isim implementasyonda finalize edilir" precedent'iyle tutarlı).
+
+**Ownership ve invocation (LOCKED invariant'lar):**
+
+```
+- Gelecekteki Layer-2 orchestrator, paylaşılan/hazır (prebuilt) mutable
+  bir policy instance DEĞİL, factory-benzeri bir construction dependency
+  kabul eder.
+- Orchestrator, factory'i HER bağımsız evaluation penceresi için TAM
+  OLARAK BİR KEZ çağırır.
+- Çağrı, o pencerenin execution'ından HEMEN ÖNCE, canonical pencere
+  sırasında gerçekleşir.
+- Dönen policy instance, YALNIZCA o pencereye aittir.
+- Orchestrator, bir instance'ı başka bir pencerede yeniden kullanmak
+  için CACHE'LEMEZ.
+- Orchestrator, fresh construction'ın YERİNE reset()/clone()/copy()/
+  deepcopy() ÇAĞIRMAZ (Bölüm 8.3.5'in deepcopy/hidden-reset red
+  gerekçesiyle tutarlı).
+- Mevcut tek-pencere API'ler (`run_backtest_replay`,
+  `run_backtest_from_store`) bir `BacktestPolicy` instance'ını
+  DEĞİŞMEDEN kabul etmeye devam eder.
+- `run_backtest_replay` ve `run_backtest_from_store`, bu kontratın
+  parçası olarak bir factory ALMAZ — factory yalnızca gelecekteki
+  Layer-2 orchestrator'ın girdisidir.
+- Küresel `BacktestPolicy` Protocol'ü (Bölüm 8.3.5, `backtest/policy.py`)
+  DEĞİŞMEDEN kalır.
+```
+
+**Mekanik enforcement (LOCKED — gelecekteki implementasyon zorunluluğu):**
+
+```
+Gelecekteki Layer-2 implementasyonu, bir factory birden fazla pencere
+için AYNI objeyi döndürdüğünde bunu MEKANİK OLARAK REDDETMELİDİR.
+```
+
+- Reuse tespiti **object identity** (`is`/`id()`) üzerinden yapılır, **equality** (`==`) üzerinden DEĞİL — iki farklı instance'ın eşit karşılaştırılması (örn. aynı config'e sahip iki `@dataclass` policy) legal ve beklenen bir durumdur; yasak olan yalnızca AYNI OBJENİN yeniden kullanılmasıdır.
+- Dönen instance'lar, orchestration süresince **strongly retained** tutulmalı (veya eşdeğer bir identity-safe mekanizma kullanılmalı) — CPython'da serbest bırakılan bir objenin `id()` değeri başka bir objeye yeniden atanabildiğinden (`id()` reuse), yalnızca zayıf/geçici referanslarla yapılan bir `id()` karşılaştırması reuse tespitini yanlış-negatif üretebilir.
+- Reuse edilmiş bir instance, **etkilenen pencere execute edilmeden ÖNCE** fail eder.
+- Exact gelecekteki exception type/mesajı bu dokümanda kilitlenmez — implementasyon mikro-adımının kendi regression suite'i bunu deterministik olarak tanımlar/test eder (mevcut proje TypeError/ValueError konvansiyonuyla tutarlı); bu docs-only mikro-adım repository-wide yeni bir exception hiyerarşisi icat etmez.
+
+**Factory output validation (LOCKED):**
+
+```
+- Her factory sonucu, yapısal olarak çağrılabilir bir target_position
+  SAĞLAMALIDIR (BacktestPolicy Protocol, Bölüm 8.3.5).
+- Geçersiz bir sonuç, etkilenen pencere execute edilmeden ÖNCE fail eder.
+- Bir factory exception'ı sessizce YUTULMAZ veya başarılı/kısmi bir
+  validation sonucuna dönüştürülmez.
+- Gelecekteki implementasyon, deterministik fail-fast davranışı
+  TANIMLAMALIDIR.
+```
+
+**Açıkça iddia EDİLMEZ:** yapısal output validation (çağrılabilir `target_position` varlığı), bir policy'nin semantik doğruluğunu, Type-H (history-reconstructible) niteliğini, veya Type-I state-management doğruluğunu **kanıtlamaz** — bu yalnızca bir shape/duck-type kontrolüdür, Bölüm 8.3.5'in zaten kurduğu "mekanik olarak enforce edilemez" sınırıyla birebir tutarlıdır.
+
+**Failure ve partial-execution sınırı (LOCKED):**
+
+```
+- Factory construction pencere-başına ve lazy'dir — TÜM pencereler için
+  TÜM policy'lerin herhangi bir backtest'ten ÖNCE eagerly inşa edilmesi
+  DEĞİLDİR.
+- Pencere N için construction veya validation fail ederse, pencere N ve
+  sonrasındaki pencereler EXECUTE EDİLMEZ.
+- Daha ÖNCEKİ pencereler zaten execute edilmiş OLABİLİR.
+- Rollback/transactional bir orchestration garantisi TANITILMAZ.
+- Bu mikro-adım, zaten locked bir spec maddesi tarafından zorunlu
+  kılınmadıkça, kısmi sonuçların persistence'ını TASARLAMAZ.
+```
+
+**Type-H / Type-I sınırı (LOCKED — Bölüm 8.3.5'ten ayrı ama ilişkili):**
+
+```
+- Fresh construction, bağımsız pencereler arasında mutable state
+  leakage'ı ÖNLER.
+- Freshness, bir policy'nin Type-H (history-reconstructible) olduğunu
+  KANITLAMAZ.
+- Freshness, Type-I internal state'i OTOMATİK OLARAK ISITMAZ.
+- Type-H, gerektiği yerde açık bir semantic caller precondition olarak
+  KALIR (Bölüm 8.3.5).
+- Type-I otomatik warm-up DESTEKLENMEZ ve burada TANITILMAZ (Bölüm
+  8.3.5'in "HİÇBİRİ engine garantisi olarak ÖNERİLMEZ/TASARLANMAZ"
+  kilidiyle birebir tutarlı).
+- Hiçbir context candle, yalnızca bir Type-I policy'yi "ısıtmak" için
+  skorlanamaz veya evaluated account state'i mutate etmek için
+  kullanılamaz (Bölüm 8.3.2, 8.3.3'ün koşulsuz kurallarıyla birebir
+  tutarlı) — freshness mekanizması bu kuralları hiçbir şekilde gevşetmez.
+```
+
+**Determinism ve compatibility (LOCKED):**
+
+```
+- Sabit bir canonical pencere sırası için factory çağrı sayısı ve sırası
+  DETERMİNİSTİKTİR.
+- Her pencerenin execution'ı sırasında TAM OLARAK bir policy instance
+  kullanılır.
+- Layer-1 evaluation_start davranışı (Bölüm 8.3.11) DEĞİŞMEDEN kalır.
+- BacktestResult, CostModel, FundingModel, replay semantics, store
+  semantics, ve temporal-window primitive'leri (Bölüm 6/7,
+  validation/windows.py) bu contract-lock tarafından DEĞİŞTİRİLMEZ.
+- Tek-pencere caller'lar (mevcut run_backtest_replay/
+  run_backtest_from_store kullanıcıları) geriye dönük uyumlu kalır —
+  hiçbir mevcut çağrı sitesi bu mikro-adımdan etkilenmez.
+```
 
 **8.3.7 Funding Range ve Zamanlama**
 
@@ -532,14 +680,15 @@ Bu, henüz **tam walk-forward optimization değildir** (Bölüm 14) — bu ayrı
   context-aware canonical replay + store-backed composition
   IMPLEMENTED + TESTED'dır (bkz. Bölüm 23); çok-pencereli (Layer 2)
   rolling OOS orchestrator ayrıca policy-instance-freshness
-  mekanizmasına (Bölüm 8.3.6, Bölüm 19) ihtiyaç duyar — bu HENÜZ
-  TASARLANMAMIŞTIR/İMPLEMENT EDİLMEMİŞTİR.
+  mekanizmasına (Bölüm 8.3.6, Bölüm 19) ihtiyaç duyar — bu mekanizma
+  artık Bölüm 8.3.6'da (factory-based) LOCKED'dır, ama HENÜZ İMPLEMENT
+  EDİLMEMİŞTİR (bkz. Bölüm 23, 28.C).
 - MS2 (temporal-window primitives) bu karara bağımlı DEĞİLDİR — tamamen
   pure/store-free'dir ve bağımsız olarak inşa edilebilir (implement
   edildi, bkz. Bölüm 23).
 ```
 
-Context/lookback kullanmayan trivial bir policy için, bugünkü `run_backtest_from_store`'un pencere-başına bağımsız çağrılması **zaten doğru sonucu üretir** (Bölüm 11) — bunu artık **tek-pencereli (Layer 1) bir runner contract'ı** olarak kilitlemek mümkündür, çünkü warm-up implementasyonu tamamlanmıştır. Generic/çok-pencereli (Layer 2) bir runner ise Layer-1'in tamamlanmasından SONRA bile ayrı bir policy-instance-freshness mekanizmasına bağımlı kalır (Bölüm 8.3.6); o mekanizma tamamlanmadan çok-pencereli bir runner'a commit edilmez.
+Context/lookback kullanmayan trivial bir policy için, bugünkü `run_backtest_from_store`'un pencere-başına bağımsız çağrılması **zaten doğru sonucu üretir** (Bölüm 11) — bunu artık **tek-pencereli (Layer 1) bir runner contract'ı** olarak kilitlemek mümkündür, çünkü warm-up implementasyonu tamamlanmıştır. Generic/çok-pencereli (Layer 2) bir runner ise Layer-1'in tamamlanmasından SONRA bile ayrı bir policy-instance-freshness mekanizmasına bağımlı kalır (Bölüm 8.3.6); o mekanizmanın İMPLEMENTASYONU tamamlanmadan çok-pencereli bir runner'a commit edilmez.
 
 ## 14. Walk-Forward Terminolojisi (LOCKED — Precision)
 
@@ -663,7 +812,9 @@ Bu MS1'de **inşa edilmez.** Ama neden Faz 6'nın ilerideki bölümlerinin buna 
 - aynı mutable policy instance'ının bağımsız evaluation pencereleri
   arasında yeniden kullanılması (Bölüm 8.3.6) — Layer-1 tek-pencere
   run'da caller disiplinine bağlıdır; Layer-2 çok-pencereli orchestrator
-  için mekanik enforcement (örn. policy_factory) henüz tasarlanmamıştır
+  için mekanik enforcement mekanizması (factory-based, Bölüm 8.3.6'da
+  LOCKED) artık tasarlanmıştır, ama henüz implement edilmemiştir — bu
+  nedenle bu risk bugün hâlâ yalnızca disiplinle önlenir
 ```
 
 ## 20. Multiple Testing — Kayıt Prensibi (LOCKED, İmplementasyon Yok)
@@ -770,11 +921,20 @@ TAMAMLANDI:
   - 28.B Layer-1 acceptance/status reconciliation (bu doküman
     güncellemesi) — TAMAMLANDI
 
+FAZ6B MS1:
+  POLICY INSTANCE FRESHNESS CONTRACT — SPEC LOCK — TAMAMLANDI
+  — factory-based (`policy_factory`, Callable[[], BacktestPolicy])
+  mekanizmayı; ownership/invocation invariant'larını; object-identity
+  tabanlı mekanik reuse-detection kuralını; factory-output validation
+  semantics'ini; failure/partial-execution sınırını; ve Type-H/Type-I
+  sınırını Bölüm 8.3.6'da LOCKED olarak kaydetti. Docs-only; production
+  kod, `policy_factory` implementasyonu, veya yeni test içermedi.
+
 Sonraki (henüz başlanmadı):
-  Layer-2 çok-pencereli (multi-window) validation orchestrator —
-  policy-instance-freshness mekanizmasına (Bölüm 8.3.6) ihtiyaç duyar;
-  bu mikro-adımdan önce generic/çok-pencereli bir OOS runner'a commit
-  edilmez.
+  `policy_factory`'nin production implementasyonu + Layer-2 çok-pencereli
+  (multi-window) validation orchestrator'ın kendisi + kendi regression
+  suite'i (Bölüm 8.3.6, 28.C). Bu mikro-adımdan önce generic/çok-pencereli
+  bir OOS runner'a commit edilmez.
 ```
 
 **MS3 scope (TAMAMLANDI — pre-flight'in kendisi, Bölüm 8.3'te kilitlendi):**
@@ -857,9 +1017,9 @@ Aynı girdiler → aynı pencere sonuçları — mevcut `run_backtest_from_store
 - external LLM decision-making
 ```
 
-## 28. Acceptance Criteria — İki Ayrı Grup (LOCKED)
+## 28. Acceptance Criteria — Üç Ayrı Grup (LOCKED)
 
-Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B altındaki sayılar).
+Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — Layer-2'nin kendi gelecekteki policy-freshness implementasyon acceptance checklist'i, henüz runtime/test exercised OLMAYAN ayrı bir liste olarak 28.C'de kaydedilir. Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C altındaki sayılar).
 
 ### 28.A — LOCKED FOUNDATION ACCEPTANCE (Runner-Bağımsız)
 
@@ -916,7 +1076,26 @@ Bu kriterlerin hepsi artık **Layer-1** (tek-pencere context-aware canonical rep
 
 **Durum:** Bölüm 8.3'teki B2 kilidi Layer-1 için **implement edilmiş ve test edilmiştir** (bkz. Bölüm 23) — bu 15 kriterin hepsi artık **runtime/test exercised**'dır. Bu, Layer-2 (çok-pencereli orchestrator) veya Faz 6A'nın tamamının tamamlandığı anlamına **GELMEZ** — yalnızca context-aware Layer-1 acceptance contract'ının karşılandığı anlamına gelir.
 
-**İleri seviye Faz 6 kategorileri (28.A/28.B'nin hiçbirine dahil DEĞİL, ayrı ve pending):** purging/embargo (17.1), CPCV (17.2), Sharpe-ailesi/return-series (16, 17.3), Deflated Sharpe (17.4), PBO (17.5), multiple-testing corrections (17.6), parameter stability (17.7), candidate/trial abstraction (18).
+**İleri seviye Faz 6 kategorileri (28.A/28.B/28.C'nin hiçbirine dahil DEĞİL, ayrı ve pending):** purging/embargo (17.1), CPCV (17.2), Sharpe-ailesi/return-series (16, 17.3), Deflated Sharpe (17.4), PBO (17.5), multiple-testing corrections (17.6), parameter stability (17.7), candidate/trial abstraction (18).
+
+### 28.C — FUTURE LAYER-2 POLICY-FRESHNESS ACCEPTANCE (0/12 RUNTIME/TEST EXERCISED)
+
+Bu liste, Bölüm 8.3.6'da LOCKED olan factory-based policy-instance-freshness mekanizmasının, gelecekteki Layer-2 implementasyon mikro-adımı tarafından karşılanması gereken acceptance kriterlerini kaydeder. **Bunların HİÇBİRİ bugün runtime/test exercised DEĞİLDİR** — `policy_factory` kodlanmamıştır, Layer-2 orchestrator mevcut değildir, bu mikro-adım hiçbir yeni test eklememiştir (docs-only, bkz. Bölüm 23). Bu liste yalnızca Bölüm 8.3.6'nın kontratını, gelecekteki implementasyon için somut, test edilebilir maddelere çevirir — **bunları LOCKED yapmaz, yalnızca kaydeder;** exact mekanizma zaten Bölüm 8.3.6'da LOCKED'dır.
+
+1. Sabit bir canonical pencere sırası için, execute edilen her pencere başına tam olarak bir factory çağrısı yapılır.
+2. Factory çağrı sırası deterministiktir ve canonical pencere sırasıyla eşleşir.
+3. Her pencere, önceki/sonraki hiçbir pencereyle paylaşılmayan, distinct bir policy instance kullanır.
+4. Bir factory iki pencere için aynı objeyi (object identity) döndürürse, bu durum etkilenen pencere execute edilmeden ÖNCE reddedilir.
+5. Yapısal olarak geçersiz bir factory sonucu (çağrılabilir `target_position` sağlamayan), etkilenen pencere execute edilmeden ÖNCE reddedilir.
+6. Factory exception'ları sessizce yutulmaz veya başarılı/kısmi bir sonuca dönüştürülmez.
+7. Stateful (Type-I) bir fixture policy, bağımsız pencereler arasında SIFIR state carryover gösterir (regression testiyle kanıtlanır).
+8. Mevcut tek-pencere API'ler (`run_backtest_replay`, `run_backtest_from_store`) DEĞİŞMEDEN kalır — bu kriterler onları etkilemez.
+9. Küresel `BacktestPolicy` Protocol'ü (Bölüm 8.3.5) DEĞİŞMEDEN kalır.
+10. Bu mekanizma, Type-I otomatik warm-up SAĞLADIĞINI veya Type-H niteliğini mekanik olarak ENFORCE ETTİĞİNİ iddia etmez (Bölüm 8.3.5, 8.3.6).
+11. Bu mekanizmanın implementasyonu, metrics, candidate/trial aggregation, optimizer, veya herhangi bir advanced-validation tekniğiyle (Bölüm 17) COUPLE edilmez.
+12. İkinci/forked bir replay engine yaratılmaz — canonical `run_backtest_replay` compose edilmeye devam eder (Bölüm 4, 21).
+
+**Future Layer-2 policy-freshness acceptance count: 0 / 12 runtime/test exercised.** Bu sayım, 28.A'nın (22) veya 28.B'nin (15/15) hiçbirine dahil değildir — ayrı, henüz implement edilmemiş bir gelecekteki-iş kaydıdır.
 
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
