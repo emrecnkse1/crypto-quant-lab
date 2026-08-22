@@ -2019,24 +2019,613 @@ Prerequisites: trial-count tracking (18) — candidate/trial abstraction'a bağ�
 
 Prerequisites: parameterized candidate abstraction + komşu parametre konfigürasyonları + stabil bir evaluation metriği. Mevcut `BacktestPolicy`'ler parametrik değildir (`BACKTEST_SPEC.md` Bölüm 12: Faz 4 policy'leri kasıtlı olarak trivial/deterministic). Parameter optimizer burada **icat edilmez.**
 
-## 18. Candidate / Trial Abstraction — Neden Şimdi Değil (LOCKED)
+## 18. Candidate / Trial Abstraction — Exact Contract (LOCKED — IMPLEMENTASYON PENDING)
 
-Bu MS1'de **inşa edilmez.** Ama neden Faz 6'nın ilerideki bölümlerinin buna ihtiyaç duyduğu kaydedilir:
+**Durum: LOCKED (mimari/tasarım).** Implementasyon, regression suite'i, ve §28.G acceptance HENÜZ BAŞLAMAMIŞTIR (bkz. Bölüm 23, 28.G — 0/25). Bu bölüm, mevcut `BacktestPolicy`/`PolicyContext` (Faz 4), `WindowResult`/zero-context+non-zero-context Layer-2 runner'ları (Bölüm 8.3.6, 8.3.16), ve Stage-1/Stage-2 metrics'in (Bölüm 15) kaynak kodundan doğrudan doğrulanmış bir source-preflight'e dayanır.
+
+**Zorunlu prensip (LOCKED, ne zaman implement edilirse edilsin geçerli, DEĞİŞMEDEN korunur):** candidate selection **yalnızca IS**'i kullanabilir. Bir OOS sonucu, **o sonucu üreten aynı candidate'in seçimine** asla geri besleme yapamaz (Bölüm 12, Bölüm 20). Bu prensip, aşağıdaki §18.7'nin de açıkça kaydettiği gibi, **research-process disiplinidir — bu bölümün kilitlediği value object'ler bunu mekanik olarak enforce ETMEZ** (Bölüm 19 ile aynı engine-vs-process ayrımı).
+
+### 18.1 Source-Preflight Bulguları
 
 ```
-- parameter search
-- candidate identity
-- frozen candidate (bkz. Bölüm 10.3)
-- selection metric
-- trial count
-- multiple-testing corrections (17.6)
-- Deflated Sharpe (17.4)
-- PBO (17.5)
+- BacktestPolicy (backtest/policy.py): structural Protocol,
+  target_position(context: PolicyContext) -> PositionTarget. Hiçbir
+  __init__ şekli dayatılmaz — policy inşası zaten policy_factory:
+  Callable[[], BacktestPolicy] convention'ıyla (rolling.py, HER İKİ
+  runner'da da) caller'a bırakılmıştır.
+- WindowResult (window: TemporalWindow, result: BacktestResult) —
+  "no candidate identity" (Bölüm 28.C kaynak docstring'i) zaten
+  açıkça kilitli; bu bölüm bunu DEĞİŞTİRMEZ.
+- run_rolling_backtest_from_store / run_context_aware_rolling_backtest_from_store
+  (Bölüm 8.3.6, 8.3.16) zaten policy-instance-freshness'i (factory
+  per-window, object-identity reuse detection, strong retention)
+  kanıtlanmış şekilde enforce eder — bu bölüm bu mekanizmayı
+  TEKRARLAMAZ, yalnızca REUSE eder.
+- BacktestResult (backtest/models.py) exchange/market_type/symbol/
+  timeframe/as_of_time/cost_model/funding_model TAŞIMAZ — yalnızca
+  initial_cash/final_cash/final_equity/... ve equity_curve. Bu nedenle
+  bu provenance alanları WindowResult/BacktestResult'tan KURTARILAMAZ
+  (recoverable DEĞİLDİR) — ayrı olarak saklanmaları gerekir (bkz.
+  §18.6).
+- compute_stage1_metrics / compute_periodic_returns / compute_stage2_metrics
+  (metrics.py) yalnızca result.equity_curve + result.initial_cash
+  tüketir; hiçbiri candidate/trial kavramından haberdar DEĞİLDİR ve
+  olmak ZORUNDA DEĞİLDİR — WindowResult.result üzerinde bağımsız
+  çalışmaya devam ederler (Bölüm 15.8, 15.18).
+- pyproject.toml: hiçbir runtime dependency yok (yalnızca pytest/ruff
+  dev). Candidate/trial STANDART KÜTÜPHANE DIŞINDA hiçbir şey
+  gerektirmez.
+- Repository-wide grep: "candidate"/"trial"/"optimizer"/"selection"/
+  "score"/"rank"/"grid"/"search" — production kodunda GERÇEK bir
+  candidate/trial/optimizer implementasyonu YOKTUR; tüm eşleşmeler
+  "grid-aligned" (timeframe grid'i) veya WindowResult'ın kendi
+  "no candidate identity" docstring'i gibi ilgisiz/negatif atıflardır.
+  Bu, tamamen greenfield bir tasarım alanıdır.
 ```
 
-**Zorunlu prensip (LOCKED, ne zaman implement edilirse edilsin geçerli):** candidate selection **yalnızca IS**'i kullanabilir. Bir OOS sonucu, **o sonucu üreten aynı candidate'in seçimine** asla geri besleme yapamaz (Bölüm 12, Bölüm 20).
+### 18.2 Gerekli Data Flow (Kaynak Koddan Doğrulanmıştır)
 
-**İlgili ama ayrı bir konu (Bölüm 8.3.6, 19):** bir candidate/trial'ın frozen policy instance'ının bağımsız evaluation pencereleri arasında güvenle yeniden kullanılabilmesi için, ileride bir `policy_factory`-benzeri mekanizma bu abstraction'ın bir parçası olabilir — bu MS4'te tasarlanmaz/implement edilmez, yalnızca gelecekteki bir bağımlılık olarak kaydedilir.
+```
+explicit candidate tanımı (Candidate — bu bölüm)
+  -> policy builder: Callable[[Candidate], Callable[[], BacktestPolicy]]
+     (caller-yazılı, YENİ bir public sembol DEĞİL — bkz. §18.6)
+  -> policy_factory: Callable[[], BacktestPolicy] (mevcut convention)
+  -> pencere başına taze policy (mevcut rolling runner'ların kendi
+     freshness mekanizması, DEĞİŞMEDEN)
+  -> zero-context VEYA context-aware rolling evaluation (mevcut,
+     DEĞİŞMEDEN runner'lar)
+  -> tuple[WindowResult, ...] (mevcut, DEĞİŞMEDEN)
+  -> Trial (bu bölüm) — candidate + o tuple + provenance
+  -> bağımsız Stage-1/Stage-2 metrics (mevcut, DEĞİŞMEDEN, trial.results[i].result üzerinden)
+  -> [GELECEK, bu kontratın DIŞINDA] candidate karşılaştırma/seçim/optimizer/search
+```
+
+Açıkça ayrıştırılan sorumluluklar:
+
+```
+- Candidate tanımı           : bu bölüm (§18.3-18.5) — pure data
+- Runtime policy instance     : mevcut BacktestPolicy (Faz 4), DEĞİŞMEDEN
+- Policy factory/builder      : caller convention (§18.6), YENİ sembol DEĞİL
+- Tek pencere execution       : mevcut run_backtest_from_store, DEĞİŞMEDEN
+- Multi-window trial evidence : bu bölüm (§18.4) — Trial
+- Pencere-başı metrics        : mevcut metrics.py, DEĞİŞMEDEN, bağımsız
+- Gelecekteki aggregation     : bu kontratın DIŞINDA (§18.9)
+- Gelecekteki optimizer/search: bu kontratın DIŞINDA (§18.9)
+- Final untouched test        : bu kontratın DIŞINDA (§18.9)
+```
+
+Candidate/trial, bu sorumlulukları TEK bir opaque objede BİRLEŞTİRMEZ.
+
+### 18.3 Seçilen Mimari ve Reddedilen Alternatifler
+
+**Candidate temsili:** Candidate, **explicit identifier + immutable parameter metadata** taşıyan frozen/slotted bir value object'tir (Bölüm 5.1 seçenek 2+6+8+10) — ne bir policy factory/callable (seçenek 3), ne bir concrete policy instance (seçenek 4), ne bir Protocol (seçenek 5).
+
+```
+Reddedilenler:
+1. Yalnızca stable identifier (parametre metadata'sı YOK) — REDDEDİLDİ:
+   "Explicit provenance" ve "reproducible candidate identity" öncelikleri
+   ihlal edilirdi; hangi parametrelerin değerlendirildiği auditable
+   olmazdı.
+3. Candidate bir policy factory/callable saklar — REDDEDİLDİ: "No
+   callable equality/hash ambiguity" önceliğini doğrudan ihlal eder —
+   fonksiyon objelerinin equality/hash semantics'i güvenilir/reproducible
+   DEĞİLDİR.
+4. Candidate concrete bir policy instance saklar — REDDEDİLDİ: "Do not
+   store a live policy instance in an immutable candidate" strong
+   preference'ı; bir policy instance genellikle mutable internal state
+   taşıyabilir (Type-I, Bölüm 8.3.5) — immutable bir value object'in
+   İÇİNE mutable state sızdırmak candidate'i frozen olmaktan çıkarır.
+5. Candidate bir Protocol'dür — REDDEDİLDİ: candidate PURE DATA'dır,
+   pluggable BEHAVIOR değildir (BacktestPolicy'nin Protocol olma
+   gerekçesinden FARKLI bir kategori) — repo convention'ı (TemporalWindow,
+   WindowResult, Stage1Metrics, Stage2Metrics, ContextAwareWindow) zaten
+   pure-data value object'leri hep concrete frozen/slotted dataclass
+   olarak modeller, hiçbirini Protocol yapmaz.
+7. Parametreler mutable mapping (dict) — REDDEDİLDİ: "Prefer immutable
+   canonical parameter data over a mutable mapping" strong preference'ı;
+   dict hem mutable hem hashable değildir.
+9. Candidate identity parametrelerin otomatik hash'inden türetilir —
+   REDDEDİLDİ: auto-derived bir hash, insan-okunabilir/auditable
+   DEĞİLDİR ve sessiz bir çakışma riskini gizleyebilir — Bölüm 8.3.13'ün
+   "Explicit, Auto-Inference YOK" prensibiyle aynı gerekçeyle reddedilir.
+```
+
+**Parametre domain'i:** deliberately NARROW bir scalar domain (Bölüm 5.2) — `bool`, `int` (non-bool), finite `Decimal`, `str`, `None`, ve bunların recursive `tuple`'ları. `Any`/arbitrary object/JSON-like recursive value/list/dict **REDDEDİLDİ** — repo'nun mevcut Decimal-exclusive, no-NumPy/pandas prensibiyle (Bölüm 27) ve "immutable canonical parameter data" strong preference'ıyla tutarlı. Float **REDDEDİLDİ** — repo'da hiçbir güvenli float->Decimal canonicalization kontratı yoktur.
+
+**Trial temsili:** bir candidate × ordered `tuple[WindowResult, ...]` (Bölüm 5.3 seçenek 2+5+8+10+12-kısmi), **yalnızca fully-successful evaluation için** inşa edilebilir (seçenek 8) — raw sonuçlar saklanır, metrikler HARİCEN türetilir (seçenek 5), policy factory SAKLANMAZ (seçenek 6 reddedildi — aynı callable-hash gerekçesiyle), ve **explicit bir selection/test role alanı bu kontrata DAHİL EDİLMEZ** (seçenek 10 — bkz. §18.7'nin gerekçesi).
+
+```
+Reddedilenler:
+1. Bir candidate x TEK bir WindowResult — REDDEDİLDİ: mevcut rolling
+   runner'ların KENDİ çıktısı zaten tuple[WindowResult, ...]'tur;
+   trial'ı tek-sonuca sınırlamak bu şekli yapay olarak parçalar.
+3. Trial yalnızca metrikleri saklar — REDDEDİLDİ: "Keep raw evaluation
+   evidence available; do not preserve only a derived score" strong
+   preference'ı.
+6. Trial policy factory'yi saklar — REDDEDİLDİ (yukarıda gerekçeli).
+7-8. Trial execution errors/partial-failure saklar / yalnızca
+   fully-successful evaluation için var olur — KISMEN SEÇİLDİ: 8
+   LOCKED'dır (yalnızca fully-successful), 7 REDDEDİLDİ — failure bir
+   Trial objesi olarak DEĞİL, raise ile temsil edilir (mevcut rolling
+   runner'ların KENDİ "no partial result, raise on failure" prensibiyle
+   birebir tutarlı).
+9. Trial explicit bir evaluation-purpose/role (selection/test) taşır —
+   REDDEDİLDİ bu foundation'da (bkz. §18.7 — bu, YANLIŞ bir güvenlik
+   iddiası yaratırdı).
+11 (vs 12). Trial ayrıca `as_of_time`/exchange/market_type/symbol/
+   timeframe/config saklar (yalnızca window boundary'leri
+   WindowResult'tan zaten kurtarılabilir olduğu için KISMİ olarak 12) —
+   bkz. §18.6: bu alanlar BacktestResult'tan KURTARILAMAZ, bu yüzden
+   AYRICA saklanmaları LOCKED'dır.
+13. Ayrı TrialSpec + TrialResult — REDDEDİLDİ: bu foundation'da
+   pre-execution bir "spec" objesine ihtiyaç yoktur (persistence/queue
+   kapsam dışı, Bölüm 27); TEK compact bir post-execution value
+   object (14) yeterlidir.
+```
+
+**Execution composition:** Candidate/Trial **yalnızca value object'lerdir** — bu kontrat (ve bir sonraki implementasyon) **hiçbir evaluator fonksiyonu içermez** (Bölüm 5.4 seçenek 1). Caller, mevcut `run_rolling_backtest_from_store` veya `run_context_aware_rolling_backtest_from_store`'u DOĞRUDAN, KENDİSİ çağırır; bu bölüm yalnızca sonucu (candidate + tuple[WindowResult,...] + provenance) bir `Trial`'a NASIL paketleyeceğini kilitler.
+
+```
+Reddedilenler:
+2, 3, 4, 5. Bir candidate-evaluation fonksiyonu (runner-agnostic veya
+   zero-context/context-aware için ayrı ayrı) — REDDEDİLDİ (bu adımda):
+   "Minimal API surface" ve "No speculative framework" öncelikleri;
+   böyle bir fonksiyon HER İKİ mevcut runner'ı doğru şekilde
+   dispatch etmek, freshness'i yeniden kanıtlamak, ve kendi geniş
+   regression suite'ine ihtiyaç duyardı — bu, "foundation" kapsamının
+   ÖTESİNE geçer. "Do not silently dispatch based on window type"
+   instruction'ı ile seçenek 4 zaten AÇIKÇA yasaktır.
+6. Hidden global candidate/factory registry — REDDEDİLDİ: "No hidden
+   global registry" önceliği.
+8-10. Candidate builder pencere başına çağrılır / candidate kendisi
+   construction behavior'ı sahiplenir — REDDEDİLDİ: mevcut
+   policy_factory zaten pencere başına ÇAĞRILIR (Bölüm 8.3.6) — bunu
+   Candidate seviyesinde TEKRARLAMAK gereksiz bir katman eklerdi.
+```
+
+**Modül yerleşimi:** **yeni, dedicated bir modül** — `src/crypto_quant_lab/validation/candidate.py` (Bölüm 5.5) — mevcut `windows.py`/`rolling.py`/`metrics.py` ile AYNI tek-kavram-per-modül convention'ı. `rolling.py`/`metrics.py`/`windows.py`'a EKLENMEZ (candidate identity'yi replay/rolling/metrics internals'ına couple ederdi); yeni bir "optimizer" modülü de AÇILMAZ (bu kontratın kapsamı DIŞINDA, Bölüm 5.5, 18.9).
+
+### 18.4 Terminoloji — Kesin Tanımlar
+
+```
+Candidate: pure, immutable bir TANIM — bir explicit identifier +
+  immutable parameter metadata kombinasyonu.
+
+Candidate DEĞİLDİR:
+  - bir policy instance (Bölüm 8.3.5'in Type-H/Type-I ayrımı hâlâ
+    geçerlidir — Candidate hiçbir mutable policy state taşımaz)
+  - bir trial
+  - bir score
+  - seçilmiş bir kazanan
+  - (explicitly ve güvenli tasarlanmadıkça) bir trained model state
+  - bir optimizer talimatı
+
+Trial: bir candidate'in, ordered bir pencere koleksiyonu üzerindeki,
+  TEK bir başarılı, immutable evidence bundle'ı.
+
+Trial DEĞİLDİR:
+  - bir ranking
+  - bir aggregate score
+  - bir selection kararı
+  - final bir holdout iddiası
+  - (explicitly seçilmedikçe) bir failure log'u — failure bir Trial
+    objesi DEĞİL, bir raise'dir (bkz. §18.8)
+  - mutable bir workspace
+```
+
+### 18.5 Exact Public API (LOCKED)
+
+```
+Modül:  src/crypto_quant_lab/validation/candidate.py  (YENİ modül)
+
+ParameterValue = bool | int | Decimal | str | None | tuple["ParameterValue", ...]
+
+@dataclass(frozen=True, slots=True)
+class Candidate:
+    candidate_id: str
+    parameters: tuple[tuple[str, ParameterValue], ...]
+
+@dataclass(frozen=True, slots=True)
+class Trial:
+    candidate: Candidate
+    results: tuple[WindowResult, ...]
+    exchange: str
+    market_type: str
+    symbol: str
+    timeframe: str
+    as_of_time: datetime
+    config: BacktestConfig
+```
+
+```
+- Field sırası yukarıdaki gibi TAM OLARAK kilitlidir.
+- Her iki tip de frozen, slotted — mevcut convention.
+- Equality/hash: frozen-dataclass default'ları, TÜM field'lar üzerinden
+  (custom __eq__/__hash__/__order__ YOK).
+- Package-root export YOK — validation/__init__.py DEĞİŞMEZ (mevcut
+  zero-re-export convention'ıyla tutarlı).
+- Bu kontratın bir parçası olarak HİÇBİR evaluator fonksiyonu
+  KİLİTLENMEZ (bkz. §18.3 execution composition).
+- Rolling runner'lara (her ikisine de) İLİŞKİ: yalnızca dolaylı — bir
+  caller, mevcut runner'lardan birini KENDİSİ çağırır ve dönen
+  tuple[WindowResult, ...]'ı bir Trial'a paketler; candidate.py bu
+  runner'ları İMPORT ETMEZ dışında WindowResult tipini kullanmak için
+  (bkz. §18.10 import direction).
+- metrics.py'ye İLİŞKİ: YOK — candidate.py hiçbir metrics sembolü
+  import ETMEZ; Stage-1/Stage-2 metrikleri trial.results[i].result
+  üzerinde, caller tarafından, bağımsız olarak çağrılır (bkz. §18.6).
+```
+
+### 18.6 Candidate Identity ve Parametre Domain'i (LOCKED)
+
+**`candidate_id`:**
+
+```
+- Tip: str; değilse TypeError.
+- Boş string → ValueError.
+- Yalnızca whitespace → ValueError.
+- Baştaki/sondaki whitespace padding → ValueError (sessizce strip
+  EDİLMEZ — "reject, don't repair" prensibi, bu dokümanın her yerinde
+  zaten kilitli).
+- Case-sensitive; hiçbir case-folding YAPILMAZ.
+- Unicode: Python str semantics'i aynen kullanılır; ek bir normalization
+  (NFC/NFKC vb.) UYGULANMAZ.
+- Maksimum/minimum uzunluk kısıtlaması YOKTUR (kanıtlanmamış bir
+  kısıtlama İCAT EDİLMEZ).
+- Global benzersizlik ENFORCE EDİLMEZ — bu foundation'da candidate'leri
+  toplayan bir collection/registry objesi YOKTUR (Bölüm 5.5, "no hidden
+  global registry"); tek bir Candidate objesi başka candidate'lerin
+  varlığından HABERDAR DEĞİLDİR. Birden fazla candidate arası
+  benzersizlik, ileride bir orchestration/registry kontratının işidir.
+- candidate_id equality/hash'e DAHİLDİR (iki candidate, aynı
+  parametrelere sahip olsa bile farklı ID'lerle EŞİT SAYILMAZ).
+```
+
+**Parametre anahtarları (`parameters[i][0]`):**
+
+```
+- Tip: str; değilse TypeError, index-specific.
+- Boş/yalnızca-whitespace/padded → ValueError, index-specific (candidate_id
+  ile AYNI kural).
+- Case-sensitive; normalization YOK.
+- Dotted/nested isimler (örn. "risk.stop_loss_pct") LEGAL'dir — engine
+  bunları salt opaque string olarak görür, özel bir parsing/semantics
+  İCAT EDİLMEZ.
+- Duplicate key → ValueError, duplicate index'i tanımlar.
+- Key sırası CANONICAL'dır (aşağıya bkz.) — semantic olarak ANLAMLI
+  DEĞİLDİR (yalnızca reproducibility/equality için sabit bir sıra).
+```
+
+**Parametre değerleri (`parameters[i][1]`) — exact permitted types, validation order:**
+
+```
+1. bool  -> LEGAL (int kontrolünden ÖNCE kontrol edilir — bool, int'in
+            alt sınıfıdır; mevcut _require_non_negative_int
+            (backtest/models.py) ile AYNI sıra/gerekçe).
+2. int (bool DEĞİL) -> LEGAL, sınırsız (yapay bir aralık kısıtlaması
+            İCAT EDİLMEZ).
+3. Decimal -> yalnızca finite ise LEGAL; NaN/+Infinity/-Infinity ->
+            ValueError (Stage-1/Stage-2'nin is_finite() convention'ıyla
+            birebir aynı).
+4. str    -> LEGAL (candidate_id/key ile AYNI whitespace/case kuralları
+            BURADA UYGULANMAZ — bir parametre DEĞERİ olarak bir string,
+            bir İSİM değildir; içerik kısıtlaması YOKTUR).
+5. None   -> LEGAL (açık bir "değer yok" skaleri; belirsiz DEĞİLDİR,
+            immutable/hashable'dır).
+6. tuple  -> LEGAL yalnızca HER elemanı recursive olarak bu AYNI 6
+            kuralı sağlıyorsa (nested tuple'lar desteklenir).
+7. float  -> REDDEDİLDİ (TypeError) — repo'nun Decimal-exclusive,
+            no-float prensibiyle (Bölüm 27) tutarlı; hiçbir sessiz
+            float->Decimal coercion YAPILMAZ.
+8. list/dict/set (mutable container) -> REDDEDİLDİ (TypeError).
+9. Herhangi bir başka custom/arbitrary object -> REDDEDİLDİ (TypeError).
+```
+
+**Canonical representation (LOCKED — seçenek: reddet, sessizce sıralama):**
+
+```
+- parameters, KESİNLİKLE ascending lexicographic key sırasında
+  (Python'un default str '<' karşılaştırması, codepoint-tabanlı;
+  locale-aware bir karşılaştırma KULLANILMAZ) OLMALIDIR.
+- Sıra ihlali → ValueError, ihlalin index'ini tanımlar — sessizce
+  SIRALANMAZ.
+- Bu, bu dokümanın HER YERİNDE zaten kilitli "reject invalid/
+  non-canonical input, don't silently repair" prensibinin (Bölüm 6, 7,
+  15.4, 15.15, 8.3.16 vb.) candidate/trial'a doğrudan uzantısıdır.
+```
+
+### 18.7 Trial Evidence, Provenance, ve Evaluation-Role (LOCKED)
+
+**`results` (`tuple[WindowResult, ...]`):**
+
+```
+- Boş tuple → ValueError (bir trial en az bir WindowResult İÇERMELİDİR
+  — sıfır sonuçlu bir "trial," hiçbir şeyin kanıtı değildir).
+- Her eleman bir WindowResult olmalıdır; değilse TypeError,
+  index-specific.
+- Input sırası KORUNUR — sıralama YOK.
+- Duplicate/overlapping WindowResult.window değerleri LEGAL'dir,
+  REDDEDİLMEZ/dedupe edilmez — mevcut rolling runner'ların KENDİ
+  kilitli "no overlap rejection" prensibinin (Bölüm 8.3.16 madde 16)
+  birebir uzantısıdır.
+- Mutasyon/kopyalama: results tuple'ı KOPYALANMAZ (tuple zaten
+  immutable'dır); Trial kendisi hiçbir elemanı DEĞİŞTİRMEZ.
+```
+
+**Provenance (`exchange`, `market_type`, `symbol`, `timeframe`, `as_of_time`, `config`):**
+
+```
+- BacktestResult HİÇBİR exchange/market_type/symbol/timeframe/
+  as_of_time/cost_model/funding_model alanı TAŞIMAZ (§18.1 kaynak
+  bulgusu) — bu nedenle bu alanlar WindowResult/BacktestResult'tan
+  KURTARILAMAZ ve Trial'da AYRICA, explicit olarak saklanmaları
+  LOCKED'dır (reproducibility/equality/comparison için gerekli asgari
+  provenance).
+- Pencere boundary'leri (evaluation window) AYRICA saklanmaz — zaten
+  her results[i].window üzerinden kurtarılabilir (Bölüm 8.3.16'nın
+  "context_start yalnızca caller'ın kendi orijinal input'u üzerinden
+  auditable kalır" precedent'iyle aynı ilke: yalnızca gerçekten
+  kurtarılamayan veri ayrıca saklanır).
+- cost_model, funding_model, funding_store, ve candle store'un
+  KENDİSİ Trial'da SAKLANMAZ — bunlar (a) çoğu zaman arbitrary/
+  Protocol-tipli objelerdir ve equality/hash semantics'leri güvenilir
+  DEĞİLDİR ("no callable equality/hash ambiguity" ile aynı gerekçe,
+  cost/funding model'lere genişletilmiş), (b) canlı I/O kaynaklarıdır,
+  immutable bir value object'e ait DEĞİLDİR. Hangi exact cost/funding
+  modelinin kullanıldığının tam reproducibility'si, bu foundation'ın
+  AÇIKÇA DIŞINDA bırakılır — gelecekteki bir experiment-tracking/
+  persistence katmanının (Bölüm 27, kapsam dışı) sorumluluğudur.
+- Trial.candidate bir Candidate olmalıdır; değilse TypeError.
+- exchange/market_type/symbol/timeframe: candidate_id ile AYNI
+  non-empty/non-whitespace/no-padding kuralı.
+- as_of_time: genuine aware datetime (mevcut datetime_to_epoch_us
+  reuse edilir).
+- config: bir BacktestConfig olmalıdır; değilse TypeError. config'in
+  KENDİ iç invariant'ları (initial_cash/position_quantity) TEKRAR
+  DOĞRULANMAZ — zaten kendi __post_init__'inde kanıtlanmıştır (mevcut
+  "lower-layer invariant'lara güven" prensibi).
+- Mekanik olarak kontrol edilebilen TEK cross-result consistency
+  invariant'ı: her results[i].result.initial_cash == config.initial_cash
+  olmalıdır; değilse index-specific ValueError. exchange/market_type/
+  symbol/timeframe homojenliği (results'un GERÇEKTEN aynı partition'dan
+  geldiği) BacktestResult'ın kendisi bu bilgiyi taşımadığı için
+  MEKANİK OLARAK DOĞRULANAMAZ — bu, Bölüm 8.3.5'in Type-H mekanik
+  olarak enforce edilemezliğiyle AYNI kategoride, açıkça kaydedilen bir
+  trust boundary'dir.
+- Trial/candidate consistency (bu results'un GERÇEKTEN bu candidate'in
+  policy'siyle üretildiği) de MEKANİK OLARAK DOĞRULANAMAZ — WindowResult
+  hiçbir candidate/policy referansı TAŞIMAZ (kasıtlı olarak, Bölüm
+  28.C). Bu, açık bir caller-disiplini sorumluluğudur.
+```
+
+**Evaluation-role/provenance kararı (LOCKED — KRİTİK):**
+
+```
+Bu foundation, Trial'a explicit bir selection/test role alanı
+EKLEMEZ.
+```
+
+**Gerekçe:** Bölüm 19 zaten "peeking" (bir araştırmacının/LLM'in candidate'i dondurmadan önce OOS metriklerini görmesi) riskini **research-process disiplini** olarak kilitlemiştir — **engine-enforceable DEĞİL**. Bir `role: Literal["selection", "test"]` alanı eklemek, MEKANİK OLARAK HİÇBİR ŞEYİ enforce ETMEZ (hiçbir caller, kendi kendine bildirdiği bu alanı doğru doldurmaya ZORLANAMAZ) — bu, gerçekte var olmayan bir engine-seviyeli koruma **YANLIŞ İZLENİMİNİ** yaratırdı; tam olarak bu dokümanın her yerinde kaçınılan "false safety claim" hatasıdır. Bölüm 20'nin ("Multiple Testing — Kayıt Prensibi") kendisi de bunu yalnızca gelecekteki bir "kayıt" (implementasyon değil, prensip) olarak çerçeveler.
+
+**Bu nedenle:** selection/test role, bu foundation'ın **tamamen DIŞINDadır** ve gelecekteki bir orchestration kontratına ERTELENİR. Bu Candidate/Trial abstraction'ı, **hiçbir şekilde train/select/test ayrımını sağlamaz, final holdout'u korumaz, veya "peeking"i engellemez** — §18.9'un açıkça kaydettiği gibi.
+
+### 18.8 Validation / Fail-Fast Sırası (LOCKED, exact)
+
+**`Candidate.__post_init__`:**
+
+```
+1. candidate_id str olmalı; değilse TypeError.
+2. candidate_id boş/whitespace-only/padded olmamalı; değilse ValueError.
+3. parameters bir tuple olmalı; değilse TypeError.
+4. Her eleman TAM OLARAK 2 uzunluklu bir tuple olmalı; değilse
+   TypeError, index-specific.
+5. Her key (element[0]) str olmalı; değilse TypeError, index-specific.
+6. Her key boş/whitespace-only/padded olmamalı; değilse ValueError,
+   index-specific.
+7. Duplicate key YOK; değilse ValueError, duplicate index'i tanımlar.
+8. Key'ler strictly ascending lexicographic sırada; değilse ValueError,
+   ihlal index'i.
+9. Her value (element[1]) §18.6'nın kilitli 6 legal tipinden biri
+   olmalı (bool/int/Decimal-finite/str/None/recursive-tuple); değilse
+   TypeError (yanlış tip: float, list, dict, custom object) veya
+   ValueError (Decimal non-finite) — index-specific (nested tuple'lar
+   için üst-seviye parametre index'i raporlanır).
+
+Yalnızca TÜM adımlar geçtikten SONRA candidate "geçerli" sayılır.
+```
+
+**`Trial.__post_init__`:**
+
+```
+1. candidate bir Candidate olmalı; değilse TypeError.
+2. results bir tuple olmalı; değilse TypeError.
+3. results boş OLMAMALI; değilse ValueError.
+4. Her eleman bir WindowResult olmalı; değilse TypeError, index-specific.
+5. exchange/market_type/symbol/timeframe str, non-empty/non-whitespace/
+   unpadded olmalı; değilse TypeError/ValueError.
+6. as_of_time genuine aware datetime olmalı; değilse TypeError/ValueError.
+7. config bir BacktestConfig olmalı; değilse TypeError (config'in KENDİ
+   iç invariant'ları TEKRAR doğrulanmaz).
+8. Her results[i].result.initial_cash == config.initial_cash olmalı;
+   değilse ValueError, index-specific.
+
+Yalnızca TÜM adımlar geçtikten SONRA trial "geçerli" sayılır.
+```
+
+```
+Hiçbir validation sessizce:
+- candidate_id/key'i strip/case-fold ETMEZ
+- parametreleri SIRALAMAZ
+- duplicate key/window'ı DEDUPE ETMEZ
+- float'ı Decimal'e COERCE ETMEZ
+- geçersiz bir değeri bir default ile DEĞİŞTİRMEZ
+- fail'den SONRA partial evidence DÖNDÜRMEZ
+- lower-layer bir hatayı yutup yanıltıcı bir "başarılı" trial'a
+  DÖNÜŞTÜRMEZ
+```
+
+### 18.9 Leakage / Selection Safety — Açık Sınırlar (LOCKED, KRİTİK)
+
+**Bu candidate/trial foundation'ı, TEK BAŞINA, AŞAĞIDAKİLERİN HİÇBİRİNİ SAĞLAMAZ:**
+
+```
+- train/select/test data split'i
+- en iyi candidate'in seçilmesi
+- final bir holdout'un korunması
+- multiple-testing correction'ı
+- bir caller'ın çok fazla candidate değerlendirmesinin engellenmesi
+- purging/embargo
+- CPCV
+- Deflated Sharpe
+- PBO
+- parameter stability
+- metriklerin annualize edilmesi
+- cross-window performance aggregation'ı
+```
+
+Bu foundation **yalnızca bir candidate'in TANIMINI ve TEK bir başarılı çok-pencereli evaluation'ının HAM kanıtını** value object olarak sabitler. §18.7'nin kilitlediği gibi, hiçbir evaluator fonksiyonu bu kontratın parçası DEĞİLDİR; bu nedenle §11'deki "If an evaluator is selected" gereksinimleri (tek candidate/call, rank/compare yapmama, vb.) bu mikro-adımda **N/A**'dır — bunlar, bir evaluator fonksiyonu GELECEKTE seçilirse o kontratın kendi sorumluluğu olacaktır.
+
+**Yalnızca value object'ler seçildiği için:**
+
+```
+- Caller'lar bunları MEVCUT runner'larla şöyle compose eder: (1) bir
+  Candidate inşa et; (2) candidate'ten bir policy_factory üret (caller
+  kendi kodu, YENİ bir sembol DEĞİL); (3) mevcut
+  run_rolling_backtest_from_store veya
+  run_context_aware_rolling_backtest_from_store'u DOĞRUDAN çağır; (4)
+  dönen tuple[WindowResult, ...]'ı, candidate + provenance ile birlikte
+  bir Trial'a paketle; (5) Stage-1/Stage-2 metriklerini
+  trial.results[i].result üzerinde BAĞIMSIZ olarak hesapla.
+- Multi-candidate selection'a güvenle geçmeden ÖNCE, gelecekteki bir
+  kontrat şunları AÇIKÇA eklemelidir: (a) bir selection/test role veya
+  eşdeğer bir IS/OOS ayrım mekanizması, (b) trial-count tracking
+  (Bölüm 20), (c) bir explicit selection-metric/rule, (d) multiple-
+  testing correction'ının nasıl uygulanacağı (Bölüm 17.6), (e) mevcutsa
+  bir final-holdout execution kontratı.
+```
+
+### 18.10 Purity, Determinism, ve Import Direction (LOCKED)
+
+```
+- Candidate/Trial construction girdi objelerini MUTATE ETMEZ.
+- Candidate parametreleri immutable'dır (tuple-of-tuples, yalnızca
+  hashable skaler/nested-tuple değerler).
+- Trial evidence immutable'dır (results tuple'ı olduğu gibi saklanır,
+  kopyalanmaz, değiştirilmez).
+- Eşit girdilerden tekrar construction, eşit değerler ÜRETİR (frozen
+  dataclass default equality).
+- Hash davranışı, kilitli değer domain'i içinde STABIL'dir — hem
+  Candidate hem Trial, mevcut WindowResult/BacktestResult/
+  BacktestConfig'in ZATEN hashable olduğu ampirik olarak doğrulanarak
+  (bu preflight'te), frozen-dataclass default'ları üzerinden hashable'dır.
+- Wall-clock/randomness bağımlılığı YOK.
+- Hidden global registry YOK.
+- Validation için ambient Decimal-context bağımlılığı YOK (yalnızca
+  is_finite() kontrolü — Stage-1/Stage-2'nin AKSİNE, burada hiçbir
+  arithmetic YOK, dolayısıyla hiçbir private Decimal context'e de
+  ihtiyaç YOK).
+- Hiçbir policy instance beklenmedik şekilde saklanmaz/reuse edilmez.
+- BacktestResult, WindowResult, TemporalWindow, TemporalSplit,
+  ContextAwareWindow, her iki rolling runner, ve metrics.py'nin tamamı
+  DEĞİŞMEDEN kalır.
+- Package export'ları DEĞİŞMEDEN kalır (validation/__init__.py
+  dokunulmaz).
+- Hiçbir import cycle YOK.
+```
+
+**Import direction (LOCKED):**
+
+```
+crypto_quant_lab.validation.candidate  (YENİ modül)
+  imports:
+    crypto_quant_lab.backtest.models        (BacktestConfig)
+    crypto_quant_lab.validation.rolling      (WindowResult — yalnızca tip için)
+    crypto_quant_lab.storage.sqlite_codec    (datetime_to_epoch_us)
+    decimal, dataclasses  (stdlib)
+
+crypto_quant_lab.validation.rolling      <- candidate.py'yi İMPORT ETMEZ
+crypto_quant_lab.validation.metrics      <- candidate.py'yi İMPORT ETMEZ
+crypto_quant_lab.validation.windows      <- candidate.py'yi İMPORT ETMEZ
+
+Sonuç: candidate.py, rolling.py'ye bağımlıdır (tek yönlü); rolling.py,
+metrics.py, ve windows.py candidate.py'den TAMAMEN BAĞIMSIZDIR — hiçbir
+döngü YOK. candidate.py hiçbir optimizer/search kodu İMPORT ETMEZ (böyle
+bir kod bu kontrat kapsamında zaten YOKTUR).
+```
+
+### 18.11 Gelecekteki İmplementasyon İçin Dosya Kapsamı (planlama bilgisi — şimdi değiştirilmez)
+
+```
+Yeni production dosyası: src/crypto_quant_lab/validation/candidate.py
+  (Candidate, ParameterValue type alias, Trial).
+Yeni test dosyası: tests/test_validation_candidate.py (mevcut
+  test_validation_windows.py/test_validation_rolling_backtest.py/
+  test_validation_metrics.py ile AYNI, tek-modül-per-test-dosyası
+  convention'ı).
+Değiştirilecek mevcut production dosyası: YOK (rolling.py, metrics.py,
+  windows.py, models.py, policy.py DOKUNULMAZ).
+Documentation (combined closure için): VALIDATION_SPEC.md.
+Açıkça YASAK: ROADMAP.md, pyproject.toml, backtest/ altındaki her şey,
+  windows.py, rolling.py, metrics.py, herhangi bir __init__.py, herhangi
+  bir başka production/test/spec/status dosyası.
+```
+
+### 18.12 Test Kontratı (implementasyon mikro-adımı için gerekli minimum matris)
+
+```
+- Candidate value semantics: valid construction (parametreli VE boş
+  parametre seti ile), field preservation, equality, hashability,
+  frozen/slotted, geçersiz candidate_id (tip/boş/whitespace/padding),
+  geçersiz parameters koleksiyon tipi, geçersiz parametre elemanı
+  (index 0 VE later index), geçersiz key (tip/boş/whitespace/padding),
+  duplicate key, canonical-order ihlali, HER izin verilen value tipi
+  (bool, int, Decimal-finite, str, None, nested tuple), bool/int
+  ayrımının sırası, NaN/+Infinity/-Infinity Decimal reddi, float
+  reddi, mutable-container reddi (list/dict/set), custom-object reddi,
+  sessiz coercion/normalization YOKLUĞU, eşzamanlı çoklu ihlalin exact
+  sırayı kanıtlaması.
+- Trial semantics: valid construction, candidate preservation, result
+  preservation, equality/hash, frozen/slotted, boş-result reddi,
+  non-tuple result koleksiyonu reddi, index-0 ve later-index geçersiz
+  eleman, eşzamanlı çoklu ihlal sırası, input sırasının korunması,
+  duplicate/overlapping window kabulü, result mutasyonu YOKLUĞU,
+  initial_cash/config tutarsızlığı reddi, WindowResult/BacktestResult'a
+  hiçbir metrics field'ı eklenmediği, implicit aggregation/ranking/score
+  YOKLUĞU, failure'ın hiçbir zaman başarılı bir trial gibi
+  görünemeyeceği (raise, trial DEĞİL).
+- Provenance: her provenance field'ının tip/finiteness/timezone
+  validation'ı, equality davranışı, mismatched provenance (initial_cash
+  tutarsızlığı) davranışı, objenin KENDİSİNİN final-holdout koruması
+  SAĞLAMADIĞININ açık kanıtı (yalnızca dokümantasyon/absence-of-claim
+  değil, davranışsal olarak: role alanı YOK, selection engelleme kodu
+  YOK).
+- Static/non-coupling: package-root export YOK, result-model değişikliği
+  YOK, rolling/metrics signature değişikliği YOK, optimizer/search
+  import'u YOK, circular import YOK, float kabulü YOK, mutable mapping
+  saklanmıyor, candidate/trial equality/hash'ine hiçbir callable
+  dahil edilmiyor.
+
+Testler WALL CLOCK/randomness/network/external service/order
+dependence/mutable global fixture/float expected value KULLANMAZ; tam
+production algoritmasını bir oracle olarak yeniden implement ETMEZ.
+```
+
+### 18.13 Explicit Exclusions (bu kontrat kapsamında DEĞİL, implement EDİLMEZ)
+
+```
+candidate ranking, candidate scoring aggregation, optimizer/grid/
+random/Bayesian search, hyperparameter search, train/select/test
+orchestration, final untouched holdout execution, purging/embargo,
+CPCV, Deflated Sharpe, PBO, multiple-testing correction, parameter
+stability, annualized Sharpe/Sortino/Calmar/CAGR, cross-window
+aggregate metrics, portfolio construction, parallel/distributed
+trials, persistence/database schemas, reporting/UI/API/CLI, paper/live
+trading.
+```
+
+Bu maddeler **deferred boundary'ler** olarak kaydedilir — implement edilmiş özellikler DEĞİL.
+
+**Status: LOCKED (mimari/tasarım) — IMPLEMENTATION PENDING** (bkz. Bölüm 23, 28.G — 0/25).
 
 ## 19. Leakage / Anti-Overfitting — Engine vs. Process (LOCKED)
 
@@ -2165,14 +2754,22 @@ FAZ 6B — Context-Aware Extensions + Return-Series / Experiment Foundation
         (`src/crypto_quant_lab/validation/rolling.py`; kendi
         regression suite'i 94 test — 28 mevcut zero-context DEĞİŞMEDEN
         + 66 yeni non-zero-context; bkz. Bölüm 23, 28.F — 22/22).
+      - Candidate/trial source-preflight + exact kontrat (Bölüm 18) —
+        LOCKED (mimari/tasarım): `Candidate`, `Trial` value object'leri
+        için exact public API, kimlik/parametre domain'i, provenance,
+        validation/fail-fast sırası, leakage/selection sınırları
+        (§18.9), purity/import-direction kilitlendi. İmplementasyon,
+        regression suite'i, ve §28.G acceptance HENÜZ BAŞLAMAMIŞTIR
+        (bkz. Bölüm 23, 28.G — 0/25).
 
     Kalan zorunlu bileşenler (HENÜZ PENDING):
       - Annualized Sharpe/Sortino/Calmar/CAGR ve ilgili
         calendar/annualization kontratı (ayrı, henüz LOCKED
         edilmemiş — Bölüm 15.9, 16).
-      - Candidate/trial abstraction (Bölüm 18) — experiment-foundation
-        prerequisite'i olarak; kendi source-preflight + exact kontrat
-        adımı HENÜZ BAŞLAMAMIŞTIR.
+      - Candidate/trial abstraction'ın (Bölüm 18) implementasyonu,
+        regression suite'i, ve post-implementation audit/acceptance
+        closure'ı — kontrat LOCKED olmasına rağmen HENÜZ İMPLEMENT
+        EDİLMEMİŞTİR (bkz. Bölüm 23, 28.G — 0/25).
 
     Durum: FAZ6B — NOT COMPLETE (bkz. §22.2). Stage-1/Stage-2/non-zero-
     context Layer-2 implementasyonlarının tamamlanmış olması FAZ6B'yi
@@ -2223,7 +2820,7 @@ FAZ 6D — Faz 6 Final Acceptance
 | Phase | Status | Completed scope | Remaining scope |
 |---|---|---|---|
 | FAZ6A | COMPLETE | temporal window/IS-OOS primitives (§28.A — 22/22), zero-context rolling OOS evaluation (§28.C — 12/12), Stage-1 metrics (§28.D — 18/18) | locked FAZ6A scope içinde yok |
-| FAZ6B | NOT COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 (§8.3.16, §28.F — 22/22, LOCKED VE IMPLEMENTED + TESTED) | annualized Sharpe/Sortino/Calmar/CAGR kontratı, candidate/trial abstraction |
+| FAZ6B | NOT COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 (§8.3.16, §28.F — 22/22, LOCKED VE IMPLEMENTED + TESTED), candidate/trial exact kontrat (§18, LOCKED — mimari/tasarım) | annualized Sharpe/Sortino/Calmar/CAGR kontratı, candidate/trial implementasyonu + regression suite'i + acceptance closure'ı (§28.G — 0/25) |
 | FAZ6C | NOT COMPLETE | yok | purging/embargo, CPCV, Deflated Sharpe, PBO, multiple-testing corrections, parameter stability |
 | FAZ6D | NOT STARTED | yok | Faz 6 final acceptance audit'i |
 
@@ -2484,16 +3081,53 @@ DOCUMENTATION/ACCEPTANCE CLOSURE — TAMAMLANDI:
   - 28.F non-zero-context Layer-2 acceptance/status reconciliation (bu
     doküman güncellemesi) — TAMAMLANDI: 0/22 -> 22/22.
 
+FAZ6B — CANDIDATE/TRIAL SOURCE PREFLIGHT + EXACT CONTRACT LOCK —
+TAMAMLANDI:
+  — `BacktestPolicy`/`PolicyContext` Protocol'ünü, `WindowResult`'ın
+  "hiçbir candidate identity taşımadığını", her iki rolling runner'ın
+  factory-based policy-freshness reuse-detection'ını, `BacktestResult`'ın
+  eksik provenance alanlarını (exchange/market_type/symbol/timeframe/
+  as_of_time/cost_model/funding_model — kurtarılamaz), `metrics.py`'nin
+  rolling/candidate concern'lerinden tam bağımsızlığını, ve
+  `pyproject.toml`'un sıfır runtime dependency'sini doğrudan kaynak
+  koddan doğrulayan bir source-preflight yaptı; candidate/trial için
+  5 mimari karar alanını (candidate temsili, parametre domain'i, trial
+  temsili, execution composition, modül yerleşimi) toplam 40+ alternatif
+  karşısında karşılaştırdı ve seçti/reddetti; exact kontratı Bölüm 18'de
+  LOCKED olarak kaydetti: `Candidate` (frozen/slots, `candidate_id: str`
+  + `parameters: tuple[tuple[str, ParameterValue], ...]`) ve `Trial`
+  (frozen/slots, `candidate` + `results: tuple[WindowResult, ...]` +
+  provenance alanları), yeni `src/crypto_quant_lab/validation/candidate.py`
+  modülünde, NO evaluator function, NO selection/test role field (Bölüm
+  19'un engine-vs-process ayrımıyla tutarlı, §18.7). Candidate kimliği/
+  parametre domain'i/canonical-order kuralı (§18.6), trial evidence/
+  provenance/validation-fail-fast sırası (§18.7–18.8), leakage/selection
+  açık sınırları (§18.9 — bu kontrat train/select/test split, best-
+  candidate selection, holdout protection, multiple-testing correction,
+  purging/embargo/CPCV/Deflated-Sharpe/PBO/parameter-stability/
+  annualization/cross-window aggregation SAĞLAMAZ), purity/determinism/
+  import-direction (§18.10, acyclic — candidate.py `rolling.py`'den
+  yalnızca `WindowResult` tipini import eder, tersi YOK), implementasyon
+  dosya kapsamı (§18.11), ve test kontratı (§18.12) kilitlendi.
+  Hashability empirik olarak (canlı sandbox check ile) doğrulandı.
+  §28.G acceptance grubu, kontrattan türetilen 25 kriterle, 0/25 olarak
+  eklendi; §28 giriş paragrafı altıdan yediye güncellendi. Docs-only;
+  production kod, `candidate.py` implementasyonu, veya yeni test
+  içermedi — candidate/trial implementasyonu ve regression suite'i
+  HENÜZ BAŞLAMADI.
+
 Sonraki (henüz başlanmadı):
-  Candidate/trial abstraction source-preflight + exact kontrat kilidi
-  (read-only preflight + docs-only spec-lock, non-zero-context Layer-2
-  preflight'inin izlediği AYNI precedent) — Bölüm 18'in zaten kaydettiği
-  "neden şimdi değil" gerekçesini, artık hem zero-context HEM DE
-  non-zero-context Layer-2 orchestrator'larının mevcut olduğu bir
-  temelde yeniden değerlendirir. Candidate/trial implementasyonu, o
-  kontrat kilitlenmeden BAŞLATILMAZ. Annualized Sharpe/Sortino/Calmar/
-  CAGR, ayrı bir gelecekteki calendar/annualization kontratına ihtiyaç
-  duyar — bu sıralamanın bir parçası değildir ve burada başlatılmaz.
+  Candidate/trial implementasyonu + regression suite'i + post-
+  implementation audit + documentation/acceptance closure, tek bir
+  combined delivery olarak (non-zero-context Layer-2 implementasyonunun
+  izlediği AYNI precedent) — Bölüm 18'de LOCKED olan exact kontratı
+  implement eder: `Candidate`/`Trial`
+  (`src/crypto_quant_lab/validation/candidate.py`, YENİ modül) + ilgili
+  test dosyası (`tests/test_validation_candidate.py`). Candidate
+  selection/ranking, optimizer/grid/random/Bayesian search, ve Stage-3
+  (annualized metrics, Deflated Sharpe, PBO, multiple-testing
+  corrections, parameter stability) bu adımda BAŞLATILMAZ — bunlar
+  ayrı, henüz spec-lock edilmemiş gelecekteki adımlardır.
 ```
 
 **MS3 scope (TAMAMLANDI — pre-flight'in kendisi, Bölüm 8.3'te kilitlendi):**
@@ -2576,9 +3210,9 @@ Aynı girdiler → aynı pencere sonuçları — mevcut `run_backtest_from_store
 - external LLM decision-making
 ```
 
-## 28. Acceptance Criteria — Altı Ayrı Grup (LOCKED)
+## 28. Acceptance Criteria — Yedi Ayrı Grup (LOCKED)
 
-Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F altındaki sayılar). §28.A/B/C/D/E/F'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
+Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i, HENÜZ implementation/test exercised OLMAYAN, kontrattan türetilmiş ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 0/25). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G altındaki sayılar). §28.A/B/C/D/E/F/G'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
 
 ### 28.A — LOCKED FOUNDATION ACCEPTANCE (Runner-Bağımsız)
 
@@ -2745,6 +3379,38 @@ Bu liste, Bölüm 8.3.16'da LOCKED olan non-zero-context Layer-2 (`ContextAwareW
 22. Hesaplama/orchestration pure, deterministik, input-mutate-etmeyendir; store data mutate edilmez; eşdeğer girdilerle tekrar çağrılar eşdeğer sonuç üretir; execution sequential kalır (paralel/distributed execution tanıtılmaz). **PASS** — `test_context_aware_config_is_not_mutated`, `_repeated_equivalent_call_produces_equivalent_result`; static kanıt: `_execute_windows` düz bir `for` döngüsüdür, `rolling.py`'de hiçbir threading/multiprocessing/async import'u yoktur.
 
 **Non-zero-context Layer-2 acceptance count: 22 / 22 implementation/test exercised.** Bu sayım, 28.A'nın (22 — farklı bir grup, aynı sayı tesadüfen), 28.B'nin (15/15), 28.C'nin (12/12), 28.D'nin (18/18), veya 28.E'nin (29/29) hiçbirine dahil değildir/katlanmaz — ayrı bir sayımdır. **22/22 olması ŞUNLARI TAMAMLAMAZ:** candidate/trial abstraction; optimizer/search orchestration; annualized Sharpe/Sortino/Calmar/CAGR; Stage-3 kontrolleri (Deflated Sharpe, PBO, multiple-testing corrections, parameter stability); FAZ6B; Faz 6'nın tamamı — yalnızca non-zero-context Layer-2'nin kendi implementasyon/test acceptance contract'ının karşılandığı anlamına gelir.
+
+### 28.G — CANDIDATE/TRIAL FOUNDATION ACCEPTANCE (0/25 IMPLEMENTATION/TEST EXERCISED)
+
+Bu liste, Bölüm 18'de LOCKED olan candidate/trial exact kontratının (mimari/tasarım) implementasyon/test acceptance checklist'ini kaydeder. **Bu 25 kriterin HİÇBİRİ henüz implementation/test exercised DEĞİLDİR** — `src/crypto_quant_lab/validation/candidate.py` ve `tests/test_validation_candidate.py` henüz yaratılmamıştır (bkz. Bölüm 23 — "Sonraki"). Kriterler, kontrattan (Bölüm 18.5–18.10) türetilmiştir; keyfi bir sayı veya şişirilmiş/duplicate madde yoktur.
+
+1. `Candidate` (`candidate_id: str`, `parameters: tuple[tuple[str, ParameterValue], ...]`), kilitli modül yolunda (`src/crypto_quant_lab/validation/candidate.py`) frozen/slotted olarak, kilitli field sırasıyla mevcut olmalıdır (Bölüm 18.5).
+2. `candidate_id`, `str` olmalıdır; yanlış tip → TypeError (Bölüm 18.6).
+3. `candidate_id`, boş veya yalnızca whitespace/padded olamaz; ihlal → ValueError (Bölüm 18.6).
+4. `candidate_id`, case-sensitive'dir ve hiçbir normalizasyona tabi tutulmaz (Bölüm 18.6).
+5. `parameters`, `tuple[tuple[str, ParameterValue], ...]` olmalıdır; yanlış top-level tip veya yanlış-tipli eleman (index-specific) → TypeError (Bölüm 18.5, 18.6).
+6. Parametre key'leri, boş/yalnızca-whitespace/padded olamaz ve tekrar edemez (duplicate key) — ihlal → index-specific ValueError (Bölüm 18.6).
+7. Parametre key'leri, strictly ascending lexicographic sırada verilmelidir; sırasız girdi sessizce sıralanmaz, index-specific ValueError ile reddedilir (Bölüm 18.6).
+8. Parametre değerleri, kilitli 9 adımlık sırayla doğrulanır: bool int'ten ÖNCE, int (non-bool), Decimal (yalnızca finite), str, None, aynı tipte recursive tuple, float REDDEDİLİR, mutable container'lar REDDEDİLİR, custom object'ler REDDEDİLİR (Bölüm 18.6).
+9. `Candidate` eşitliği/hash'i, `candidate_id` ve `parameters`'ın tamamını kapsar (default dataclass equality); custom `__eq__`/`__hash__` yoktur (Bölüm 18.5, 18.10).
+10. `Candidate`, genuinely hashable'dır (empirik olarak, örn. bir `set`/`dict` key'i olarak kullanılarak kanıtlanır) (Bölüm 18.10).
+11. Eşit girdilerle yapılan `Candidate` construction'ı, eşit (ve eşit-hash) instance'lar üretir; construction deterministiktir (Bölüm 18.10).
+12. `Trial` (`candidate`, `results`, `exchange`, `market_type`, `symbol`, `timeframe`, `as_of_time`, `config`), kilitli modül yolunda frozen/slotted olarak, kilitli field sırasıyla mevcut olmalıdır (Bölüm 18.5).
+13. `results`, boş olamayan bir `tuple[WindowResult, ...]` olmalıdır; boş tuple → ValueError (Bölüm 18.7).
+14. `results`'ın her elemanı `WindowResult` tipinde olmalıdır; yanlış-tipli eleman → index-specific TypeError (Bölüm 18.7).
+15. `results` sırası, girdi sırası olarak tam olarak korunur — sort/dedupe/filter yapılmaz (Bölüm 18.7, 18.8).
+16. `results` arasında duplicate/overlapping pencereler legal'dir — reddedilmez (Bölüm 18.7, mevcut rolling runner precedent'iyle tutarlı).
+17. `exchange`/`market_type`/`symbol`/`timeframe`, boş olmayan `str` olmalıdır; ihlal → TypeError/ValueError (Bölüm 18.7).
+18. `as_of_time`, genuine aware `datetime` olmalıdır; naive/pseudo-naive/non-datetime → TypeError/ValueError (Bölüm 18.7, 12).
+19. `config`, bir `BacktestConfig` instance'ı olmalıdır; yanlış tip → TypeError (Bölüm 18.5, 18.7).
+20. Her `i` için `results[i].result.initial_cash == config.initial_cash` mekanik olarak enforce edilir; uyuşmazlık → index-specific ValueError (Bölüm 18.7 — tek mekanik cross-result consistency kriteri).
+21. `Trial` construction'ı, `results` veya `candidate`'ı kopyalamaz veya mutate etmez (Bölüm 18.7, 18.10).
+22. `Trial`, hiçbir selection/test `role` alanı içermez — bu, absence-of-field kanıtıyla (field introspection) doğrulanır (Bölüm 18.7 — KRİTİK, engine-vs-process ayrımı).
+23. `candidate.py` modülü, hiçbir evaluator fonksiyonu içermez — yalnızca value object'ler (`Candidate`, `Trial`, `ParameterValue`) tanımlıdır; bu, absence-of-symbol kanıtıyla doğrulanır (Bölüm 18.3, 18.5, 18.9).
+24. `candidate.py`, yalnızca `rolling.py`'den `WindowResult` (type-only) ve `backtest/models.py`'den `BacktestConfig` import eder; `rolling.py`/`metrics.py`/`windows.py`, `candidate.py`'den HİÇBİR ŞEY import etmez — import cycle yoktur (Bölüm 18.10, static kanıt).
+25. Mevcut `BacktestResult`/`WindowResult`/`TemporalWindow`/`TemporalSplit`/her iki rolling runner/`metrics.py` API'leri ve paket export'ları, `candidate.py`'nin eklenmesiyle değişmeden/coupled-olmadan kalır (Bölüm 18.5, 18.10, 21 — static `git diff` kanıtı + tam regression suite uyumluluğu).
+
+**Candidate/trial foundation acceptance count: 0 / 25 implementation/test exercised.** Bu, aşağıdakilerin HİÇBİRİNİN var olduğu anlamına GELMEZ: candidate/trial implementasyonu; candidate selection/ranking; optimizer/grid/random/Bayesian search; final holdout protection; multiple-testing correction; FAZ6B'nin tamamlanması; Faz 6'nın tamamlanması. Bu grup, yalnızca Bölüm 18'de LOCKED olan kontratın mimari/tasarım seviyesinde kilitlendiğini, implementasyonun HENÜZ BAŞLAMADIĞINI kaydeder.
 
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
