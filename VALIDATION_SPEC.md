@@ -1070,7 +1070,7 @@ Bu üç kavram **aynı şey değildir** ve karıştırılmaz:
 
 **(2) Economic account-state:** Bölüm 11'de **fresh (A)** olarak kilitlenir — foundation için.
 
-**(3) Parameter/candidate carry-in:** candidate abstraction var olduğunda **zorunlu** olacaktır (Bölüm 18) — dondurulmuş bir candidate, IS'ten OOS'a mutlaka taşınmalıdır (aksi halde "OOS'u değerlendirmek" anlamsız olur). Bu foundation'da henüz yok, çünkü candidate abstraction henüz yok.
+**(3) Parameter/candidate carry-in:** candidate abstraction'ın kendisi artık mevcuttur (Bölüm 18 `Candidate`/`Trial`, IMPLEMENTED + TESTED, 28.G — 25/25) — dondurulmuş bir candidate, IS'ten OOS'a mutlaka taşınmalıdır (aksi halde "OOS'u değerlendirmek" anlamsız olur). Ancak bu carry-in, `windows.py`/`rolling.py` içindeki temporal window/rolling MEKANİZMASININ bir parçası DEĞİLDİR ve olmayacaktır — `Candidate`/`Trial` yalnızca CALLER'ın kendi kullandığı harici value object'lerdir (§18.9); IS'ten OOS'a hangi candidate'in taşındığının disiplini, mekanik olarak enforce edilmeyen bir research-process sorumluluğu olarak kalır (Bölüm 19).
 
 "Fresh state" kısaltması, **yalnızca (2)'yi** ifade eder — (1)'i (legal historical context) sessizce silmez; (1)'in mekanizması artık Bölüm 8.3'te LOCKED'dır.
 
@@ -1162,8 +1162,10 @@ Context/lookback kullanmayan trivial bir policy için, bugünkü `run_backtest_f
 (B) True walk-forward optimization:
     IS üzerinde fit/select → candidate dondur → OOS'ta değerlendir →
     ilerlet → tekrarla.
-    Candidate/trial abstraction'a bağımlıdır (Bölüm 18) — foundation'ın
-    kapsamında DEĞİLDİR.
+    Candidate/trial abstraction'ın value-object kısmı artık mevcuttur
+    (Bölüm 18, IMPLEMENTED + TESTED) — ama fit/select/optimizer/ilerletme
+    DÖNGÜSÜNÜN kendisi HENÜZ MEVCUT DEĞİLDİR (§18.9, 18.13); bu nedenle
+    (B) bir bütün olarak hâlâ foundation'ın kapsamında DEĞİLDİR.
 ```
 
 (A), **"walk-forward optimization" olarak adlandırılmaz** — yalnızca "rolling fixed-policy temporal evaluation" veya benzeri dürüst bir isimle anılır. Bu repo (A)'yı (B)'den önce inşa edebilir; ama ikisi asla karıştırılmaz.
@@ -2005,23 +2007,23 @@ Prerequisites: fold model + observation/outcome-horizon contract (17.1) + purge/
 
 ### 17.4 Deflated Sharpe — LATER IN FAZ 6
 
-Prerequisites: tanımlı Sharpe istatistiği (17.3) + candidate/trial history (18) + (efektif) trial sayısı + gerekli dağılımsal girdiler. Standalone bir formül olarak, deneysel/trial framework'ünden **kopuk** implement edilmez.
+Prerequisites: tanımlı Sharpe istatistiği (17.3) + candidate/trial history (18) + (efektif) trial sayısı + gerekli dağılımsal girdiler. Bölüm 18'in candidate/trial foundation'ı artık IMPLEMENTED + TESTED'dır (28.G — 25/25), ama yalnızca TEK bir candidate'in TEK bir trial'ını value object olarak temsil eder — çoklu-trial history/registry/trial-count tracking bu foundation'ın DIŞINDADIR (§18.9, 18.13) ve henüz mevcut değildir. Standalone bir formül olarak, deneysel/trial framework'ünden **kopuk** implement edilmez.
 
 ### 17.5 PBO — LATER IN FAZ 6
 
-Prerequisites: birden fazla candidate/trial (18) + birden fazla partition + deterministic performance matrix + explicit selection rule. Mevcut repo'da candidate-search result matrix'i **yok** — bu nedenle PBO ilk primitive olarak **anlamlı şekilde implement edilemez** (foundation pre-flight'in kendi bulgusuyla tutarlı).
+Prerequisites: birden fazla candidate/trial (18) + birden fazla partition + deterministic performance matrix + explicit selection rule. Bölüm 18 artık tek bir candidate'in tek bir trial'ını implement eder (28.G — 25/25); çoklu-candidate/trial karşılaştırma/aggregation ve deterministic performance matrix HENÜZ MEVCUT DEĞİLDİR (§18.9, 18.13) — bu nedenle PBO ilk primitive olarak **anlamlı şekilde implement edilemez** (foundation pre-flight'in kendi bulgusuyla tutarlı).
 
 ### 17.6 Multiple-Testing Corrections — LATER IN FAZ 6
 
-Prerequisites: trial-count tracking (18) — candidate/trial abstraction'a bağımlı.
+Prerequisites: trial-count tracking (18) — candidate/trial foundation'ına bağımlı. Bölüm 18'in kendisi artık IMPLEMENTED + TESTED'dır (28.G), ama trial-count tracking (kaç candidate/trial değerlendirildiğinin kaydı, Bölüm 20) bu foundation'ın kapsamı DIŞINDADIR ve henüz mevcut değildir.
 
 ### 17.7 Parameter Stability — LATER IN FAZ 6
 
-Prerequisites: parameterized candidate abstraction + komşu parametre konfigürasyonları + stabil bir evaluation metriği. Mevcut `BacktestPolicy`'ler parametrik değildir (`BACKTEST_SPEC.md` Bölüm 12: Faz 4 policy'leri kasıtlı olarak trivial/deterministic). Parameter optimizer burada **icat edilmez.**
+Prerequisites: parameterized candidate abstraction + komşu parametre konfigürasyonları + stabil bir evaluation metriği. Parameterized candidate abstraction'ın kendisi artık mevcuttur (Bölüm 18 `Candidate`, IMPLEMENTED + TESTED) — ama "komşu parametre konfigürasyonları" üretimi (bir parametre-uzayı arama/iterasyon mekanizması) ve stabilite metriği HENÜZ MEVCUT DEĞİLDİR; mevcut `BacktestPolicy`'ler de parametrik değildir (`BACKTEST_SPEC.md` Bölüm 12: Faz 4 policy'leri kasıtlı olarak trivial/deterministic). Parameter optimizer burada **icat edilmez.**
 
-## 18. Candidate / Trial Abstraction — Exact Contract (LOCKED — IMPLEMENTASYON PENDING)
+## 18. Candidate / Trial Abstraction — Exact Contract (LOCKED — IMPLEMENTED + TESTED)
 
-**Durum: LOCKED (mimari/tasarım).** Implementasyon, regression suite'i, ve §28.G acceptance HENÜZ BAŞLAMAMIŞTIR (bkz. Bölüm 23, 28.G — 0/25). Bu bölüm, mevcut `BacktestPolicy`/`PolicyContext` (Faz 4), `WindowResult`/zero-context+non-zero-context Layer-2 runner'ları (Bölüm 8.3.6, 8.3.16), ve Stage-1/Stage-2 metrics'in (Bölüm 15) kaynak kodundan doğrudan doğrulanmış bir source-preflight'e dayanır.
+**Durum: LOCKED VE artık İMPLEMENT EDİLMİŞ + TEST EDİLMİŞTİR** (`Candidate`, `Trial`, `ParameterValue` — `src/crypto_quant_lab/validation/candidate.py`; regression suite'i `tests/test_validation_candidate.py` — 132 test, tümü PASS; bkz. Bölüm 18.14, 23, 28.G — 25/25). Bu bölüm, mevcut `BacktestPolicy`/`PolicyContext` (Faz 4), `WindowResult`/zero-context+non-zero-context Layer-2 runner'ları (Bölüm 8.3.6, 8.3.16), ve Stage-1/Stage-2 metrics'in (Bölüm 15) kaynak kodundan doğrudan doğrulanmış bir source-preflight'e dayanır.
 
 **Zorunlu prensip (LOCKED, ne zaman implement edilirse edilsin geçerli, DEĞİŞMEDEN korunur):** candidate selection **yalnızca IS**'i kullanabilir. Bir OOS sonucu, **o sonucu üreten aynı candidate'in seçimine** asla geri besleme yapamaz (Bölüm 12, Bölüm 20). Bu prensip, aşağıdaki §18.7'nin de açıkça kaydettiği gibi, **research-process disiplinidir — bu bölümün kilitlediği value object'ler bunu mekanik olarak enforce ETMEZ** (Bölüm 19 ile aynı engine-vs-process ayrımı).
 
@@ -2539,9 +2541,9 @@ Bu foundation **yalnızca bir candidate'in TANIMINI ve TEK bir başarılı çok-
 crypto_quant_lab.validation.candidate  (YENİ modül)
   imports:
     crypto_quant_lab.backtest.models        (BacktestConfig)
-    crypto_quant_lab.validation.rolling      (WindowResult — yalnızca tip için)
+    crypto_quant_lab.validation.rolling      (WindowResult — yalnızca value-model tipi için)
     crypto_quant_lab.storage.sqlite_codec    (datetime_to_epoch_us)
-    decimal, dataclasses  (stdlib)
+    decimal, dataclasses, datetime  (stdlib)
 
 crypto_quant_lab.validation.rolling      <- candidate.py'yi İMPORT ETMEZ
 crypto_quant_lab.validation.metrics      <- candidate.py'yi İMPORT ETMEZ
@@ -2551,6 +2553,8 @@ Sonuç: candidate.py, rolling.py'ye bağımlıdır (tek yönlü); rolling.py,
 metrics.py, ve windows.py candidate.py'den TAMAMEN BAĞIMSIZDIR — hiçbir
 döngü YOK. candidate.py hiçbir optimizer/search kodu İMPORT ETMEZ (böyle
 bir kod bu kontrat kapsamında zaten YOKTUR).
+
+**"Yalnızca tip için" ifadesinin netleştirilmesi (implementasyon closure'ı ile eklendi):** `Trial.__post_init__`'in `results` elemanlarını `isinstance(result, WindowResult)` ile mekanik olarak doğrulayabilmesi için `WindowResult`'ın runtime'da import edilmesi ZORUNLUDUR ve LEGALDİR — bu, `candidate.py`'nin `rolling.py`'nin bir value-model SEMBOLÜNE bağımlı olduğu anlamına gelir, `rolling.py`'nin RUNNER FONKSİYONLARINI (`run_rolling_backtest_from_store`, `run_context_aware_rolling_backtest_from_store`) veya execution davranışını import/invoke ettiği anlamına GELMEZ. "Tip için" ifadesi bu ayrımı ifade eder: `candidate.py` yalnızca `WindowResult` SINIFINI (isinstance kontrolü ve field-okuma için) kullanır — hiçbir rolling orchestration mantığı candidate.py'ye sızmaz (implementasyonun `git diff` ve statik import-satırı kanıtıyla doğrulanmıştır, bkz. 28.G kriter 24).
 ```
 
 ### 18.11 Gelecekteki İmplementasyon İçin Dosya Kapsamı (planlama bilgisi — şimdi değiştirilmez)
@@ -2625,7 +2629,59 @@ trading.
 
 Bu maddeler **deferred boundary'ler** olarak kaydedilir — implement edilmiş özellikler DEĞİL.
 
-**Status: LOCKED (mimari/tasarım) — IMPLEMENTATION PENDING** (bkz. Bölüm 23, 28.G — 0/25).
+### 18.14 Implementation Evidence (IMPLEMENTED + TESTED — combined delivery ile eklendi)
+
+```
+Production: src/crypto_quant_lab/validation/candidate.py (YENİ dosya)
+  - ParameterValue = bool | int | Decimal | str | None | tuple["ParameterValue", ...]
+  - Candidate (frozen, slots) — candidate_id: str, parameters: tuple[tuple[str, ParameterValue], ...]
+  - Trial (frozen, slots) — candidate, results, exchange, market_type, symbol,
+    timeframe, as_of_time, config (kilitli field sırasıyla, §18.5 ile birebir)
+  - imports: yalnızca BacktestConfig (backtest/models), WindowResult
+    (validation/rolling, yalnızca value-model tipi — §18.10), datetime_to_epoch_us
+    (storage/sqlite_codec), ve stdlib (dataclasses, datetime, decimal) — §18.10'da
+    LOCKED olan import listesiyle birebir, fazlası YOK.
+Test: tests/test_validation_candidate.py (YENİ dosya) — 132 test, tümü PASS.
+  - Candidate value semantics (valid construction, field order, equality/hash,
+    frozen/slotted, deterministic construction, candidate_id validation,
+    parameters yapısal validation, duplicate/canonical-order, parameter-value
+    domain'inin TAMAMI dahil NaN/Infinity/float/mutable-container/custom-object
+    reddi, nested-value top-level-index raporlaması, eşzamanlı çoklu ihlal
+    sırası, purity/no-partial-construction).
+  - Trial semantics (valid construction, field order, equality/hash,
+    frozen/slotted, candidate/results validation, provenance validation
+    (4 field x tip+boş+whitespace+padding), as_of_time (tip/naive/pseudo-naive/
+    valid), config tip kontrolü, initial_cash tutarlılığı (index 0 VE later
+    index), eşzamanlı çoklu ihlal sırası — adım 1'den 8'e kadar her adımın
+    kendinden sonraki adımları ezdiğini kanıtlayan dedicated testler,
+    duplicate/overlapping window kabulü, mutasyon/kopyalama YOKLUĞU, role/score/
+    holdout field'ının absence-of-field kanıtı).
+  - Static/non-coupling (locked modül yolunda sembol erişilebilirliği,
+    package-root export YOKLUĞU, evaluator/optimizer sembolü YOKLUĞU, candidate.py
+    kaynağında metrics/policy/rolling-runner import'u YOKLUĞU, rolling.py/
+    metrics.py/windows.py kaynağında candidate import satırı YOKLUĞU, callable
+    field YOKLUĞU).
+  - Gerçek rolling-path entegrasyonu: `run_rolling_backtest_from_store`'dan
+    üretilen gerçek bir `tuple[WindowResult, ...]`, bir Trial'a paketlenir;
+    `compute_stage1_metrics` ve `compute_periodic_returns`, `trial.results[i].result`
+    üzerinden BAĞIMSIZ olarak (Trial/Candidate'e hiçbir coupling olmadan)
+    çağrılır. Ayrı bir sentetik equity-curve testi, `compute_stage2_metrics`'in
+    de (sıfır-olmayan varyansla, Sharpe dahil) aynı şekilde bağımsız çalıştığını
+    kanıtlar.
+İlgili regression suite'ler (tests/test_validation_windows.py,
+tests/test_validation_rolling_backtest.py, tests/test_validation_metrics.py,
+tests/test_backtest_models.py, tests/test_backtest_results.py — 404 test)
+DEĞİŞMEDEN yeşil kaldı; tam suite 1791/1791 PASS (1659 mevcut + 132 yeni).
+Post-implementation audit'i — Bölüm 18'in tüm invariant'ları ve Bölüm 28.G'nin
+25 kriterinin tamamı için concrete davranışsal/static kanıt doğrulandı — PASS.
+Değiştirilen mevcut production/test dosyası: YOK (rolling.py, metrics.py,
+windows.py, models.py, policy.py, ve tüm mevcut testler DEĞİŞMEDEN — statik
+`git diff` kanıtı + tam regression suite uyumluluğu).
+```
+
+**Multiple-simultaneous-violation fail-fast sıra yorumu (implementasyon closure'ı ile netleştirildi):** §18.8'deki `Candidate.__post_init__` adım 4-8 (parametre yapısı/key tipi/key içeriği/duplicate/canonical-order), HER index için TEK bir ileri-yönlü geçişte, o index'e özgü tüm yapısal/key kontrolleri sırayla uygulanarak kontrol edilir (index 0 tam geçmeden index 1'e geçilmez); yalnızca TÜM index'ler bu yapısal/key geçişini (adım 3-8) başarıyla tamamladıktan SONRA, adım 9 (değer domain'i) AYRI bir ikinci ileri-yönlü geçiş olarak başlar. Bu nedenle yapısal/key bir ihlal, index'i ne olursa olsun, HER ZAMAN daha erken bir index'teki bir değer-domain ihlalini ezer (dedicated test: `test_candidate_structural_violation_takes_priority_over_earlier_value_violation`). `Trial.__post_init__`'in 8 adımı da aynı şekilde, tek bir sıralı geçişte, §18.7'de listelenen sırayla uygulanır — her adımın kendinden sonraki adımları ezdiği ayrı dedicated testlerle kanıtlanmıştır (bkz. yukarıdaki 18.14 test listesi).
+
+**Status: LOCKED AND IMPLEMENTED + TESTED** (bkz. Bölüm 23, 28.G — 25/25).
 
 ## 19. Leakage / Anti-Overfitting — Engine vs. Process (LOCKED)
 
@@ -2664,7 +2720,7 @@ Bu maddeler **deferred boundary'ler** olarak kaydedilir — implement edilmiş �
 
 ## 20. Multiple Testing — Kayıt Prensibi (LOCKED, İmplementasyon Yok)
 
-Gelecekteki candidate/trial katmanı, en azından şunu **kaydedebilmelidir** (implement edilmez, yalnızca prensip):
+Bölüm 18'in candidate/trial foundation'ı (`Candidate`, `Trial`) artık IMPLEMENTED + TESTED'dır (28.G), ama trial-count tracking/registry SAĞLAMAZ (§18.9, 18.13). Gelecekteki, bu foundation'ın ÜZERİNE inşa edilecek bir orchestration/tracking katmanı, en azından şunu **kaydedebilmelidir** (implement edilmez, yalnızca prensip):
 
 ```
 - kaç candidate/trial değerlendirildi
@@ -2754,26 +2810,30 @@ FAZ 6B — Context-Aware Extensions + Return-Series / Experiment Foundation
         (`src/crypto_quant_lab/validation/rolling.py`; kendi
         regression suite'i 94 test — 28 mevcut zero-context DEĞİŞMEDEN
         + 66 yeni non-zero-context; bkz. Bölüm 23, 28.F — 22/22).
-      - Candidate/trial source-preflight + exact kontrat (Bölüm 18) —
-        LOCKED (mimari/tasarım): `Candidate`, `Trial` value object'leri
-        için exact public API, kimlik/parametre domain'i, provenance,
-        validation/fail-fast sırası, leakage/selection sınırları
-        (§18.9), purity/import-direction kilitlendi. İmplementasyon,
-        regression suite'i, ve §28.G acceptance HENÜZ BAŞLAMAMIŞTIR
-        (bkz. Bölüm 23, 28.G — 0/25).
+      - Candidate/trial foundation (Bölüm 18) — LOCKED VE artık
+        İMPLEMENT EDİLMİŞ + TEST EDİLMİŞTİR: `Candidate`, `Trial`,
+        `ParameterValue` (`src/crypto_quant_lab/validation/candidate.py`;
+        kendi regression suite'i 132 test, tümü PASS; bkz. Bölüm 18.14,
+        23, 28.G — 25/25). Exact public API, kimlik/parametre domain'i,
+        provenance, validation/fail-fast sırası, leakage/selection
+        sınırları (§18.9), purity/import-direction — tümü kilitlendiği
+        gibi implement edildi; hiçbir mevcut production dosyası
+        (rolling.py/metrics.py/windows.py/models.py/policy.py)
+        değişmedi.
 
     Kalan zorunlu bileşenler (HENÜZ PENDING):
       - Annualized Sharpe/Sortino/Calmar/CAGR ve ilgili
         calendar/annualization kontratı (ayrı, henüz LOCKED
         edilmemiş — Bölüm 15.9, 16).
-      - Candidate/trial abstraction'ın (Bölüm 18) implementasyonu,
-        regression suite'i, ve post-implementation audit/acceptance
-        closure'ı — kontrat LOCKED olmasına rağmen HENÜZ İMPLEMENT
-        EDİLMEMİŞTİR (bkz. Bölüm 23, 28.G — 0/25).
 
     Durum: FAZ6B — NOT COMPLETE (bkz. §22.2). Stage-1/Stage-2/non-zero-
-    context Layer-2 implementasyonlarının tamamlanmış olması FAZ6B'yi
-    TEK BAŞINA KAPATMAZ — yukarıdaki iki kalan bileşen hâlâ pending'dir.
+    context Layer-2/candidate-trial foundation implementasyonlarının
+    tamamlanmış olması FAZ6B'yi TEK BAŞINA KAPATMAZ — annualized metrics
+    kontratı hâlâ pending'dir; ayrıca candidate/trial foundation'ın
+    kendisi hiçbir candidate selection/ranking, optimizer/search, final
+    holdout protection, veya multiple-testing correction SAĞLAMAZ
+    (§18.9) — bunlar ayrı, henüz spec-lock edilmemiş gelecekteki
+    adımlardır.
 
 FAZ 6C — Advanced Overfitting Controls
     purging/embargo (horizon contract'a bağımlı, Bölüm 17.1), CPCV
@@ -2820,7 +2880,7 @@ FAZ 6D — Faz 6 Final Acceptance
 | Phase | Status | Completed scope | Remaining scope |
 |---|---|---|---|
 | FAZ6A | COMPLETE | temporal window/IS-OOS primitives (§28.A — 22/22), zero-context rolling OOS evaluation (§28.C — 12/12), Stage-1 metrics (§28.D — 18/18) | locked FAZ6A scope içinde yok |
-| FAZ6B | NOT COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 (§8.3.16, §28.F — 22/22, LOCKED VE IMPLEMENTED + TESTED), candidate/trial exact kontrat (§18, LOCKED — mimari/tasarım) | annualized Sharpe/Sortino/Calmar/CAGR kontratı, candidate/trial implementasyonu + regression suite'i + acceptance closure'ı (§28.G — 0/25) |
+| FAZ6B | NOT COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 (§8.3.16, §28.F — 22/22, LOCKED VE IMPLEMENTED + TESTED), candidate/trial foundation (§18, §28.G — 25/25, LOCKED VE IMPLEMENTED + TESTED) | annualized Sharpe/Sortino/Calmar/CAGR kontratı |
 | FAZ6C | NOT COMPLETE | yok | purging/embargo, CPCV, Deflated Sharpe, PBO, multiple-testing corrections, parameter stability |
 | FAZ6D | NOT STARTED | yok | Faz 6 final acceptance audit'i |
 
@@ -3116,18 +3176,62 @@ TAMAMLANDI:
   içermedi — candidate/trial implementasyonu ve regression suite'i
   HENÜZ BAŞLAMADI.
 
+FAZ6B — CANDIDATE/TRIAL FOUNDATION IMPLEMENTATION + TESTS + AUDIT +
+DOCUMENTATION/ACCEPTANCE CLOSURE — TAMAMLANDI:
+  — Bölüm 18'de LOCKED olan candidate/trial exact kontratını tek bir
+  combined delivery'de implement etti (non-zero-context Layer-2
+  implementasyonunun izlediği AYNI precedent):
+  - `ParameterValue`, `Candidate` (frozen/slots), `Trial` (frozen/slots)
+    — TAMAMLANDI (`src/crypto_quant_lab/validation/candidate.py`, YENİ
+    modül); yalnızca `BacktestConfig` (backtest/models), `WindowResult`
+    (validation/rolling, yalnızca value-model tipi için), ve
+    `datetime_to_epoch_us` (storage/sqlite_codec) import eder — Bölüm
+    18.10'da LOCKED olan import listesiyle birebir.
+  - `tests/test_validation_candidate.py` (YENİ dosya) — 132 test, tümü
+    PASS: Candidate value semantics (candidate_id/parametre yapısı/
+    duplicate/canonical-order/tüm value-domain tipleri/NaN-Infinity-
+    float-mutable-container-custom-object reddi/eşzamanlı çoklu ihlal
+    sırası), Trial semantics (candidate/results/provenance/as_of_time/
+    config/initial_cash tutarlılığı/eşzamanlı çoklu ihlal sırası/
+    duplicate-overlapping window kabulü/mutasyon-kopyalama YOKLUĞU/
+    role-score-holdout field'ının absence-of-field kanıtı), static/non-
+    coupling (locked modül yolu, package-root export YOKLUĞU, evaluator/
+    optimizer sembolü YOKLUĞU, candidate.py'nin metrics/policy/rolling-
+    runner import'u YOKLUĞU, rolling.py/metrics.py/windows.py'nin
+    candidate import'u YOKLUĞU), ve gerçek rolling-path entegrasyonu
+    (`run_rolling_backtest_from_store`'dan üretilen gerçek bir
+    `tuple[WindowResult, ...]`'ın bir Trial'a paketlenip Stage-1/Stage-2
+    metriklerinin `trial.results[i].result` üzerinden bağımsız olarak
+    hesaplanabildiğinin kanıtı).
+  - İlgili regression suite'ler (`test_validation_windows.py`,
+    `test_validation_rolling_backtest.py`, `test_validation_metrics.py`,
+    `test_backtest_models.py`, `test_backtest_results.py` — 404 test)
+    DEĞİŞMEDEN yeşil kaldı; tam suite 1791/1791 PASS (1659 mevcut + 132
+    yeni).
+  - post-implementation audit'i — Bölüm 18'in tüm invariant'ları ve
+    Bölüm 28.G'nin 25 kriterinin tamamı için concrete davranışsal/static
+    kanıt doğrulandı — PASS.
+  - Değiştirilen mevcut production/test dosyası: YOK (rolling.py,
+    metrics.py, windows.py, models.py, policy.py, ve tüm mevcut testler
+    DEĞİŞMEDEN — statik `git diff` kanıtı + tam regression suite
+    uyumluluğu).
+  - 28.G candidate/trial foundation acceptance/status reconciliation (bu
+    doküman güncellemesi) — TAMAMLANDI: 0/25 -> 25/25.
+  - Candidate selection/ranking, optimizer/grid/random/Bayesian search,
+    final holdout protection, multiple-testing correction, ve Stage-3
+    (annualized metrics, Deflated Sharpe, PBO, parameter stability) bu
+    delivery'de BAŞLATILMADI — bunlar ayrı, henüz spec-lock edilmemiş
+    gelecekteki adımlardır (§18.9, §18.13).
+
 Sonraki (henüz başlanmadı):
-  Candidate/trial implementasyonu + regression suite'i + post-
-  implementation audit + documentation/acceptance closure, tek bir
-  combined delivery olarak (non-zero-context Layer-2 implementasyonunun
-  izlediği AYNI precedent) — Bölüm 18'de LOCKED olan exact kontratı
-  implement eder: `Candidate`/`Trial`
-  (`src/crypto_quant_lab/validation/candidate.py`, YENİ modül) + ilgili
-  test dosyası (`tests/test_validation_candidate.py`). Candidate
-  selection/ranking, optimizer/grid/random/Bayesian search, ve Stage-3
-  (annualized metrics, Deflated Sharpe, PBO, multiple-testing
-  corrections, parameter stability) bu adımda BAŞLATILMAZ — bunlar
-  ayrı, henüz spec-lock edilmemiş gelecekteki adımlardır.
+  Annualized Sharpe/Sortino/Calmar/CAGR ve ilgili calendar/annualization
+  kontratı için source-preflight + exact kontrat kilidi — Bölüm 15.9,
+  16'da zaten deferred olarak kaydedilen bu maddenin kendi ayrı
+  spec-lock adımı. Candidate selection/ranking, optimizer/grid/random/
+  Bayesian search, ve Stage-3'ün geri kalanı (Deflated Sharpe, PBO,
+  multiple-testing corrections, parameter stability) bu adımda da
+  BAŞLATILMAZ — bunlar ayrı, henüz spec-lock edilmemiş gelecekteki
+  adımlardır.
 ```
 
 **MS3 scope (TAMAMLANDI — pre-flight'in kendisi, Bölüm 8.3'te kilitlendi):**
@@ -3212,7 +3316,7 @@ Aynı girdiler → aynı pencere sonuçları — mevcut `run_backtest_from_store
 
 ## 28. Acceptance Criteria — Yedi Ayrı Grup (LOCKED)
 
-Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i, HENÜZ implementation/test exercised OLMAYAN, kontrattan türetilmiş ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 0/25). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G altındaki sayılar). §28.A/B/C/D/E/F/G'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
+Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G altındaki sayılar). §28.A/B/C/D/E/F/G'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
 
 ### 28.A — LOCKED FOUNDATION ACCEPTANCE (Runner-Bağımsız)
 
@@ -3269,7 +3373,7 @@ Bu kriterlerin hepsi artık **Layer-1** (tek-pencere context-aware canonical rep
 
 **Durum:** Bölüm 8.3'teki B2 kilidi Layer-1 için **implement edilmiş ve test edilmiştir** (bkz. Bölüm 23) — bu 15 kriterin hepsi artık **runtime/test exercised**'dır. Bu, Layer-2 (çok-pencereli orchestrator) veya Faz 6A'nın tamamının tamamlandığı anlamına **GELMEZ** — yalnızca context-aware Layer-1 acceptance contract'ının karşılandığı anlamına gelir.
 
-**İleri seviye Faz 6 kategorileri (28.A/28.B/28.C/28.D'nin hiçbirine dahil DEĞİL, ayrı ve pending):** purging/embargo (17.1), CPCV (17.2), Sharpe-ailesi/return-series (16, 17.3), Deflated Sharpe (17.4), PBO (17.5), multiple-testing corrections (17.6), parameter stability (17.7), candidate/trial abstraction (18).
+**İleri seviye Faz 6 kategorileri (28.A/28.B/28.C/28.D'nin hiçbirine dahil DEĞİL, ayrı sayımlar):** purging/embargo (17.1), CPCV (17.2), Deflated Sharpe (17.4), PBO (17.5), multiple-testing corrections (17.6), parameter stability (17.7) — hâlâ pending. Sharpe-ailesi/return-series (16, 17.3) ve candidate/trial abstraction (18) de bu dört grubun hiçbirine dahil değildir, ama kendi ayrı gruplarında (sırasıyla 28.E — 29/29, 28.G — 25/25) artık IMPLEMENTED + TESTED'dır — bu not yazıldığı tarihte (yalnızca 28.A–D mevcutken) her ikisi de henüz pending idi.
 
 ### 28.C — ZERO-CONTEXT LAYER-2 POLICY-FRESHNESS ACCEPTANCE (12/12 RUNTIME/TEST EXERCISED)
 
@@ -3380,37 +3484,37 @@ Bu liste, Bölüm 8.3.16'da LOCKED olan non-zero-context Layer-2 (`ContextAwareW
 
 **Non-zero-context Layer-2 acceptance count: 22 / 22 implementation/test exercised.** Bu sayım, 28.A'nın (22 — farklı bir grup, aynı sayı tesadüfen), 28.B'nin (15/15), 28.C'nin (12/12), 28.D'nin (18/18), veya 28.E'nin (29/29) hiçbirine dahil değildir/katlanmaz — ayrı bir sayımdır. **22/22 olması ŞUNLARI TAMAMLAMAZ:** candidate/trial abstraction; optimizer/search orchestration; annualized Sharpe/Sortino/Calmar/CAGR; Stage-3 kontrolleri (Deflated Sharpe, PBO, multiple-testing corrections, parameter stability); FAZ6B; Faz 6'nın tamamı — yalnızca non-zero-context Layer-2'nin kendi implementasyon/test acceptance contract'ının karşılandığı anlamına gelir.
 
-### 28.G — CANDIDATE/TRIAL FOUNDATION ACCEPTANCE (0/25 IMPLEMENTATION/TEST EXERCISED)
+### 28.G — CANDIDATE/TRIAL FOUNDATION ACCEPTANCE (25/25 IMPLEMENTATION/TEST EXERCISED)
 
-Bu liste, Bölüm 18'de LOCKED olan candidate/trial exact kontratının (mimari/tasarım) implementasyon/test acceptance checklist'ini kaydeder. **Bu 25 kriterin HİÇBİRİ henüz implementation/test exercised DEĞİLDİR** — `src/crypto_quant_lab/validation/candidate.py` ve `tests/test_validation_candidate.py` henüz yaratılmamıştır (bkz. Bölüm 23 — "Sonraki"). Kriterler, kontrattan (Bölüm 18.5–18.10) türetilmiştir; keyfi bir sayı veya şişirilmiş/duplicate madde yoktur.
+Bu liste, Bölüm 18'de LOCKED olan candidate/trial exact kontratının, `src/crypto_quant_lab/validation/candidate.py` tarafından karşılandığını kaydeder. **Bu 25 kriterin hepsi artık implementation/test exercised'dır** — `tests/test_validation_candidate.py`'de 132 test (tümü PASS), ilgili regression suite'ler (`test_validation_windows.py`, `test_validation_rolling_backtest.py`, `test_validation_metrics.py`, `test_backtest_models.py`, `test_backtest_results.py` — 404 test) DEĞİŞMEDEN yeşil, tam suite 1791/1791 PASS (1659 mevcut + 132 yeni), post-implementation audit'i PASS. Davranışsal kriterler doğrudan regression testleriyle, "değişmedi"/"coupled değil"/"yok" türü kriterler ise static/scope kanıtı (kod incelemesi, `git diff` boş, mevcut testlerin DEĞİŞMEDEN yeşil kalması) + tam regression suite uyumluluğuyla kanıtlanır — bu ikisi ayrı ayrı etiketlenir, biri diğeri yerine geçmez.
 
-1. `Candidate` (`candidate_id: str`, `parameters: tuple[tuple[str, ParameterValue], ...]`), kilitli modül yolunda (`src/crypto_quant_lab/validation/candidate.py`) frozen/slotted olarak, kilitli field sırasıyla mevcut olmalıdır (Bölüm 18.5).
-2. `candidate_id`, `str` olmalıdır; yanlış tip → TypeError (Bölüm 18.6).
-3. `candidate_id`, boş veya yalnızca whitespace/padded olamaz; ihlal → ValueError (Bölüm 18.6).
-4. `candidate_id`, case-sensitive'dir ve hiçbir normalizasyona tabi tutulmaz (Bölüm 18.6).
-5. `parameters`, `tuple[tuple[str, ParameterValue], ...]` olmalıdır; yanlış top-level tip veya yanlış-tipli eleman (index-specific) → TypeError (Bölüm 18.5, 18.6).
-6. Parametre key'leri, boş/yalnızca-whitespace/padded olamaz ve tekrar edemez (duplicate key) — ihlal → index-specific ValueError (Bölüm 18.6).
-7. Parametre key'leri, strictly ascending lexicographic sırada verilmelidir; sırasız girdi sessizce sıralanmaz, index-specific ValueError ile reddedilir (Bölüm 18.6).
-8. Parametre değerleri, kilitli 9 adımlık sırayla doğrulanır: bool int'ten ÖNCE, int (non-bool), Decimal (yalnızca finite), str, None, aynı tipte recursive tuple, float REDDEDİLİR, mutable container'lar REDDEDİLİR, custom object'ler REDDEDİLİR (Bölüm 18.6).
-9. `Candidate` eşitliği/hash'i, `candidate_id` ve `parameters`'ın tamamını kapsar (default dataclass equality); custom `__eq__`/`__hash__` yoktur (Bölüm 18.5, 18.10).
-10. `Candidate`, genuinely hashable'dır (empirik olarak, örn. bir `set`/`dict` key'i olarak kullanılarak kanıtlanır) (Bölüm 18.10).
-11. Eşit girdilerle yapılan `Candidate` construction'ı, eşit (ve eşit-hash) instance'lar üretir; construction deterministiktir (Bölüm 18.10).
-12. `Trial` (`candidate`, `results`, `exchange`, `market_type`, `symbol`, `timeframe`, `as_of_time`, `config`), kilitli modül yolunda frozen/slotted olarak, kilitli field sırasıyla mevcut olmalıdır (Bölüm 18.5).
-13. `results`, boş olamayan bir `tuple[WindowResult, ...]` olmalıdır; boş tuple → ValueError (Bölüm 18.7).
-14. `results`'ın her elemanı `WindowResult` tipinde olmalıdır; yanlış-tipli eleman → index-specific TypeError (Bölüm 18.7).
-15. `results` sırası, girdi sırası olarak tam olarak korunur — sort/dedupe/filter yapılmaz (Bölüm 18.7, 18.8).
-16. `results` arasında duplicate/overlapping pencereler legal'dir — reddedilmez (Bölüm 18.7, mevcut rolling runner precedent'iyle tutarlı).
-17. `exchange`/`market_type`/`symbol`/`timeframe`, boş olmayan `str` olmalıdır; ihlal → TypeError/ValueError (Bölüm 18.7).
-18. `as_of_time`, genuine aware `datetime` olmalıdır; naive/pseudo-naive/non-datetime → TypeError/ValueError (Bölüm 18.7, 12).
-19. `config`, bir `BacktestConfig` instance'ı olmalıdır; yanlış tip → TypeError (Bölüm 18.5, 18.7).
-20. Her `i` için `results[i].result.initial_cash == config.initial_cash` mekanik olarak enforce edilir; uyuşmazlık → index-specific ValueError (Bölüm 18.7 — tek mekanik cross-result consistency kriteri).
-21. `Trial` construction'ı, `results` veya `candidate`'ı kopyalamaz veya mutate etmez (Bölüm 18.7, 18.10).
-22. `Trial`, hiçbir selection/test `role` alanı içermez — bu, absence-of-field kanıtıyla (field introspection) doğrulanır (Bölüm 18.7 — KRİTİK, engine-vs-process ayrımı).
-23. `candidate.py` modülü, hiçbir evaluator fonksiyonu içermez — yalnızca value object'ler (`Candidate`, `Trial`, `ParameterValue`) tanımlıdır; bu, absence-of-symbol kanıtıyla doğrulanır (Bölüm 18.3, 18.5, 18.9).
-24. `candidate.py`, yalnızca `rolling.py`'den `WindowResult` (type-only) ve `backtest/models.py`'den `BacktestConfig` import eder; `rolling.py`/`metrics.py`/`windows.py`, `candidate.py`'den HİÇBİR ŞEY import etmez — import cycle yoktur (Bölüm 18.10, static kanıt).
-25. Mevcut `BacktestResult`/`WindowResult`/`TemporalWindow`/`TemporalSplit`/her iki rolling runner/`metrics.py` API'leri ve paket export'ları, `candidate.py`'nin eklenmesiyle değişmeden/coupled-olmadan kalır (Bölüm 18.5, 18.10, 21 — static `git diff` kanıtı + tam regression suite uyumluluğu).
+1. `Candidate` (`candidate_id: str`, `parameters: tuple[tuple[str, ParameterValue], ...]`), kilitli modül yolunda (`src/crypto_quant_lab/validation/candidate.py`) frozen/slotted olarak, kilitli field sırasıyla mevcut olmalıdır (Bölüm 18.5). **PASS** — `@dataclass(frozen=True, slots=True) class Candidate`; `test_candidate_field_order_is_locked`, `test_candidate_is_frozen`, `test_candidate_is_slotted`.
+2. `candidate_id`, `str` olmalıdır; yanlış tip → TypeError (Bölüm 18.6). **PASS** — `_require_canonical_identifier`; `test_candidate_id_wrong_type_is_rejected`.
+3. `candidate_id`, boş veya yalnızca whitespace/padded olamaz; ihlal → ValueError (Bölüm 18.6). **PASS** — `test_candidate_id_empty_whitespace_or_padded_is_rejected` (6 varyant, parametrized).
+4. `candidate_id`, case-sensitive'dir ve hiçbir normalizasyona tabi tutulmaz (Bölüm 18.6). **PASS** — `test_candidate_id_is_case_sensitive_and_not_normalized`.
+5. `parameters`, `tuple[tuple[str, ParameterValue], ...]` olmalıdır; yanlış top-level tip veya yanlış-tipli eleman (index-specific) → TypeError (Bölüm 18.5, 18.6). **PASS** — `test_candidate_non_tuple_parameters_is_rejected`, `test_candidate_invalid_parameter_entry_at_index_0_is_rejected`, `_at_later_index_is_rejected`, `test_candidate_parameter_entry_wrong_length_is_rejected`.
+6. Parametre key'leri, boş/yalnızca-whitespace/padded olamaz ve tekrar edemez (duplicate key) — ihlal → index-specific ValueError (Bölüm 18.6). **PASS** — `test_candidate_parameter_key_wrong_type_is_rejected`, `_empty_whitespace_or_padded_is_rejected` (4 varyant), `test_candidate_duplicate_key_is_rejected_at_duplicate_index`.
+7. Parametre key'leri, strictly ascending lexicographic sırada verilmelidir; sırasız girdi sessizce sıralanmaz, index-specific ValueError ile reddedilir (Bölüm 18.6). **PASS** — `test_candidate_noncanonical_order_is_rejected_at_violation_index`, `test_candidate_parameters_are_not_silently_sorted_or_case_folded`.
+8. Parametre değerleri, kilitli 9 adımlık sırayla doğrulanır: bool int'ten ÖNCE, int (non-bool), Decimal (yalnızca finite), str, None, aynı tipte recursive tuple, float REDDEDİLİR, mutable container'lar REDDEDİLİR, custom object'ler REDDEDİLİR (Bölüm 18.6). **PASS** — `test_candidate_accepts_all_legal_parameter_value_types` (14 varyant), `test_candidate_bool_value_is_accepted_under_its_own_branch_before_int`, `test_candidate_rejects_float_parameter_value` (3 varyant), `_rejects_non_finite_decimal_parameter_value` (NaN/+Inf/-Inf), `_rejects_mutable_container_parameter_value` (list/dict/set), `_rejects_arbitrary_object_parameter_value`, `_rejects_nested_float/_nested_mutable_container_parameter_value`.
+9. `Candidate` eşitliği/hash'i, `candidate_id` ve `parameters`'ın tamamını kapsar (default dataclass equality); custom `__eq__`/`__hash__` yoktur (Bölüm 18.5, 18.10). **PASS** — `test_candidate_equality_is_value_based`, `test_candidate_inequality_for_different_ids_same_parameters`; kod incelemesi: `candidate.py`'de hiçbir `__eq__`/`__hash__` tanımı yoktur.
+10. `Candidate`, genuinely hashable'dır (empirik olarak, örn. bir `set`/`dict` key'i olarak kullanılarak kanıtlanır) (Bölüm 18.10). **PASS** — `test_candidate_is_hashable_as_set_member_and_dict_key`.
+11. Eşit girdilerle yapılan `Candidate` construction'ı, eşit (ve eşit-hash) instance'lar üretir; construction deterministiktir (Bölüm 18.10). **PASS** — `test_candidate_deterministic_repeated_construction`.
+12. `Trial` (`candidate`, `results`, `exchange`, `market_type`, `symbol`, `timeframe`, `as_of_time`, `config`), kilitli modül yolunda frozen/slotted olarak, kilitli field sırasıyla mevcut olmalıdır (Bölüm 18.5). **PASS** — `@dataclass(frozen=True, slots=True) class Trial`; `test_trial_field_order_is_locked`, `test_trial_is_frozen`, `test_trial_is_slotted`.
+13. `results`, boş olamayan bir `tuple[WindowResult, ...]` olmalıdır; boş tuple → ValueError (Bölüm 18.7). **PASS** — `test_trial_results_non_tuple_is_rejected`, `test_trial_results_empty_is_rejected`.
+14. `results`'ın her elemanı `WindowResult` tipinde olmalıdır; yanlış-tipli eleman → index-specific TypeError (Bölüm 18.7). **PASS** — `test_trial_results_invalid_member_at_index_0_is_rejected`, `_at_later_index_is_rejected`.
+15. `results` sırası, girdi sırası olarak tam olarak korunur — sort/dedupe/filter yapılmaz (Bölüm 18.7, 18.8). **PASS** — `test_trial_results_preserve_input_order`.
+16. `results` arasında duplicate/overlapping pencereler legal'dir — reddedilmez (Bölüm 18.7, mevcut rolling runner precedent'iyle tutarlı). **PASS** — `test_trial_duplicate_windows_are_accepted`, `test_trial_overlapping_windows_are_accepted`.
+17. `exchange`/`market_type`/`symbol`/`timeframe`, boş olmayan `str` olmalıdır; ihlal → TypeError/ValueError (Bölüm 18.7). **PASS** — `test_trial_provenance_field_wrong_type_is_rejected` (4 field, parametrized), `_empty_whitespace_or_padded_is_rejected` (4 field x 4 varyant, parametrized).
+18. `as_of_time`, genuine aware `datetime` olmalıdır; naive/pseudo-naive/non-datetime → TypeError/ValueError (Bölüm 18.7, 12). **PASS** — `test_trial_as_of_time_wrong_type_is_rejected`, `_naive_is_rejected`, `_pseudo_naive_is_rejected`, `_valid_aware_datetime_is_accepted`.
+19. `config`, bir `BacktestConfig` instance'ı olmalıdır; yanlış tip → TypeError (Bölüm 18.5, 18.7). **PASS** — `test_trial_config_wrong_type_is_rejected`.
+20. Her `i` için `results[i].result.initial_cash == config.initial_cash` mekanik olarak enforce edilir; uyuşmazlık → index-specific ValueError (Bölüm 18.7 — tek mekanik cross-result consistency kriteri). **PASS** — `test_trial_initial_cash_mismatch_at_index_0_is_rejected`, `_at_later_index_is_rejected`, `test_trial_construction_succeeds_when_every_initial_cash_matches`.
+21. `Trial` construction'ı, `results` veya `candidate`'ı kopyalamaz veya mutate etmez (Bölüm 18.7, 18.10). **PASS** — `test_trial_does_not_copy_or_mutate_results_tuple`, `_does_not_copy_or_mutate_candidate_or_config` (`is` identity kanıtı).
+22. `Trial`, hiçbir selection/test `role` alanı içermez — bu, absence-of-field kanıtıyla (field introspection) doğrulanır (Bölüm 18.7 — KRİTİK, engine-vs-process ayrımı). **PASS** — `test_trial_has_no_selection_role_score_or_holdout_field`, `test_no_callable_field_participates_in_candidate_or_trial_dataclass`.
+23. `candidate.py` modülü, hiçbir evaluator fonksiyonu içermez — yalnızca value object'ler (`Candidate`, `Trial`, `ParameterValue`) tanımlıdır; bu, absence-of-symbol kanıtıyla doğrulanır (Bölüm 18.3, 18.5, 18.9). **PASS** — `test_candidate_module_defines_no_evaluator_or_optimizer_symbol`, `test_candidate_module_public_symbols_include_only_the_locked_value_objects`.
+24. `candidate.py`, yalnızca `rolling.py`'den `WindowResult` (value-model tipi için) ve `backtest/models.py`'den `BacktestConfig` import eder; `rolling.py`/`metrics.py`/`windows.py`, `candidate.py`'den HİÇBİR ŞEY import etmez — import cycle yoktur (Bölüm 18.10, static kanıt). **PASS** — `test_symbols_available_at_locked_module_path`, `test_candidate_module_imports_no_metric_optimizer_policy_or_rolling_runner_function`, `test_rolling_module_does_not_import_candidate_module`, `_metrics_module_does_not_import_candidate_module`, `_windows_module_does_not_import_candidate_module`; kod incelemesi: `candidate.py`'nin import bloğu Bölüm 18.10'daki kilitli listeyle birebir eşleşir.
+25. Mevcut `BacktestResult`/`WindowResult`/`TemporalWindow`/`TemporalSplit`/her iki rolling runner/`metrics.py` API'leri ve paket export'ları, `candidate.py`'nin eklenmesiyle değişmeden/coupled-olmadan kalır (Bölüm 18.5, 18.10, 21 — static `git diff` kanıtı + tam regression suite uyumluluğu). **PASS** — `test_candidate_trial_not_exported_at_package_root`, `test_existing_window_result_and_temporal_window_still_construct_as_before`; static kanıt: bu delivery `rolling.py`/`metrics.py`/`windows.py`/`models.py`/`policy.py`/`validation/__init__.py` dosyalarının hiçbirine dokunmaz (yalnızca `candidate.py`, `test_validation_candidate.py`, `VALIDATION_SPEC.md` değişti); ilgili 404 regression testi + tam suite 1791 DEĞİŞMEDEN yeşil.
 
-**Candidate/trial foundation acceptance count: 0 / 25 implementation/test exercised.** Bu, aşağıdakilerin HİÇBİRİNİN var olduğu anlamına GELMEZ: candidate/trial implementasyonu; candidate selection/ranking; optimizer/grid/random/Bayesian search; final holdout protection; multiple-testing correction; FAZ6B'nin tamamlanması; Faz 6'nın tamamlanması. Bu grup, yalnızca Bölüm 18'de LOCKED olan kontratın mimari/tasarım seviyesinde kilitlendiğini, implementasyonun HENÜZ BAŞLAMADIĞINI kaydeder.
+**Candidate/trial foundation acceptance count: 25 / 25 implementation/test exercised.** Bu, aşağıdakilerin HİÇBİRİNİN var olduğu anlamına GELMEZ: candidate selection/ranking; optimizer/grid/random/Bayesian search; final holdout protection; multiple-testing correction; annualized Sharpe/Sortino/Calmar/CAGR; Stage-3 kontrolleri (Deflated Sharpe, PBO, parameter stability); FAZ6B'nin tamamlanması; Faz 6'nın tamamlanması — yalnızca candidate/trial foundation'ının kendi implementasyon/test acceptance contract'ının karşılandığı anlamına gelir.
 
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
@@ -3425,10 +3529,11 @@ ROADMAP.md'deki bir sonraki faz **Faz 7 — İlk Funding/Basis araştırması**d
   veya scope etmez.
 - FAZ6A'nın karşılanmış olması, kalan FAZ6B/FAZ6C işinin atlandığı veya
   tamamlandığı anlamına GELMEZ — proje, Faz 7'ye başlamadan ÖNCE Faz
-  6'nın geri kalanını (FAZ6B: non-zero-context Layer-2, return-series/
-  Sharpe, candidate/trial abstraction; FAZ6C: advanced overfitting
-  controls) tamamlamaya devam EDEBİLİR (bu doküman bir sıralama
-  zorunluluğu icat etmez).
+  6'nın geri kalanını (FAZ6B: annualized Sharpe/Sortino/Calmar/CAGR
+  kontratı — non-zero-context Layer-2, return-series/Sharpe, ve
+  candidate/trial foundation'ı artık IMPLEMENTED + TESTED'dır, bkz.
+  §22.2; FAZ6C: advanced overfitting controls) tamamlamaya devam
+  EDEBİLİR (bu doküman bir sıralama zorunluluğu icat etmez).
 - CPCV/PBO/DSR'nin Faz 7'nin başlaması için zorunlu olmadığına dair
   yukarıdaki cümle DEĞİŞMEMİŞTİR/genişletilmemiştir — bu bölüm yalnızca
   FAZ6A'nın artık karşılanmış olduğunu kaydeder, başka hiçbir izin
