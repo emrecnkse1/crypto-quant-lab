@@ -25,20 +25,36 @@ from crypto_quant_lab.validation.rolling import WindowResult
 ParameterValue = bool | int | Decimal | str | None | tuple["ParameterValue", ...]
 
 
-def _require_canonical_identifier(value: object, field_name: str) -> None:
-    """Enforce the shared `candidate_id`/parameter-key/provenance-string rule.
-
-    Non-str -> TypeError. Empty or whitespace-only, and leading/trailing
-    whitespace padding, both -> ValueError. Case-sensitive; no Unicode
-    normalization, no length limit (VALIDATION_SPEC.md Bölüm 18.6).
-    """
+def _require_str_type(value: object, field_name: str) -> None:
     if not isinstance(value, str):
         raise TypeError(f"{field_name} must be a str, got {type(value).__name__}")
+
+
+def _require_canonical_content(value: str, field_name: str) -> None:
+    """Empty or whitespace-only, and leading/trailing whitespace padding, both -> ValueError.
+
+    Case-sensitive; no Unicode normalization, no length limit (Bölüm 18.6).
+    Assumes `value` has already passed `_require_str_type`.
+    """
     stripped = value.strip()
     if stripped == "":
         raise ValueError(f"{field_name} must not be empty or whitespace-only")
     if value != stripped:
         raise ValueError(f"{field_name} must not have leading/trailing whitespace padding")
+
+
+def _require_canonical_identifier(value: object, field_name: str) -> None:
+    """Enforce the shared `candidate_id`/provenance-string rule: type, then content (Bölüm 18.6).
+
+    Used for single-field checks (`candidate_id`, each `Trial` provenance
+    field) where type and content are validated back-to-back for the SAME
+    field. NOT used for `Candidate.parameters` keys, whose type (stage 5)
+    and content (stage 6) must each be validated as a separate global pass
+    over every entry before the next stage begins (Bölüm 18.8) — see
+    `Candidate.__post_init__`.
+    """
+    _require_str_type(value, field_name)
+    _require_canonical_content(value, field_name)
 
 
 def _require_parameter_value(value: object, *, top_level_index: int) -> None:
@@ -90,30 +106,58 @@ class Candidate:
     parameters: tuple[tuple[str, ParameterValue], ...]
 
     def __post_init__(self) -> None:
-        _require_canonical_identifier(self.candidate_id, "candidate_id")
+        """Enforce Bölüm 18.8's exact 9-stage global fail-fast order.
+
+        Stages 1-3 are single-field checks (`candidate_id`, then the
+        top-level `parameters` type). Stages 4-9 are each a SEPARATE global
+        pass over every `parameters` entry, in this exact order: entry
+        shape (4) -> key type (5) -> key content (6) -> duplicate keys (7)
+        -> canonical ascending order (8) -> recursive value domain (9).
+        Every entry must clear stage N (for every index) before stage N+1
+        examines any entry — a later stage's violation at an earlier index
+        always wins over an earlier stage's violation at a later index,
+        never the reverse (Bölüm 18.8, corrected).
+        """
+        _require_canonical_identifier(self.candidate_id, "candidate_id")  # stages 1-2
 
         if not isinstance(self.parameters, tuple):
-            raise TypeError(f"parameters must be a tuple, got {type(self.parameters).__name__}")
+            raise TypeError(
+                f"parameters must be a tuple, got {type(self.parameters).__name__}"
+            )  # stage 3
 
-        previous_key: str | None = None
+        # Stage 4: entry shape -- global pass over every entry.
         for index, entry in enumerate(self.parameters):
             if not isinstance(entry, tuple) or len(entry) != 2:
                 raise TypeError(
                     f"parameters[{index}] must be a 2-tuple of (key, value), got {entry!r}"
                 )
-            key, _value = entry
-            _require_canonical_identifier(key, f"parameters[{index}] key")
 
-            if previous_key is not None:
-                if key == previous_key:
-                    raise ValueError(f"parameters[{index}] key {key!r} is a duplicate key")
-                if key < previous_key:
-                    raise ValueError(
-                        f"parameters[{index}] key {key!r} is out of canonical ascending order "
-                        f"(previous key was {previous_key!r})"
-                    )
+        # Stage 5: key type -- global pass, only reached once stage 4 clears every entry.
+        for index, (key, _value) in enumerate(self.parameters):
+            _require_str_type(key, f"parameters[{index}] key")
+
+        # Stage 6: key content -- global pass, only reached once stage 5 clears every key.
+        for index, (key, _value) in enumerate(self.parameters):
+            _require_canonical_content(key, f"parameters[{index}] key")
+
+        # Stage 7: duplicate keys -- global pass, only reached once stage 6 clears every key.
+        seen_keys: set[str] = set()
+        for index, (key, _value) in enumerate(self.parameters):
+            if key in seen_keys:
+                raise ValueError(f"parameters[{index}] key {key!r} is a duplicate key")
+            seen_keys.add(key)
+
+        # Stage 8: canonical ascending order -- global pass, only reached once stage 7 clears.
+        previous_key: str | None = None
+        for index, (key, _value) in enumerate(self.parameters):
+            if previous_key is not None and key < previous_key:
+                raise ValueError(
+                    f"parameters[{index}] key {key!r} is out of canonical ascending order "
+                    f"(previous key was {previous_key!r})"
+                )
             previous_key = key
 
+        # Stage 9: recursive value domain -- global pass, only reached once stages 3-8 clear.
         for index, (_key, value) in enumerate(self.parameters):
             _require_parameter_value(value, top_level_index=index)
 

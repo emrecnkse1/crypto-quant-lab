@@ -2023,7 +2023,7 @@ Prerequisites: parameterized candidate abstraction + komşu parametre konfigüra
 
 ## 18. Candidate / Trial Abstraction — Exact Contract (LOCKED — IMPLEMENTED + TESTED)
 
-**Durum: LOCKED VE artık İMPLEMENT EDİLMİŞ + TEST EDİLMİŞTİR** (`Candidate`, `Trial`, `ParameterValue` — `src/crypto_quant_lab/validation/candidate.py`; regression suite'i `tests/test_validation_candidate.py` — 132 test, tümü PASS; bkz. Bölüm 18.14, 23, 28.G — 25/25). Bu bölüm, mevcut `BacktestPolicy`/`PolicyContext` (Faz 4), `WindowResult`/zero-context+non-zero-context Layer-2 runner'ları (Bölüm 8.3.6, 8.3.16), ve Stage-1/Stage-2 metrics'in (Bölüm 15) kaynak kodundan doğrudan doğrulanmış bir source-preflight'e dayanır.
+**Durum: LOCKED VE artık İMPLEMENT EDİLMİŞ + TEST EDİLMİŞTİR** (`Candidate`, `Trial`, `ParameterValue` — `src/crypto_quant_lab/validation/candidate.py`; regression suite'i `tests/test_validation_candidate.py` — 148 test, tümü PASS; bkz. Bölüm 18.14, 23, 28.G — 25/25). Bu bölüm, mevcut `BacktestPolicy`/`PolicyContext` (Faz 4), `WindowResult`/zero-context+non-zero-context Layer-2 runner'ları (Bölüm 8.3.6, 8.3.16), ve Stage-1/Stage-2 metrics'in (Bölüm 15) kaynak kodundan doğrudan doğrulanmış bir source-preflight'e dayanır.
 
 **Zorunlu prensip (LOCKED, ne zaman implement edilirse edilsin geçerli, DEĞİŞMEDEN korunur):** candidate selection **yalnızca IS**'i kullanabilir. Bir OOS sonucu, **o sonucu üreten aynı candidate'in seçimine** asla geri besleme yapamaz (Bölüm 12, Bölüm 20). Bu prensip, aşağıdaki §18.7'nin de açıkça kaydettiği gibi, **research-process disiplinidir — bu bölümün kilitlediği value object'ler bunu mekanik olarak enforce ETMEZ** (Bölüm 19 ile aynı engine-vs-process ayrımı).
 
@@ -2641,13 +2641,18 @@ Production: src/crypto_quant_lab/validation/candidate.py (YENİ dosya)
     (validation/rolling, yalnızca value-model tipi — §18.10), datetime_to_epoch_us
     (storage/sqlite_codec), ve stdlib (dataclasses, datetime, decimal) — §18.10'da
     LOCKED olan import listesiyle birebir, fazlası YOK.
-Test: tests/test_validation_candidate.py (YENİ dosya) — 132 test, tümü PASS.
+Test: tests/test_validation_candidate.py (YENİ dosya) — 148 test, tümü PASS
+  (132 orijinal combined-delivery testi + 16 yeni, fail-fast-order
+  correction'ıyla eklenen global-pass-across-stages kanıtı — bkz. aşağıdaki
+  düzeltme notu).
   - Candidate value semantics (valid construction, field order, equality/hash,
     frozen/slotted, deterministic construction, candidate_id validation,
     parameters yapısal validation, duplicate/canonical-order, parameter-value
     domain'inin TAMAMI dahil NaN/Infinity/float/mutable-container/custom-object
     reddi, nested-value top-level-index raporlaması, eşzamanlı çoklu ihlal
-    sırası, purity/no-partial-construction).
+    sırası (adım 4-9'un HER BİRİNİN her diğer adımdan daha erken/daha geç
+    index'te olsa bile kendinden SONRAKİ her adımı ezdiğini kanıtlayan 16
+    dedicated test — bkz. düzeltme notu), purity/no-partial-construction).
   - Trial semantics (valid construction, field order, equality/hash,
     frozen/slotted, candidate/results validation, provenance validation
     (4 field x tip+boş+whitespace+padding), as_of_time (tip/naive/pseudo-naive/
@@ -2671,7 +2676,8 @@ Test: tests/test_validation_candidate.py (YENİ dosya) — 132 test, tümü PASS
 İlgili regression suite'ler (tests/test_validation_windows.py,
 tests/test_validation_rolling_backtest.py, tests/test_validation_metrics.py,
 tests/test_backtest_models.py, tests/test_backtest_results.py — 404 test)
-DEĞİŞMEDEN yeşil kaldı; tam suite 1791/1791 PASS (1659 mevcut + 132 yeni).
+DEĞİŞMEDEN yeşil kaldı; tam suite 1807/1807 PASS (1791 önceki + 16 yeni
+fail-fast-order correction testi).
 Post-implementation audit'i — Bölüm 18'in tüm invariant'ları ve Bölüm 28.G'nin
 25 kriterinin tamamı için concrete davranışsal/static kanıt doğrulandı — PASS.
 Değiştirilen mevcut production/test dosyası: YOK (rolling.py, metrics.py,
@@ -2679,7 +2685,7 @@ windows.py, models.py, policy.py, ve tüm mevcut testler DEĞİŞMEDEN — stati
 `git diff` kanıtı + tam regression suite uyumluluğu).
 ```
 
-**Multiple-simultaneous-violation fail-fast sıra yorumu (implementasyon closure'ı ile netleştirildi):** §18.8'deki `Candidate.__post_init__` adım 4-8 (parametre yapısı/key tipi/key içeriği/duplicate/canonical-order), HER index için TEK bir ileri-yönlü geçişte, o index'e özgü tüm yapısal/key kontrolleri sırayla uygulanarak kontrol edilir (index 0 tam geçmeden index 1'e geçilmez); yalnızca TÜM index'ler bu yapısal/key geçişini (adım 3-8) başarıyla tamamladıktan SONRA, adım 9 (değer domain'i) AYRI bir ikinci ileri-yönlü geçiş olarak başlar. Bu nedenle yapısal/key bir ihlal, index'i ne olursa olsun, HER ZAMAN daha erken bir index'teki bir değer-domain ihlalini ezer (dedicated test: `test_candidate_structural_violation_takes_priority_over_earlier_value_violation`). `Trial.__post_init__`'in 8 adımı da aynı şekilde, tek bir sıralı geçişte, §18.7'de listelenen sırayla uygulanır — her adımın kendinden sonraki adımları ezdiği ayrı dedicated testlerle kanıtlanmıştır (bkz. yukarıdaki 18.14 test listesi).
+**Candidate global fail-fast sıra düzeltmesi (corrective delivery ile eklendi — ÖNCEKİ "per-index" yorumunu DÜZELTİR):** §18.8'deki `Candidate.__post_init__` adım 4-9, HER BİRİ TÜM `parameters` girişleri üzerinden **ayrı, global bir geçiştir** — adım N'in KENDİSİ her girişte tamamlanmadan adım N+1 HİÇBİR girişi incelemez. Combined-delivery'nin ilk implementasyonu/dokümantasyonu YANLIŞLIKLA "her index için tek bir ileri-yönlü geçişte o index'e özgü tüm yapısal/key kontrollerinin sırayla uygulandığını" (adım 4-8'in per-index birleştirildiğini) belirtmişti — bu, eşzamanlı ihlallerde YANLIŞ sonuç üretebiliyordu (örn. index 0'da bir adım-5 [key tipi] ihlali VE index 1'de bir adım-4 [entry şekli] ihlali varsa, LOCKED global sıra adım-4'ün index 1'deki ihlalinin KAZANMASINI gerektirir — çünkü TÜM adım-4 kontrolleri TÜM adım-5 kontrollerinden ÖNCE tamamlanmalıdır — ama eski per-index implementasyonu yanlışlıkla index 0'daki adım-5 ihlalini raise ediyordu). Bu, `src/crypto_quant_lab/validation/candidate.py`'de düzeltildi: `Candidate.__post_init__` artık adım 4 (entry şekli), 5 (key tipi), 6 (key içeriği), 7 (duplicate key), 8 (canonical order), 9 (value domain) için ALTI AYRI, TAM `parameters` üzerinden geçen döngü kullanır — her döngü yalnızca kendi tekil kontrolünü uygular ve yalnızca bir ÖNCEKİ adımın döngüsü TÜM index'ler için hatasız tamamlandıktan SONRA başlar. 16 yeni dedicated test (`test_candidate_stage4_shape_wins_over_earlier_stage5_key_type` ve benzerleri, `tests/test_validation_candidate.py`), adım 4'ün 5-9'un HER BİRİNDEN, adım 5'in 6-9'un HER BİRİNDEN, adım 6'nın 7-9'un HER BİRİNDEN, adım 7'nin 8-9'un HER İKİSİNDEN, ve adım 8'in 9'dan — index sırasından BAĞIMSIZ olarak — HER ZAMAN önce geldiğini kanıtlar (davranışsal, exact exception type/message assertion ile, yalnızca public `Candidate` API üzerinden). `Trial.__post_init__` bu düzeltmeden ETKİLENMEMİŞTİR — Trial zaten §18.7'de listelenen 8 adımı tek bir sıralı, tek-alan-bazlı geçişte uygular (Candidate'in `parameters` gibi çoklu-eleman bir koleksiyonu yoktur, bu nedenle per-index/global ayrımı Trial için baştan beri geçerli değildi); Trial public API/davranışı ve mevcut Trial testleri DEĞİŞMEDEN kalır.
 
 **Status: LOCKED AND IMPLEMENTED + TESTED** (bkz. Bölüm 23, 28.G — 25/25).
 
@@ -2813,7 +2819,7 @@ FAZ 6B — Context-Aware Extensions + Return-Series / Experiment Foundation
       - Candidate/trial foundation (Bölüm 18) — LOCKED VE artık
         İMPLEMENT EDİLMİŞ + TEST EDİLMİŞTİR: `Candidate`, `Trial`,
         `ParameterValue` (`src/crypto_quant_lab/validation/candidate.py`;
-        kendi regression suite'i 132 test, tümü PASS; bkz. Bölüm 18.14,
+        kendi regression suite'i 148 test, tümü PASS; bkz. Bölüm 18.14,
         23, 28.G — 25/25). Exact public API, kimlik/parametre domain'i,
         provenance, validation/fail-fast sırası, leakage/selection
         sınırları (§18.9), purity/import-direction — tümü kilitlendiği
@@ -3223,6 +3229,56 @@ DOCUMENTATION/ACCEPTANCE CLOSURE — TAMAMLANDI:
     delivery'de BAŞLATILMADI — bunlar ayrı, henüz spec-lock edilmemiş
     gelecekteki adımlardır (§18.9, §18.13).
 
+FAZ6B — CANDIDATE GLOBAL FAIL-FAST ORDER CORRECTION — TAMAMLANDI:
+  — Post-delivery review, yukarıdaki combined delivery'nin implementasyon/
+  dokümantasyonunda tek bir exact contract deviation tespit etti: §18.8'in
+  kilitlediği `Candidate.__post_init__` adım 4-9 sırası GLOBAL geçişlerdir
+  (adım N TÜM `parameters` girişleri için tamamlanmadan adım N+1 HİÇBİR
+  girişi incelemez) — ama implementasyon bunun yerine adım 4-8'i HER index
+  için TEK bir birleşik geçişte uyguluyordu (index 0 tam geçmeden index 1'e
+  geçilmiyordu), ve implementasyon-closure dokümantasyonu bu YANLIŞ "per-
+  index" yorumunu LOCKED contract'ın kendisiymiş gibi kaydetmişti. Somut
+  çapraz-index hatası: `parameters=((123, "v"), ("bad","shape","toolong"))`
+  girdisinde, LOCKED global sıra adım-4 (entry şekli) ihlalinin index 1'de
+  KAZANMASINI gerektirir (adım-4 TÜM girişler için ÖNCE tamamlanmalıdır) —
+  ama eski implementasyon yanlışlıkla index 0'daki adım-5 (key tipi)
+  ihlalini raise ediyordu.
+  - Düzeltme: `Candidate.__post_init__`, adım 4 (entry şekli)/5 (key
+    tipi)/6 (key içeriği)/7 (duplicate key)/8 (canonical order)/9 (value
+    domain) için ALTI AYRI, TAM `parameters` üzerinden geçen döngü
+    kullanacak şekilde yeniden yazıldı — TAMAMLANDI
+    (`src/crypto_quant_lab/validation/candidate.py`). Yeni private
+    helper'lar (`_require_str_type`, `_require_canonical_content`)
+    eklendi; `_require_canonical_identifier` (candidate_id VE Trial
+    provenance field'ları için tek-alan tip+içerik kontrolü) DEĞİŞMEDEN
+    davranışsal olarak korundu (bu iki yeni helper'ın üzerine yeniden
+    inşa edildi). Public API, dataclass field'ları, hata kategorileri,
+    index-specific raporlama, ve Trial davranışı TAMAMEN DEĞİŞMEDEN.
+  - `tests/test_validation_candidate.py`'e 16 yeni dedicated davranışsal
+    test eklendi — TAMAMLANDI: adım 4'ün 5-9'un HER BİRİNDEN, adım 5'in
+    6-9'un HER BİRİNDEN, adım 6'nın 7-9'un HER BİRİNDEN, adım 7'nin 8-9'un
+    HER İKİSİNDEN, ve adım 8'in 9'dan — index sırasından BAĞIMSIZ olarak —
+    HER ZAMAN önce geldiğini, exact exception type/message assertion ile
+    ve yalnızca public `Candidate` API üzerinden kanıtlar (132 -> 148
+    test, tümü PASS).
+  - İlgili regression suite'ler (test_validation_windows.py,
+    test_validation_rolling_backtest.py, test_validation_metrics.py,
+    test_backtest_models.py, test_backtest_results.py — 404 test)
+    DEĞİŞMEDEN yeşil kaldı; tam suite 1791/1791 -> 1807/1807 PASS (16
+    yeni test).
+  - post-correction audit'i — düzeltilmiş implementasyonun global-pass
+    sırasını doğru uyguladığı, Trial'ın etkilenmediği, ve mevcut 132
+    testin tamamının hâlâ yeşil kaldığı doğrulandı — PASS.
+  - 28.G'nin 25 kriteri, düzeltilmiş implementasyon/testler karşısında
+    yeniden doğrulandı ve 25/25'te DEĞİŞMEDEN kaldı (kriter 6/7/8'in
+    kanıt listesine yeni global-pass testleri eklendi) — TAMAMLANDI.
+  - Bölüm 18.14'e "Candidate global fail-fast sıra düzeltmesi" notu
+    eklendi; önceki YANLIŞ "per-index" yorum paragrafı KALDIRILDI/
+    DÜZELTİLDİ. Değiştirilen dosyalar: yalnızca
+    `src/crypto_quant_lab/validation/candidate.py`,
+    `tests/test_validation_candidate.py`, `VALIDATION_SPEC.md` — hiçbir
+    başka production/test dosyası dokunulmadı.
+
 Sonraki (henüz başlanmadı):
   Annualized Sharpe/Sortino/Calmar/CAGR ve ilgili calendar/annualization
   kontratı için source-preflight + exact kontrat kilidi — Bölüm 15.9,
@@ -3486,16 +3542,16 @@ Bu liste, Bölüm 8.3.16'da LOCKED olan non-zero-context Layer-2 (`ContextAwareW
 
 ### 28.G — CANDIDATE/TRIAL FOUNDATION ACCEPTANCE (25/25 IMPLEMENTATION/TEST EXERCISED)
 
-Bu liste, Bölüm 18'de LOCKED olan candidate/trial exact kontratının, `src/crypto_quant_lab/validation/candidate.py` tarafından karşılandığını kaydeder. **Bu 25 kriterin hepsi artık implementation/test exercised'dır** — `tests/test_validation_candidate.py`'de 132 test (tümü PASS), ilgili regression suite'ler (`test_validation_windows.py`, `test_validation_rolling_backtest.py`, `test_validation_metrics.py`, `test_backtest_models.py`, `test_backtest_results.py` — 404 test) DEĞİŞMEDEN yeşil, tam suite 1791/1791 PASS (1659 mevcut + 132 yeni), post-implementation audit'i PASS. Davranışsal kriterler doğrudan regression testleriyle, "değişmedi"/"coupled değil"/"yok" türü kriterler ise static/scope kanıtı (kod incelemesi, `git diff` boş, mevcut testlerin DEĞİŞMEDEN yeşil kalması) + tam regression suite uyumluluğuyla kanıtlanır — bu ikisi ayrı ayrı etiketlenir, biri diğeri yerine geçmez.
+Bu liste, Bölüm 18'de LOCKED olan candidate/trial exact kontratının, `src/crypto_quant_lab/validation/candidate.py` tarafından karşılandığını kaydeder. **Bu 25 kriterin hepsi artık implementation/test exercised'dır** — `tests/test_validation_candidate.py`'de 148 test (tümü PASS; 132 orijinal combined-delivery testi + candidate global fail-fast order correction'ıyla eklenen 16 yeni test, bkz. Bölüm 18.14), ilgili regression suite'ler (`test_validation_windows.py`, `test_validation_rolling_backtest.py`, `test_validation_metrics.py`, `test_backtest_models.py`, `test_backtest_results.py` — 404 test) DEĞİŞMEDEN yeşil, tam suite 1807/1807 PASS (1791 önceki + 16 yeni), post-implementation audit'i PASS. Davranışsal kriterler doğrudan regression testleriyle, "değişmedi"/"coupled değil"/"yok" türü kriterler ise static/scope kanıtı (kod incelemesi, `git diff` boş, mevcut testlerin DEĞİŞMEDEN yeşil kalması) + tam regression suite uyumluluğuyla kanıtlanır — bu ikisi ayrı ayrı etiketlenir, biri diğeri yerine geçmez.
 
 1. `Candidate` (`candidate_id: str`, `parameters: tuple[tuple[str, ParameterValue], ...]`), kilitli modül yolunda (`src/crypto_quant_lab/validation/candidate.py`) frozen/slotted olarak, kilitli field sırasıyla mevcut olmalıdır (Bölüm 18.5). **PASS** — `@dataclass(frozen=True, slots=True) class Candidate`; `test_candidate_field_order_is_locked`, `test_candidate_is_frozen`, `test_candidate_is_slotted`.
 2. `candidate_id`, `str` olmalıdır; yanlış tip → TypeError (Bölüm 18.6). **PASS** — `_require_canonical_identifier`; `test_candidate_id_wrong_type_is_rejected`.
 3. `candidate_id`, boş veya yalnızca whitespace/padded olamaz; ihlal → ValueError (Bölüm 18.6). **PASS** — `test_candidate_id_empty_whitespace_or_padded_is_rejected` (6 varyant, parametrized).
 4. `candidate_id`, case-sensitive'dir ve hiçbir normalizasyona tabi tutulmaz (Bölüm 18.6). **PASS** — `test_candidate_id_is_case_sensitive_and_not_normalized`.
 5. `parameters`, `tuple[tuple[str, ParameterValue], ...]` olmalıdır; yanlış top-level tip veya yanlış-tipli eleman (index-specific) → TypeError (Bölüm 18.5, 18.6). **PASS** — `test_candidate_non_tuple_parameters_is_rejected`, `test_candidate_invalid_parameter_entry_at_index_0_is_rejected`, `_at_later_index_is_rejected`, `test_candidate_parameter_entry_wrong_length_is_rejected`.
-6. Parametre key'leri, boş/yalnızca-whitespace/padded olamaz ve tekrar edemez (duplicate key) — ihlal → index-specific ValueError (Bölüm 18.6). **PASS** — `test_candidate_parameter_key_wrong_type_is_rejected`, `_empty_whitespace_or_padded_is_rejected` (4 varyant), `test_candidate_duplicate_key_is_rejected_at_duplicate_index`.
-7. Parametre key'leri, strictly ascending lexicographic sırada verilmelidir; sırasız girdi sessizce sıralanmaz, index-specific ValueError ile reddedilir (Bölüm 18.6). **PASS** — `test_candidate_noncanonical_order_is_rejected_at_violation_index`, `test_candidate_parameters_are_not_silently_sorted_or_case_folded`.
-8. Parametre değerleri, kilitli 9 adımlık sırayla doğrulanır: bool int'ten ÖNCE, int (non-bool), Decimal (yalnızca finite), str, None, aynı tipte recursive tuple, float REDDEDİLİR, mutable container'lar REDDEDİLİR, custom object'ler REDDEDİLİR (Bölüm 18.6). **PASS** — `test_candidate_accepts_all_legal_parameter_value_types` (14 varyant), `test_candidate_bool_value_is_accepted_under_its_own_branch_before_int`, `test_candidate_rejects_float_parameter_value` (3 varyant), `_rejects_non_finite_decimal_parameter_value` (NaN/+Inf/-Inf), `_rejects_mutable_container_parameter_value` (list/dict/set), `_rejects_arbitrary_object_parameter_value`, `_rejects_nested_float/_nested_mutable_container_parameter_value`.
+6. Parametre key'leri, boş/yalnızca-whitespace/padded olamaz ve tekrar edemez (duplicate key) — ihlal → index-specific ValueError (Bölüm 18.6). Adım 5 (key tipi)/6 (key içeriği)/7 (duplicate), her biri TÜM girişler üzerinden AYRI, global bir geçiştir — adım N her girişte tamamlanmadan adım N+1 hiçbir girişi incelemez (Bölüm 18.8, corrected). **PASS** — `test_candidate_parameter_key_wrong_type_is_rejected`, `_empty_whitespace_or_padded_is_rejected` (4 varyant), `test_candidate_duplicate_key_is_rejected_at_duplicate_index`; global-pass sırası: `test_candidate_stage5_key_type_wins_over_earlier_stage6_key_content`, `_wins_over_earlier_stage7_duplicate`, `_wins_over_earlier_stage8_order`, `_wins_over_earlier_stage9_value`, `test_candidate_stage6_key_content_wins_over_earlier_stage7_duplicate`, `_wins_over_earlier_stage8_order`, `_wins_over_earlier_stage9_value`, `test_candidate_stage7_duplicate_wins_over_earlier_stage8_order`, `_wins_over_earlier_stage9_value`.
+7. Parametre key'leri, strictly ascending lexicographic sırada verilmelidir; sırasız girdi sessizce sıralanmaz, index-specific ValueError ile reddedilir (Bölüm 18.6). Adım 8 (order), TÜM girişler üzerinden AYRI, global bir geçiştir — yalnızca adım 7 (duplicate) TÜM girişler için hatasız tamamlandıktan SONRA başlar (Bölüm 18.8, corrected). **PASS** — `test_candidate_noncanonical_order_is_rejected_at_violation_index`, `test_candidate_parameters_are_not_silently_sorted_or_case_folded`; global-pass sırası: `test_candidate_stage8_order_wins_over_earlier_stage9_value`.
+8. Parametre değerleri, kilitli 9 adımlık sırayla doğrulanır: bool int'ten ÖNCE, int (non-bool), Decimal (yalnızca finite), str, None, aynı tipte recursive tuple, float REDDEDİLİR, mutable container'lar REDDEDİLİR, custom object'ler REDDEDİLİR (Bölüm 18.6). Adım 4 (entry şekli) de dahil, adım 4-9'un HER BİRİ TÜM girişler üzerinden ayrı bir global geçiştir; adım 9 (value domain), yalnızca adım 3-8 TÜM girişler için hatasız tamamlandıktan SONRA başlar ve TÜM girişler için çalıştırılır (Bölüm 18.8, corrected — bkz. Bölüm 18.14'teki düzeltme notu). **PASS** — `test_candidate_accepts_all_legal_parameter_value_types` (14 varyant), `test_candidate_bool_value_is_accepted_under_its_own_branch_before_int`, `test_candidate_rejects_float_parameter_value` (3 varyant), `_rejects_non_finite_decimal_parameter_value` (NaN/+Inf/-Inf), `_rejects_mutable_container_parameter_value` (list/dict/set), `_rejects_arbitrary_object_parameter_value`, `_rejects_nested_float/_nested_mutable_container_parameter_value`; global-pass sırası: `test_candidate_stage4_shape_wins_over_earlier_stage5_key_type`, `_wins_over_earlier_stage6_key_content`, `_wins_over_earlier_stage7_duplicate`, `_wins_over_earlier_stage8_order`, `_wins_over_earlier_stage9_value`, `test_candidate_stage9_value_domain_only_reached_after_stages_4_to_8_clear_globally`.
 9. `Candidate` eşitliği/hash'i, `candidate_id` ve `parameters`'ın tamamını kapsar (default dataclass equality); custom `__eq__`/`__hash__` yoktur (Bölüm 18.5, 18.10). **PASS** — `test_candidate_equality_is_value_based`, `test_candidate_inequality_for_different_ids_same_parameters`; kod incelemesi: `candidate.py`'de hiçbir `__eq__`/`__hash__` tanımı yoktur.
 10. `Candidate`, genuinely hashable'dır (empirik olarak, örn. bir `set`/`dict` key'i olarak kullanılarak kanıtlanır) (Bölüm 18.10). **PASS** — `test_candidate_is_hashable_as_set_member_and_dict_key`.
 11. Eşit girdilerle yapılan `Candidate` construction'ı, eşit (ve eşit-hash) instance'lar üretir; construction deterministiktir (Bölüm 18.10). **PASS** — `test_candidate_deterministic_repeated_construction`.

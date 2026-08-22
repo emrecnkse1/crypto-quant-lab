@@ -375,6 +375,110 @@ def test_candidate_earliest_value_violation_wins_among_multiple():
         Candidate(candidate_id="c1", parameters=(("a", 1.1), ("b", 2.2)))
 
 
+# ----------------------------------------------------------------
+# Stage 4-9 are GLOBAL passes (Bölüm 18.8, corrected): stage N must clear
+# for every parameter entry before stage N+1 examines any entry. A LATER
+# entry's violation at an EARLIER stage always wins over an EARLIER
+# entry's violation at a LATER stage -- never the reverse. Each case below
+# places the higher-numbered-stage violation at the earlier index and the
+# lower-numbered-stage violation at a later index, and asserts the later,
+# lower-stage index wins.
+# ----------------------------------------------------------------
+
+
+def test_candidate_stage4_shape_wins_over_earlier_stage5_key_type():
+    with pytest.raises(TypeError, match=r"parameters\[1\] must be a 2-tuple"):
+        Candidate(candidate_id="c1", parameters=((123, "v"), ("bad", "shape", "too-long")))
+
+
+def test_candidate_stage4_shape_wins_over_earlier_stage6_key_content():
+    with pytest.raises(TypeError, match=r"parameters\[1\] must be a 2-tuple"):
+        Candidate(candidate_id="c1", parameters=(("", "v"), ("bad", "shape", "too-long")))
+
+
+def test_candidate_stage4_shape_wins_over_earlier_stage7_duplicate():
+    with pytest.raises(TypeError, match=r"parameters\[2\] must be a 2-tuple"):
+        Candidate(
+            candidate_id="c1",
+            parameters=(("a", 1), ("a", 2), ("bad", "shape", "too-long")),
+        )
+
+
+def test_candidate_stage4_shape_wins_over_earlier_stage8_order():
+    with pytest.raises(TypeError, match=r"parameters\[2\] must be a 2-tuple"):
+        Candidate(
+            candidate_id="c1",
+            parameters=(("b", 1), ("a", 2), ("bad", "shape", "too-long")),
+        )
+
+
+def test_candidate_stage4_shape_wins_over_earlier_stage9_value():
+    with pytest.raises(TypeError, match=r"parameters\[1\] must be a 2-tuple"):
+        Candidate(candidate_id="c1", parameters=(("a", 1.5), ("bad", "shape", "too-long")))
+
+
+def test_candidate_stage5_key_type_wins_over_earlier_stage6_key_content():
+    with pytest.raises(TypeError, match=r"parameters\[1\] key must be a str"):
+        Candidate(candidate_id="c1", parameters=(("", "v"), (123, "v")))
+
+
+def test_candidate_stage5_key_type_wins_over_earlier_stage7_duplicate():
+    with pytest.raises(TypeError, match=r"parameters\[2\] key must be a str"):
+        Candidate(candidate_id="c1", parameters=(("a", 1), ("a", 2), (123, "v")))
+
+
+def test_candidate_stage5_key_type_wins_over_earlier_stage8_order():
+    with pytest.raises(TypeError, match=r"parameters\[2\] key must be a str"):
+        Candidate(candidate_id="c1", parameters=(("b", 1), ("a", 2), (123, "v")))
+
+
+def test_candidate_stage5_key_type_wins_over_earlier_stage9_value():
+    with pytest.raises(TypeError, match=r"parameters\[1\] key must be a str"):
+        Candidate(candidate_id="c1", parameters=(("a", 1.5), (123, "v")))
+
+
+def test_candidate_stage6_key_content_wins_over_earlier_stage7_duplicate():
+    with pytest.raises(ValueError, match=r"parameters\[2\] key must not be empty"):
+        Candidate(candidate_id="c1", parameters=(("a", 1), ("a", 2), ("", "v")))
+
+
+def test_candidate_stage6_key_content_wins_over_earlier_stage8_order():
+    with pytest.raises(ValueError, match=r"parameters\[2\] key must not be empty"):
+        Candidate(candidate_id="c1", parameters=(("b", 1), ("a", 2), ("", "v")))
+
+
+def test_candidate_stage6_key_content_wins_over_earlier_stage9_value():
+    with pytest.raises(ValueError, match=r"parameters\[1\] key must not have leading"):
+        Candidate(candidate_id="c1", parameters=(("a", 1.5), (" b", "v")))
+
+
+def test_candidate_stage7_duplicate_wins_over_earlier_stage8_order():
+    # index 1 ("a") is an order violation relative to index 0 ("b"); index 2
+    # ("b") duplicates index 0's key. Stage 7 (duplicate) must run to
+    # completion over every entry before stage 8 (order) examines any --
+    # so the index-2 duplicate wins over the index-1 order violation.
+    with pytest.raises(ValueError, match=r"parameters\[2\] key 'b' is a duplicate key"):
+        Candidate(candidate_id="c1", parameters=(("b", 1), ("a", 2), ("b", 3)))
+
+
+def test_candidate_stage7_duplicate_wins_over_earlier_stage9_value():
+    with pytest.raises(ValueError, match=r"parameters\[1\] key 'a' is a duplicate key"):
+        Candidate(candidate_id="c1", parameters=(("a", 1.5), ("a", 2)))
+
+
+def test_candidate_stage8_order_wins_over_earlier_stage9_value():
+    with pytest.raises(ValueError, match=r"parameters\[1\].*canonical ascending order"):
+        Candidate(candidate_id="c1", parameters=(("b", 1.5), ("a", 2)))
+
+
+def test_candidate_stage9_value_domain_only_reached_after_stages_4_to_8_clear_globally():
+    # No structural/key/order violation anywhere -- stage 9 is reached, and
+    # reports the first value-domain failure in parameter order (index 0),
+    # not a later one (index 1).
+    with pytest.raises(TypeError, match=r"parameters\[0\] value must not be a float"):
+        Candidate(candidate_id="c1", parameters=(("a", 1.1), ("b", 2.2)))
+
+
 # ================================================================
 # Candidate: purity / no partial construction
 # ================================================================
