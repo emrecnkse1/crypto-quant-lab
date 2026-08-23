@@ -1176,7 +1176,7 @@ Context/lookback kullanmayan trivial bir policy için, bugünkü `run_backtest_f
 
 **Aşama 1 (foundation): total return + max drawdown — exact formül, API, validation ve edge-case davranışı Bölüm 15.1–15.8'de LOCKED'dır (FAZ6B MS4) VE artık IMPLEMENTED + TESTED'dır (FAZ6B MS5).** `equity_curve`'den doğrudan, ek runtime bağımlılık gerektirmeden hesaplanır. `src/crypto_quant_lab/validation/metrics.py`'de implement edilmiştir (commit `a265e44`) — `Stage1Metrics` (frozen, slots) + `compute_stage1_metrics(result: BacktestResult) -> Stage1Metrics` — kendi regression suite'i `tests/test_validation_metrics.py`'de (82 test, tümü PASS). İlgili regression suite'ler (`tests/test_backtest_models.py`, `tests/test_backtest_results.py`, `tests/test_validation_rolling_backtest.py` — 105 test) DEĞİŞMEDEN yeşil kalır; tam suite 1468/1468 PASS. Post-commit implementasyon audit'i — PASS (bkz. Bölüm 23, 28.D — 18/18).
 
-**Aşama 2 — return-series + per-observation Sharpe: exact formül, API, validation, timestamp/cadence ve Decimal-context kontratı Bölüm 15.9–15.18'de LOCKED'dır VE artık IMPLEMENTED + TESTED'dır.** Bölüm 16'nın beş açık sorusundan dördü bu kilitle çözülmüştür (return tipi, periyodiklik, risk-free konvansiyonu, sıfır/negatif equity handling) — yalnızca annualization faktörü, ayrı bir gelecekteki calendar/annualization kontratına ertelenmiştir (bkz. Bölüm 15.9, 16). `src/crypto_quant_lab/validation/metrics.py`'de implement edilmiştir (commit `e4cedf9`) — `Stage2Metrics` (frozen, slots) + `compute_periodic_returns(result: BacktestResult) -> tuple[Decimal, ...]` + `compute_stage2_metrics(result: BacktestResult, *, risk_free_per_period: Decimal = Decimal(0)) -> Stage2Metrics` — kendi regression kanıtı `tests/test_validation_metrics.py`'nin genişletilmiş toplamında (207 test, tümü PASS: 82 Stage-1 DEĞİŞMEDEN + 125 yeni Stage-2). Tam suite 1593/1593 PASS. Post-commit implementasyon audit'i — PASS (bkz. Bölüm 23, 28.E — 29/29). Sortino, Calmar, CAGR, ve Sharpe'ın annualized varyantı bu kilide dahil DEĞİLDİR — bunların exact calendar/annualization ve downside-deviation kontratı Bölüm 15.19–15.33'te LOCKED'dır VE artık bu combined delivery ile IMPLEMENTED + TESTED'dır (bkz. Bölüm 23, 28.H — 30/30).
+**Aşama 2 — return-series + per-observation Sharpe: exact formül, API, validation, timestamp/cadence ve Decimal-context kontratı Bölüm 15.9–15.18'de LOCKED'dır VE artık IMPLEMENTED + TESTED'dır.** Bölüm 16'nın beş açık sorusundan dördü bu kilitle çözülmüştür (return tipi, periyodiklik, risk-free konvansiyonu, sıfır/negatif equity handling) — yalnızca annualization faktörü, bu Stage-2 adımında ayrı bir gelecekteki calendar/annualization kontratına ertelenmişti (bkz. Bölüm 15.9, 16); o kontrat artık Bölüm 15.19–15.33/§28.H'de LOCKED VE IMPLEMENTED + TESTED'dır (bkz. aşağıdaki paragraf). `src/crypto_quant_lab/validation/metrics.py`'de implement edilmiştir (commit `e4cedf9`) — `Stage2Metrics` (frozen, slots) + `compute_periodic_returns(result: BacktestResult) -> tuple[Decimal, ...]` + `compute_stage2_metrics(result: BacktestResult, *, risk_free_per_period: Decimal = Decimal(0)) -> Stage2Metrics` — kendi regression kanıtı `tests/test_validation_metrics.py`'nin genişletilmiş toplamında (207 test, tümü PASS: 82 Stage-1 DEĞİŞMEDEN + 125 yeni Stage-2). Tam suite 1593/1593 PASS. Post-commit implementasyon audit'i — PASS (bkz. Bölüm 23, 28.E — 29/29). Sortino, Calmar, CAGR, ve Sharpe'ın annualized varyantı bu kilide dahil DEĞİLDİR — bunların exact calendar/annualization ve downside-deviation kontratı Bölüm 15.19–15.33'te LOCKED'dır VE artık bu combined delivery ile IMPLEMENTED + TESTED'dır (bkz. Bölüm 23, 28.H — 30/30).
 
 **Annualized Metrics — Sharpe/Sortino/CAGR/Calmar: exact formül, API, calendar-basis, validation ve Decimal-context kontratı Bölüm 15.19–15.33'te LOCKED'dır VE artık IMPLEMENTED + TESTED'dır (bu combined delivery).** `src/crypto_quant_lab/validation/annualized_metrics.py` (YENİ modül) — dört bağımsız, bare-`Decimal` döndüren fonksiyon: `compute_annualized_sharpe_ratio`, `compute_sortino_ratio`, `compute_cagr`, `compute_calmar_ratio`. Hiçbiri yeni bir dataclass/value object TANITMAZ; `Stage1Metrics`, `compute_stage1_metrics`, `Stage2Metrics`, `compute_periodic_returns`, `compute_stage2_metrics` DEĞİŞMEDEN reuse edilir. Kendi regression suite'i `tests/test_validation_annualized_metrics.py`'de (77 test, tümü PASS). İlgili regression suite'ler (`tests/test_validation_metrics.py` — 207 test, `tests/test_validation_candidate.py`, `tests/test_validation_rolling_backtest.py`, `tests/test_validation_windows.py`) DEĞİŞMEDEN yeşil kalır; tam suite 1884/1884 PASS. Post-implementation audit'i — PASS (bkz. Bölüm 23, 28.H — 30/30).
 
@@ -2978,15 +2978,500 @@ Sharpe-ailesi metrikler bir return series gerektirir. `EquityPoint`, her candle 
 
 `BACKTEST_SPEC.md` Bölüm 26/27/34'ün Faz 6'ya atadığı her madde burada **Faz 6 kapsamında** kalır; yalnızca dependency-position (NOW / LATER IN FAZ 6) belirlenir.
 
-### 17.1 Purging / Embargo — LATER IN FAZ 6
+### 17.1 Purging / Embargo — Window-Level Embargo Foundation LOCKED (FAZ6C MS1, implementasyon PENDING); Label/Outcome-Horizon Purging DEFERRED
 
-Classical purged K-fold / embargo, bir **information/label/outcome horizon** tanımına ihtiyaç duyar (bir gözlemin "etkisinin" ne kadar sürdüğü). Mevcut `BacktestPolicy` abstraction'ının **hiçbir explicit label/outcome horizon kavramı yoktur** (`target_position(context) -> PositionTarget`, salt candle-prefix tabanlıdır).
+**MS1 zamanındaki durum (tarihsel bulgu, hâlâ doğru):** Classical purged K-fold / embargo, bir **information/label/outcome horizon** tanımına ihtiyaç duyar (bir gözlemin "etkisinin" ne kadar sürdüğü). Mevcut `BacktestPolicy` abstraction'ının **hiçbir explicit label/outcome horizon kavramı yoktur** (`target_position(context) -> PositionTarget`, salt candle-prefix tabanlıdır) — bu bulgu FAZ6C MS1 preflight'i tarafından (aşağıda, 17.1.1) tekrar doğrulanmıştır ve hâlâ geçerlidir: **klasik, label/outcome-horizon'a bağlı purging hâlâ implement EDİLEMEZ** (bkz. 17.1.2, 17.1.13) — bu tür bir horizon kavramı icat edilmeden.
 
-**Bu nedenle:** purging/embargo implementasyonu, ilgili observation/outcome-horizon kontratı var olana kadar **Faz 6 İÇİNDE deferred**'dir — başka bir faza taşınmaz. Olası gelecek çözümler (kilitlenmez): generic bir "information interval," bir trade outcome horizon, veya (Faz 14 ML modelleri geldiğinde) bir label horizon. Hangisinin seçileceği bu dokümanda **prematüre kilitlenmez.**
+**Bu nedenle (FAZ6C MS1 çözümü — LOCKED):** label/outcome-horizon'a bağlı klasik purging **Faz 6 İÇİNDE deferred** kalır (17.1.13) — ama repository, klasik purge/embargo'nun **label-horizon gerektirmeyen yarısını** zaten destekler: bir out-of-sample (OOS) penceresiyle doğrudan overlap eden herhangi bir in-sample (IS) penceresinin reddi (Bölüm 7'nin zaten LOCKED "IS/OOS overlap edemez" invariant'ının N-pencereli genellemesi) VE OOS'tan SONRA gelen, caller tarafından explicit olarak sağlanan sabit bir sürenin (`embargo: timedelta`) IS penceresi olarak kullanılmasının reddi — hiçbir per-observation label/outcome horizon'a İHTİYAÇ DUYMADAN. Bu iki mekanizma (aşağıda 17.1.2'de "purge" ve "embargo" olarak isimlendirilir ve KESİN OLARAK AYRILIR) artık Bölüm 17.1.1–17.1.13'te **LOCKED**'dır — implementasyonu, regression suite'i, ve §28.I acceptance'ı HENÜZ BAŞLAMAMIŞTIR.
+
+**17.1.1 Source-Preflight Bulguları (FAZ6C MS1)**
+
+```
+- windows.py: TemporalWindow (frozen/slots, start/end datetime, half-open
+  [start, end), genuine-aware-datetime zorunlu — datetime_to_epoch_us ile
+  doğrulanır, sessiz clip/normalize YOK) ve TemporalSplit (in_sample:
+  TemporalWindow, out_of_sample: TemporalWindow, timeframe: str; tek
+  invariant `in_sample.end <= out_of_sample.start` — overlap'i yasaklar,
+  adjacency/gap'i legal bırakır) — ikisi de pure/store-free, sıfır
+  cross-dependency (yalnızca data_quality/time.is_grid_aligned +
+  storage/sqlite_codec.datetime_to_epoch_us import eder). Bölüm 6/7'nin
+  zaten LOCKED "half-open, [start, end), sessiz clip/sort/normalize YOK"
+  disiplini burada da REUSE edilir — yeni bir interval primitive'i İCAT
+  EDİLMEZ.
+- `TemporalSplit.__post_init__`'in overlap check'i ("in_sample.end >
+  out_of_sample.start ise ValueError") YALNIZCA tek-IS/tek-OOS,
+  IS-önce-OOS varsayımı altında çalışan, DIREKTİF (tek yönlü) bir
+  kontroldür — bidirectional/genel bir "iki keyfi pencere overlap ediyor
+  mu" predicate'i DEĞİLDİR ve bu şekilde (N-pencereli, iki yönlü)
+  reuse EDİLEMEZ; bu nedenle FAZ6C MS1, kendi genel `windows_overlap`
+  predicate'ini (17.1.5) yeni bir primitive olarak kilitler —
+  `TemporalSplit`'in kendi check'i DEĞİŞMEDEN kalır, bu yeni predicate
+  onu DEĞİŞTİRMEZ/reimplement ETMEZ.
+- rolling.py: `run_rolling_backtest_from_store`/
+  `run_context_aware_rolling_backtest_from_store`, bağımsız bir
+  `tuple[TemporalWindow, ...]` (veya `ContextAwareWindow`) üzerinde
+  çalışır; duplicate/overlapping evaluation pencereleri EXPLICIT olarak
+  legal'dir, hiçbir purge/overlap-rejection uygulanmaz (rolling.py'nin
+  kendi docstring'i: "compose, never duplicate" — `TemporalSplit`
+  rolling tarafından hiç tüketilmez, Bölüm 8.3.12). Bu, rolling.py'nin
+  KENDİSİNİN hiçbir purge/embargo kavramı TAŞIMADIĞINI doğrudan kaynaktan
+  doğrular — yeni purging primitive'i rolling.py'a COUPLE EDİLMEZ (bkz.
+  17.1.9).
+- `BacktestPolicy.target_position(context: PolicyContext) ->
+  PositionTarget` (backtest/policy.py, Faz-4-locked, DEĞİŞMEDEN):
+  hiçbir label/outcome/holding-period/horizon field'ı TAŞIMAZ; yalnızca
+  `context.as_of_time` + `context.candles` (salt candle-prefix) görür.
+  Repo genelinde "horizon"/"label"/"outcome" grep'i: hiçbir yerde
+  (funding/, backtest/, validation/) önceden LOCKED bir per-observation
+  label/outcome-horizon kavramı YOKTUR — bu, 17.1'in tarihsel bulgusunun
+  (yukarıda) doğrudan tekrar doğrulanmasıdır.
+- `candle_duration(timeframe) -> timedelta` (market_data/timeframes.py,
+  DEĞİŞMEDEN, yalnızca "1h"/"4h"), context/lookback süresi (Bölüm 8.3,
+  caller-supplied `context_start`), ve evaluation süresi (`TemporalWindow`
+  kendi `end - start`'ı) — ÜÇÜ DE, bir "embargo duration" ile
+  REPOSITORY EVIDENCE'A GÖRE EŞDEĞER DEĞİLDİR: hiçbiri "bu OOS
+  penceresinden SONRA ne kadar süre boyunca IS verisi hâlâ kontamine
+  sayılır" sorusuna bir cevap TAŞIMAZ/İMA ETMEZ. Bu nedenle embargo
+  duration, hiçbirinden İNFERENCE EDİLMEZ — kendi bağımsız, explicit
+  `embargo: timedelta` parametresi olarak kilitlenir (17.1.4) — Annualized
+  Metrics'in `timeframe: str`'i hiçbir yerden infer ETMEME kararıyla
+  (Bölüm 15.22) AYNI prensip.
+- `Candidate`/`Trial` (candidate.py, DEĞİŞMEDEN): `Trial.timeframe`
+  provenance field'ı taşır ama (Bölüm 15.19'un annualized metrics için
+  zaten kaydettiği AYNI gerekçeyle) hiçbir embargo/horizon kavramına
+  COUPLE EDİLMEZ; yeni purging modülü `candidate.py`'yi hiç import ETMEZ.
+- Repo genelinde "purg"/"embargo"/"horizon" grep'i (src/ ve tests/):
+  hiçbir üretim kodunda veya kilitli spec bölümünde önceden LOCKED bir
+  purge/embargo mekanizması veya isim çakışması YOKTUR — yalnızca bu
+  bölümün (17.1) kendi "LATER IN FAZ 6" tarihsel notu ve §18.9'un
+  "bu foundation purging/embargo SAĞLAMAZ" açık-sınır cümlesi mevcuttur;
+  ikisi de bu MS1'in kilidiyle ÇAKIŞMAZ (§18.9 DEĞİŞMEDEN doğru kalır —
+  candidate/trial foundation'ının KENDİSİ hâlâ purging/embargo
+  SAĞLAMAZ; yeni modül candidate/trial'dan tamamen bağımsızdır).
+```
+
+**Sonuç:** repository, bir per-observation label/outcome horizon kavramını **desteklemez ve icat edilmesi bu mikro-adımın kapsamı DIŞINDADIR** — bu nedenle klasik (label-horizon'a bağlı) purging hâlâ implement EDİLEMEZ. Ama repository, `TemporalWindow`/`TemporalSplit` üzerinden **pencere-seviyeli** bir overlap-invariant'ı ZATEN LOCKED tutar (Bölüm 6/7) — bu, label-horizon'a İHTİYAÇ DUYMADAN, N-pencereli bir purge + explicit-duration bir embargo'yu doğru ve dürüst şekilde genellemeye YETERLİDİR. Aşağıdaki 17.1.2–17.1.13, TAM OLARAK bu genellemeyi kilitler — daha fazlasını İDDİA ETMEZ.
+
+**17.1.2 Kapsam ve Terminoloji (LOCKED) — Purge vs. Embargo, Kesin Ayrım**
+
+```
+Kapsam İÇİNDE (bu mikro-adım, LOCKED):
+  1. "Purge" — bir IS penceresinin, OOS penceresiyle DOĞRUDAN zaman
+     overlap'i nedeniyle reddi (Bölüm 7'nin zaten LOCKED tek-IS/tek-OOS
+     overlap yasağının, keyfi sayıda IS penceresine genellemesi —
+     YENİ bir kavram İCAT EDİLMEZ, yalnızca YENİDEN KULLANILABİLİR bir
+     predicate olarak isimlendirilir).
+  2. "Embargo" — bir IS penceresinin, OOS penceresinin BİTİMİNDEN
+     hemen SONRA gelen, caller tarafından explicit olarak sağlanan
+     sabit bir `embargo: timedelta` süresiyle overlap'i nedeniyle reddi.
+     Bu süre hiçbir yerden İNFERENCE EDİLMEZ (17.1.4).
+
+Kapsam DIŞINDA (bu mikro-adımda TASARLANMAZ/İMPLEMENT EDİLMEZ, gelecekteki
+ayrı bir kontrata ertelenir — bkz. 17.1.13):
+  - Label/outcome-horizon'a bağlı KLASİK purging (bir training
+    gözleminin KENDİ ileriye-dönük outcome/label penceresinin OOS ile
+    overlap'i) — bu, per-observation bir horizon kavramı GEREKTİRİR ve
+    repository'de YOKTUR (17.1.1).
+  - OOS'tan ÖNCE gelen bir "pre-embargo"/lookback-tarafı buffer — bu
+    zaten Bölüm 7/8.3'ün context/lookback ve IS/OOS non-overlap
+    kurallarıyla kapsanır; yeni bir kavram İCAT EDİLMEZ.
+  - Çoklu-fold / K-fold / CPCV orkestrasyon (Bölüm 17.2) — "fold model"
+    prerequisite'i (17.2) HENÜZ MEVCUT DEĞİLDİR; bu mikro-adım yalnızca
+    TEK bir OOS penceresine karşı saf bir filtering primitive'i kilitler.
+  - Candidate/trial seçimi, ranking, optimizer/grid/random/Bayesian
+    search, final holdout enforcement, cross-candidate aggregation.
+  - Deflated Sharpe, PBO, multiple-testing corrections, parameter
+    stability (Bölüm 17.4–17.7).
+  - Herhangi bir store/rolling/candidate orchestration entegrasyonu —
+    bu mikro-adım yalnızca pure, bağımsız bir filtering primitive'i
+    kilitler (17.1.9).
+```
+
+Bu ayrım LOCKED'dır: "purge" ve "embargo" bu dokümanda **iki farklı, bağımsız reddediş nedenidir** — ikisi de aynı `purge_in_sample_windows` fonksiyonu (17.1.7) tarafından uygulanır, ama farklı zaman aralıklarına (OOS'un kendisi vs. OOS'tan sonraki explicit-duration bölge) karşı test edilirler.
+
+**17.1.3 Exact Public API (LOCKED)**
+
+Kilitlenen exact production şekli (implementasyon henüz yapılmaz — bu yalnızca kontrat):
+
+```python
+# Modül: src/crypto_quant_lab/validation/purging.py (YENİ modül)
+
+from datetime import datetime, timedelta
+
+from crypto_quant_lab.validation.windows import TemporalWindow
+
+
+def windows_overlap(first: TemporalWindow, second: TemporalWindow) -> bool: ...
+
+
+def embargo_boundary(out_of_sample: TemporalWindow, *, embargo: timedelta) -> datetime: ...
+
+
+def purge_in_sample_windows(
+    in_sample_windows: tuple[TemporalWindow, ...],
+    *,
+    out_of_sample: TemporalWindow,
+    embargo: timedelta = timedelta(0),
+) -> tuple[TemporalWindow, ...]: ...
+```
+
+```
+- Üç BAĞIMSIZ, küçük public fonksiyon — Annualized Metrics'in (Bölüm
+  15.21) "tek bir bundled dataclass DEĞİL, bağımsız fonksiyonlar"
+  precedent'iyle AYNI desen. Reddedilen alternatif: tek bir
+  `PurgeResult`/`EmbargoPlan` bundling dataclass'ı (17.1.10).
+- Parametre isimleri Bölüm 7'nin ZATEN LOCKED terminolojisiyle
+  (`in_sample`/`out_of_sample`) birebir tutarlıdır — "training"/
+  "evaluation" gibi YENİ, rakip bir isimlendirme İCAT EDİLMEZ.
+- Hiçbiri yeni bir dataclass/value object döndürmez: `windows_overlap`
+  bare `bool`, `embargo_boundary` bare `datetime`, `purge_in_sample_windows`
+  bare `tuple[TemporalWindow, ...]` döner (Annualized Metrics'in bare-
+  Decimal precedent'iyle AYNI "gerekmedikçe yeni value object İCAT ETME"
+  ilkesi).
+- `validation/__init__.py` DEĞİŞMEDEN kalır — bu üç fonksiyon
+  package-root'ta export EDİLMEZ (windows.py/rolling.py/metrics.py/
+  candidate.py/annualized_metrics.py ile AYNI zero-re-export
+  convention'ı).
+- `TemporalWindow`/`TemporalSplit`/`WindowResult`/`Candidate`/`Trial`
+  ve mevcut Stage-1/Stage-2/Annualized-Metrics public fonksiyonlarının
+  imzaları DEĞİŞMEDEN kalır — hiçbirine yeni bir field EKLENMEZ.
+```
+
+**17.1.4 Horizon/Embargo Girdisi — Explicit, Asla Inference (LOCKED)**
+
+```
+Karşılaştırılan alternatifler:
+1. Embargo süresini candle_duration(timeframe)'dan türetmek — REDDEDİLDİ:
+   17.1.1'in kanıtladığı gibi candle duration ile embargo duration
+   arasında hiçbir repository-evidence eşdeğerliği YOKTUR; bu, "Do not
+   treat candle duration... and embargo duration as interchangeable
+   unless repository evidence proves that equivalence" talimatının
+   doğrudan uygulamasıdır.
+2. Embargo süresini context/lookback süresinden (Bölüm 8.3) türetmek —
+   REDDEDİLDİ: context, OOS'tan ÖNCEki bir pencereyi tanımlar; embargo
+   OOS'tan SONRAki bir bölgeyi tanımlar — zıt yönlü kavramlardır,
+   birbirinden türetilemezler.
+3. Embargo süresini `Trial.timeframe` veya candidate provenance'tan
+   türetmek — REDDEDİLDİ: Bölüm 15.19/18.9'un zaten kilitlediği
+   "annualized metrics/purging, Candidate/Trial'a COUPLE EDİLMEZ"
+   ilkesiyle ÇAKIŞIRDI.
+4. **SEÇİLDİ — explicit, zorunlu olmayan (default `timedelta(0)`),
+   keyword-only `embargo: timedelta` parametresi.** Caller, embargo
+   süresini KENDİSİ sağlar; hiçbir silent inference YOKTUR. Default
+   `timedelta(0)`, embargo bölgesini boş kümeye (hiçbir pencere
+   overlap edemez) degenere eder — bu, "yalnızca purge, embargo yok"
+   durumunu AYRI bir kod yolu OLMADAN temsil eder (Bölüm 8.3.1'in
+   `context_start == evaluation_start` sıfır-context legal-default
+   precedent'iyle AYNI desen).
+```
+
+```
+- `embargo`, negatif OLAMAZ (`embargo >= timedelta(0)` zorunlu) —
+  embargo kavramsal olarak yalnızca OOS'tan SONRAYA doğru genişler,
+  asla geriye değil; negatif bir embargo, OOS'un KENDİSİYLE overlap
+  eden bir bölge tanımlar ki bu zaten "purge"ın (17.1.2 madde 1)
+  kapsamındadır — ayrı, çelişkili bir anlam taşımaması için negatif
+  değer reddedilir.
+- `embargo`, bir `timedelta` olmalıdır — `int`/`float`/Decimal/başka
+  bir tip KABUL EDİLMEZ (candle_duration'ın kendi dönüş tipiyle,
+  `_timedelta_to_microseconds`'ın girdi tipiyle AYNI stdlib primitive).
+- Hiçbir "calendar basis" veya "periods_per_year" kavramı bu modüle
+  SIZMAZ — Annualized Metrics'in 365-gün sabiti burada KULLANILMAZ/
+  REFERANS EDİLMEZ (bu modül tamamen timeframe-agnostic'tir,
+  `TemporalWindow`'ın kendi "Timeframe-agnostic by design" docstring'iyle
+  tutarlı).
+```
+
+**17.1.5 `windows_overlap` — Exact Overlap Predicate (LOCKED)**
+
+```python
+def windows_overlap(first: TemporalWindow, second: TemporalWindow) -> bool:
+    return first.start < second.end and second.start < first.end
+```
+
+```
+- Half-open `[start, end)` overlap testi — Bölüm 6'nın ZATEN LOCKED
+  half-open convention'ıyla birebir tutarlı; dokunma (`a.end ==
+  b.start`) overlap SAYILMAZ (Bölüm 7'nin "adjacency legal" kuralıyla
+  AYNI okuma).
+- Simetriktir: `windows_overlap(a, b) == windows_overlap(b, a)` —
+  formülün cebirsel yapısından (iki conjunct'ün sırası anlamı
+  DEĞİŞTİRMEZ) doğrudan doğrulanabilir.
+- Girdi sırasından/hangisinin "IS" hangisinin "OOS" olduğundan
+  BAĞIMSIZDIR — genel, iki-taraflı bir predicate'tir; `TemporalSplit`'in
+  KENDİ tek-yönlü (`in_sample.end > out_of_sample.start`) check'ini
+  DEĞİŞTİRMEZ/reimplement ETMEZ (17.1.1).
+- Yalnızca `<`/`>` datetime karşılaştırması — float/Decimal aritmetiği
+  YOK, hiçbir arithmetic fault/non-finite durumu MÜMKÜN DEĞİLDİR
+  (datetime karşılaştırması toplam sıradadır).
+- Validation: `first`/`second`, her ikisi de `TemporalWindow` olmalıdır;
+  değilse TypeError (17.1.8) — her ikisi de zaten kendi
+  `__post_init__`'inde genuine-aware-datetime + start<end garantisi
+  ALMIŞTIR (trust-the-lower-layer, Bölüm 18.7 precedent'i) — bu fonksiyon
+  datetime awareness'ı YENİDEN doğrulamaz.
+```
+
+**17.1.6 `embargo_boundary` — Exact Formül (LOCKED)**
+
+```python
+def embargo_boundary(out_of_sample: TemporalWindow, *, embargo: timedelta) -> datetime:
+    return out_of_sample.end + embargo
+```
+
+```
+- Embargo bölgesinin ÜST sınırı (exclusive, half-open convention ile
+  tutarlı): `[out_of_sample.end, embargo_boundary)`.
+- `embargo == timedelta(0)` -> `embargo_boundary == out_of_sample.end`
+  -> bölge boş küme (`[X, X)`) -> hiçbir pencere ile overlap EDEMEZ
+  (17.1.4'ün "sıfır embargo = yalnızca purge" degenerasyonu).
+- Aşırı büyük bir `embargo` (`out_of_sample.end + embargo`,
+  `datetime.max`'ı aşarsa) -> Python stdlib'in KENDİ deterministik
+  `OverflowError`'ı (mesaj DEĞİŞMEDEN propagate edilir) — yeni bir
+  overflow-check İCAT EDİLMEZ (empirik olarak doğrulanmıştır: canlı,
+  salt-okunur bir probe, `datetime.max` + `timedelta(days=1)` için
+  `OverflowError: date value out of range` üretti).
+- Validation: `out_of_sample` bir `TemporalWindow` olmalıdır; değilse
+  TypeError. `embargo` bir `timedelta` olmalıdır; değilse TypeError.
+  `embargo >= timedelta(0)` olmalıdır; değilse ValueError (17.1.8).
+- Float/Decimal aritmetiği YOK — yalnızca stdlib `datetime + timedelta`.
+```
+
+**17.1.7 `purge_in_sample_windows` — Exact Algoritma ve Operation Sırası (LOCKED)**
+
+```python
+purged: list[TemporalWindow] = []
+for in_sample in in_sample_windows:
+    reject = windows_overlap(in_sample, out_of_sample)
+    if not reject and embargo > timedelta(0):
+        embargo_zone = TemporalWindow(
+            start=out_of_sample.end,
+            end=embargo_boundary(out_of_sample, embargo=embargo),
+        )
+        reject = windows_overlap(in_sample, embargo_zone)
+    if not reject:
+        purged.append(in_sample)
+return tuple(purged)
+```
+
+```
+- Exact operation sırası: ÖNCE doğrudan OOS-overlap testi (purge,
+  17.1.2 madde 1), YALNIZCA reddedilmediyse VE `embargo > timedelta(0)`
+  ise embargo-bölge testi (embargo, 17.1.2 madde 2). `embargo ==
+  timedelta(0)` iken embargo-bölge testi HİÇ ÇALIŞTIRILMAZ — bir
+  `TemporalWindow(start=X, end=X)` inşa etmeye teşebbüs etmek
+  `start < end` invariant'ını (Bölüm 6) ihlal ederdi; bu nedenle boş
+  embargo bölgesi bir `TemporalWindow` instance'ı olarak hiç İNŞA
+  EDİLMEZ (yalnızca `embargo > timedelta(0)` iken, ki bu durumda
+  `embargo_boundary > out_of_sample.end` MATEMATİKSEL OLARAK garantilidir
+  ve `TemporalWindow` construction'ı GÜVENLİDİR).
+- Girdi sırası KORUNUR: `purged`, `in_sample_windows`'ın orijinal
+  sırasıyla, yalnızca reddedilmeyenler filtrelenerek inşa edilir —
+  hiçbir sort/reindex/re-order YOKTUR (Bölüm 18.7/rolling.py'nin
+  "input order preserved" precedent'iyle AYNI ilke).
+- Duplicate pencereler DEDUPE EDİLMEZ: `in_sample_windows` içinde
+  aynı pencere birden fazla kez geçiyorsa VE reddedilmiyorsa, HER
+  KOPYASI ayrı ayrı korunur (rolling.py'nin "duplicate/overlapping
+  windows are legal" precedent'iyle AYNI desen, Bölüm 8.3.6 alanı).
+- Boş `in_sample_windows` (`()`) -> boş `()` döner, hiçbir hata YOK
+  (legal, trivial temel durum).
+- `in_sample_windows`'ın TÜMÜ reddedilirse -> boş `()` döner (legal;
+  "tüm IS pencereleri purge edildi" bir hata durumu DEĞİLDİR — bu
+  fonksiyon yalnızca FİLTRELER, bir minimum-kalan-pencere-sayısı
+  invariant'ı ENFORCE ETMEZ; bu, gelecekteki bir CPCV/orchestration
+  katmanının kendi sorumluluğu olabilir, 17.1.13).
+- Bir `in_sample` penceresinin `out_of_sample`'dan KRONOLOJİK OLARAK
+  SONRA gelmesi (örn. ters sıralı bir kullanım) MEKANİK OLARAK
+  ENGELLENMEZ — bu fonksiyon yalnızca overlap/embargo-bölge testi
+  uygular, IS'in OOS'tan önce gelmesi gerektiğine dair (TemporalSplit'in
+  KENDİ, ayrı invariant'ı OLAN) bir kronoloji kısıtlaması İCAT ETMEZ
+  (Reddedilen alternatif, 17.1.10).
+```
+
+**17.1.8 Validation / Fail-Fast Sırası (LOCKED, Exact)**
+
+**`windows_overlap(first, second)`:**
+
+```
+1. `first` bir `TemporalWindow` olmalıdır; değilse TypeError.
+2. `second` bir `TemporalWindow` olmalıdır; değilse TypeError.
+3. `first.start < second.end and second.start < first.end` hesaplanır
+   ve döndürülür.
+```
+
+**`embargo_boundary(out_of_sample, *, embargo)`:**
+
+```
+1. `out_of_sample` bir `TemporalWindow` olmalıdır; değilse TypeError.
+2. `embargo` bir `timedelta` olmalıdır; değilse TypeError.
+3. `embargo >= timedelta(0)` olmalıdır; değilse ValueError.
+4. `out_of_sample.end + embargo` hesaplanır ve döndürülür (aşırı büyük
+   `embargo` -> Python'ın kendi `OverflowError`'ı, DEĞİŞMEDEN propagate).
+```
+
+**`purge_in_sample_windows(in_sample_windows, *, out_of_sample, embargo=timedelta(0))`:**
+
+```
+1. `out_of_sample` bir `TemporalWindow` olmalıdır; değilse TypeError.
+2. `embargo` bir `timedelta` olmalıdır; değilse TypeError.
+3. `embargo >= timedelta(0)` olmalıdır; değilse ValueError.
+4. `in_sample_windows` bir `tuple` olmalıdır; değilse TypeError.
+5. `in_sample_windows`'ın HER elemanı bir `TemporalWindow` olmalıdır;
+   değilse index-specific TypeError — bu GLOBAL bir geçiştir: TÜM
+   elemanlar adım 5'i geçmeden hiçbir eleman için adım 6 çalışmaz
+   (Candidate'in düzeltilmiş global-fail-fast sırası precedent'i,
+   Bölüm 18.8/18.14 — "adım N tüm girişler için tamamlanmadan adım
+   N+1 hiçbir girişi incelemez").
+6. Yalnızca (1)-(5) TAMAMEN başarılı olduktan SONRA: 17.1.7'nin exact
+   algoritması, `in_sample_windows` sırasıyla çalıştırılır.
+7. Filtrelenmiş `tuple[TemporalWindow, ...]` döndürülür.
+```
+
+**Global not:** hiçbir adım, geçersiz bir `embargo`/`in_sample_windows`/`out_of_sample` girdisini sessizce normalize/coerce/sort/dedupe ETMEZ; hiçbir kısmi/parçalı sonuç döndürülmez.
+
+**17.1.9 Purity, Determinism, ve Import Direction (LOCKED)**
+
+```
+Üç fonksiyonun HER BİRİ:
+- Aynı geçerli input için deterministiktir.
+- Input'u (TemporalWindow instance'ları, tuple) MUTATE ETMEZ (zaten
+  frozen/slots/immutable).
+- `TemporalWindow`, `TemporalSplit`, `BacktestResult`, `WindowResult`,
+  `Candidate`, `Trial`'a hiçbir field EKLEMEZ/DEĞİŞTİRMEZ.
+- Sonuçları persist/serialize ETMEZ.
+- Wallclock time, randomness KULLANMAZ.
+- I/O yapmaz; hiçbir store'a query atmaz; replay/backtest engine'i
+  ÇAĞIRMAZ.
+- Rolling orchestration'ı (`run_rolling_backtest_from_store`,
+  `run_context_aware_rolling_backtest_from_store`) İMPORT ETMEZ/
+  ÇAĞIRMAZ.
+- `Candidate`/`Trial`'ı İMPORT ETMEZ; candidate seçmez/sıralamaz/
+  skorlamaz.
+- Cross-window/cross-fold aggregation yapmaz; CPCV orkestrasyonu İÇERMEZ
+  (Bölüm 17.2 hâlâ ayrı, deferred).
+- Yalnızca standard-library Python (`datetime`, `timedelta`) ve
+  `crypto_quant_lab.validation.windows.TemporalWindow` kullanır.
+```
+
+**Import direction (LOCKED):**
+
+```
+crypto_quant_lab.validation.purging  (YENİ modül)
+  imports:
+    crypto_quant_lab.validation.windows   (TemporalWindow — PUBLIC tip;
+                                             hiçbir `_` prefix'li private
+                                             helper İMPORT EDİLMEZ)
+    datetime (stdlib)
+
+crypto_quant_lab.validation.windows     <- purging.py'yi İMPORT ETMEZ
+crypto_quant_lab.validation.rolling     <- purging.py'yi İMPORT ETMEZ
+crypto_quant_lab.validation.metrics     <- purging.py'yi İMPORT ETMEZ
+crypto_quant_lab.validation.candidate   <- purging.py'yi İMPORT ETMEZ
+crypto_quant_lab.validation.annualized_metrics <- purging.py'yi İMPORT ETMEZ
+
+Sonuç: purging.py, yalnızca windows.py'ye bağımlıdır (tek yönlü);
+hiçbiri purging.py'den BAĞIMSIZDIR — hiçbir döngü YOK. purging.py
+hiçbir rolling/candidate/metrics/optimizer kodu İMPORT ETMEZ.
+```
+
+**17.1.10 Reddedilen Mimari Alternatifler (Özet)**
+
+```
+- Label/outcome-horizon'a bağlı klasik purging'in bu mikro-adımda
+  tasarlanması — REDDEDİLDİ: repository'de böyle bir horizon kavramı
+  YOK (17.1.1); icat etmek "do not fabricate" talimatını ihlal ederdi.
+- Embargo süresini candle_duration/context-lookback/Trial.timeframe'den
+  türetmek — REDDEDİLDİ, hiçbiriyle repository-evidence eşdeğerliği YOK
+  (17.1.4).
+- Tek bir bundled `PurgeResult`/`EmbargoPlan` dataclass'ı (purged +
+  kept + reddediş nedeni) — REDDEDİLDİ: Annualized Metrics'in "bare
+  dönüş tipi, gerekmedikçe yeni value object İCAT ETME" precedent'iyle
+  tutarlı bir minimalizm tercih edildi; zengin bir introspection
+  objesi, gelecekteki bir implementasyon adımında GEREKÇELENDİRİLİRSE
+  eklenebilir, ama bu mikro-adımda SPEKÜLATİF olurdu.
+- `in_sample_windows`'ın `out_of_sample`'dan kronolojik olarak ÖNCE
+  gelmesini mekanik olarak enforce eden bir invariant — REDDEDİLDİ:
+  `TemporalSplit` zaten TEK bir IS/OOS çifti için bunu kendi kapsamında
+  enforce eder; bu YENİ, N-pencereli fonksiyon daha genel bir filtreleme
+  primitive'idir ve rolling.py'nin "keyfi pencere düzenlemeleri legal"
+  precedent'iyle tutarlı kalması için ekstra bir kronoloji kısıtlaması
+  İCAT ETMEZ.
+- OOS'tan ÖNCE bir "pre-embargo" buffer'ı kilitlemek — REDDEDİLDİ: bu
+  zaten Bölüm 7/8.3'ün context/lookback ve non-overlap kurallarıyla
+  kapsanır; ikinci, örtüşen bir kavram İCAT EDİLMEZ (17.1.2).
+- `windows_overlap`'i `TemporalSplit.__post_init__`'in KENDİ check'ini
+  reimplement etmek/onu bu yeni predicate ile DEĞİŞTİRMEK için
+  kullanmak — REDDEDİLDİ: bu mikro-adım `windows.py`'yi DEĞİŞTİRMEZ
+  (yalnızca `VALIDATION_SPEC.md` yetkilidir); `TemporalSplit`'in kendi
+  tek-yönlü check'i DEĞİŞMEDEN kalır.
+```
+
+**17.1.11 Gelecekteki İmplementasyon İçin Dosya Kapsamı (Planlama Bilgisi — Şimdi Değiştirilmez)**
+
+```
+Yeni production dosyası: src/crypto_quant_lab/validation/purging.py
+  (windows_overlap, embargo_boundary, purge_in_sample_windows).
+Yeni test dosyası: tests/test_validation_purging.py (mevcut
+  test_validation_windows.py/test_validation_annualized_metrics.py ile
+  AYNI, tek-modül-per-test-dosyası convention'ı).
+Değiştirilecek mevcut production dosyası: YOK (windows.py, rolling.py,
+  metrics.py, candidate.py, annualized_metrics.py, models.py DOKUNULMAZ).
+Documentation (combined closure için): VALIDATION_SPEC.md.
+Açıkça YASAK: ROADMAP.md, pyproject.toml, herhangi bir __init__.py,
+  herhangi bir başka production/test/spec/status dosyası.
+```
+
+**17.1.12 Test Kontratı (Gelecekteki Mikro-Adım İçin Minimum Matris)**
+
+```
+- Value/API: üç fonksiyonun exact signature'ı (pozisyonel/keyword-only
+  ayrımı), bare dönüş tipleri (bool/datetime/tuple), hiçbir yeni
+  dataclass/None dönüşü, package-root export YOKLUĞU.
+- `windows_overlap`: touching (adjacency, overlap DEĞİL), tam overlap,
+  kısmi overlap (her iki yönde), tamamen ayrık, biri diğerini tamamen
+  içeriyor, simetri (`overlap(a,b) == overlap(b,a)`), yanlış tip TypeError.
+- `embargo_boundary`: exact `out_of_sample.end + embargo` sonucu, sıfır
+  embargo -> `out_of_sample.end`'e exact eşit, negatif embargo ValueError,
+  yanlış tip TypeError (hem `out_of_sample` hem `embargo` için), aşırı
+  büyük embargo -> `OverflowError` (mesaj kontrolü).
+- `purge_in_sample_windows`: yalnızca-purge (embargo=0) case'leri
+  (overlap eden/etmeyen IS pencereleri), embargo>0 ile ek reddediş
+  (embargo bölgesine düşen IS penceresi), touching-ama-overlap-olmayan
+  IS penceresi kabul, boş `in_sample_windows` -> boş sonuç, tüm
+  pencereler purge edilir -> boş sonuç, duplicate IS pencereleri
+  (dedupe edilmediğinin kanıtı), input sırasının korunduğunun kanıtı,
+  negatif/yanlış-tip `embargo` reddi, yanlış-tip `in_sample_windows`/
+  eleman reddi (index-specific, global-pass sırası kanıtı — bir sonraki
+  eleman tipi geçerliyken önceki elemanın tipi geçersizse hâlâ TypeError
+  fırlatıldığının kanıtı), no-mutation (input tuple/pencereler `is`
+  identity ile aynı kalır), determinism (tekrarlı çağrı aynı sonuç),
+  `windows.py`/`rolling.py`/`candidate.py`/`metrics.py`/
+  `annualized_metrics.py` API'lerinin DEĞİŞMEDEN kaldığının statik kanıtı
+  (`git diff` boş) + tam regression suite uyumluluğu, import-direction
+  statik kanıtı (purging.py'nin rolling/candidate/metrics import
+  ETMEDİĞİ).
+
+Testler WALL CLOCK/randomness/network/external service/order dependence/
+float expected value KULLANMAZ.
+```
+
+**17.1.13 Explicit Exclusions / Deferred Scope (Bu Kontrat Kapsamında DEĞİL, İmplement EDİLMEZ)**
+
+```
+Label/outcome-horizon'a bağlı klasik purging (per-observation forward-
+looking outcome window overlap'i — bir horizon kavramı icat edilmeden
+implement EDİLEMEZ), CPCV (Bölüm 17.2 — "fold model" prerequisite'i
+hâlâ yok), Deflated Sharpe, PBO, multiple-testing corrections, parameter
+stability (17.4–17.7), candidate selection/ranking, optimizer/grid/
+random/Bayesian search, final untouched holdout enforcement, cross-
+candidate/cross-window aggregation, reporting/persistence/serialization/
+dashboard/CLI output, non-purging backtest davranışı.
+```
+
+Bu maddeler **deferred boundary'ler** olarak kaydedilir — implement edilmiş özellikler DEĞİL. Bu bölümün (17.1) LOCKED olması, FAZ6C'nin veya Faz 6'nın tamamlandığı anlamına GELMEZ (bkz. Bölüm 22, 22.2, 28.I).
 
 ### 17.2 CPCV — LATER IN FAZ 6
 
-Prerequisites: fold model + observation/outcome-horizon contract (17.1) + purge/embargo semantics (17.1) + repeated candidate evaluation (18) + deterministic performance matrix (17.4). Hiçbiri bugün yok. CPCV, bu prerequisite'ler karşılanana kadar implement edilmez.
+Prerequisites: fold model + observation/outcome-horizon contract (17.1) + purge/embargo semantics (17.1) + repeated candidate evaluation (18) + deterministic performance matrix (17.4). Window-level purge/embargo'nun exact kontratı artık Bölüm 17.1.1–17.1.13'te **LOCKED**'dır (implementasyon PENDING, bkz. §28.I) — ama bir "fold model" (birden fazla IS/OOS fold'unu bir arada üreten/orkestre eden bir mekanizma) VE label/outcome-horizon'a bağlı klasik purging (17.1.13) HÂLÂ MEVCUT DEĞİLDİR. CPCV, bu kalan prerequisite'ler karşılanana kadar implement edilmez.
 
 ### 17.3 Sharpe-Ailesi Metrikler — Aşama 2 (Bölüm 15/16)
 
@@ -3844,16 +4329,39 @@ FAZ 6B — Context-Aware Extensions + Return-Series / Experiment Foundation
     FAZ6C/FAZ6D durumu aşağıda).
 
 FAZ 6C — Advanced Overfitting Controls
-    purging/embargo (horizon contract'a bağımlı, Bölüm 17.1), CPCV
-    (17.2), Deflated Sharpe (17.4), PBO (17.5), multiple-testing
-    corrections (17.6), parameter stability (17.7). Bu liste
-    FAZ6C-owned'dır ve yalnızca bu maddeleri kapsar — Sharpe-ailesi
-    foundation'ın kendisi (17.3) ve candidate/trial abstraction (18)
-    FAZ6B-owned'dır (yukarıda); FAZ6C yalnızca onların ÜZERİNE inşa
-    edilen ileri seviye kontrolleri kapsar.
+    purging/embargo (Bölüm 17.1), CPCV (17.2), Deflated Sharpe (17.4),
+    PBO (17.5), multiple-testing corrections (17.6), parameter stability
+    (17.7). Bu liste FAZ6C-owned'dır ve yalnızca bu maddeleri kapsar —
+    Sharpe-ailesi foundation'ın kendisi (17.3) ve candidate/trial
+    abstraction (18) FAZ6B-owned'dır (yukarıda); FAZ6C yalnızca onların
+    ÜZERİNE inşa edilen ileri seviye kontrolleri kapsar.
 
-    Durum: FAZ6C — NOT COMPLETE. Hiçbir madde başlanmış veya tamamlanmış
-    olarak işaretlenmez.
+    Tamamlanan bileşenler:
+      - Window-level purging/embargo exact kontratı (Bölüm 17.1.1–
+        17.1.13) — LOCKED (mimari/tasarım): yeni
+        `src/crypto_quant_lab/validation/purging.py` modülü, üç
+        bağımsız fonksiyon (`windows_overlap`, `embargo_boundary`,
+        `purge_in_sample_windows`), Bölüm 7'nin zaten LOCKED IS/OOS
+        non-overlap invariant'ının N-pencereli genellemesi ("purge") +
+        explicit, caller-supplied `embargo: timedelta` (asla inference
+        edilmeyen bir post-OOS buffer, "embargo") — tümü kilitlendi.
+        Label/outcome-horizon'a bağlı KLASİK purging hâlâ deferred'dir
+        (17.1.13) — repository'de böyle bir horizon kavramı yok.
+        İmplementasyon, regression suite'i, ve §28.I acceptance HENÜZ
+        BAŞLAMAMIŞTIR (bkz. Bölüm 23, 28.I).
+
+    Kalan zorunlu bileşenler (HENÜZ PENDING):
+      - Purging/embargo'nun (Bölüm 17.1.1–17.1.13) implementasyonu,
+        regression suite'i, ve post-implementation audit/acceptance
+        closure'ı — kontrat LOCKED olmasına rağmen HENÜZ İMPLEMENT
+        EDİLMEMİŞTİR (bkz. Bölüm 23, 28.I).
+      - CPCV (17.2), Deflated Sharpe (17.4), PBO (17.5), multiple-testing
+        corrections (17.6), parameter stability (17.7) — hiçbiri henüz
+        spec-lock edilmemiştir; bu doküman onları henüz TASARLAMAZ.
+
+    Durum: FAZ6C — NOT COMPLETE. Purging/embargo kontratının LOCKED
+    olması, hiçbir maddenin implement/test edilmiş olduğu anlamına
+    GELMEZ.
 
 FAZ 6D — Faz 6 Final Acceptance
     tüm binding BACKTEST_SPEC Bölüm 26 maddelerinin ya implement edildiğinin
@@ -3889,7 +4397,7 @@ FAZ 6D — Faz 6 Final Acceptance
 |---|---|---|---|
 | FAZ6A | COMPLETE | temporal window/IS-OOS primitives (§28.A — 22/22), zero-context rolling OOS evaluation (§28.C — 12/12), Stage-1 metrics (§28.D — 18/18) | locked FAZ6A scope içinde yok |
 | FAZ6B | COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 (§8.3.16, §28.F — 22/22, LOCKED VE IMPLEMENTED + TESTED), candidate/trial foundation (§18, §28.G — 25/25, LOCKED VE IMPLEMENTED + TESTED), Annualized Metrics (§15.19–15.33, §28.H — 30/30, LOCKED VE IMPLEMENTED + TESTED) | locked FAZ6B scope içinde yok |
-| FAZ6C | NOT COMPLETE | yok | purging/embargo, CPCV, Deflated Sharpe, PBO, multiple-testing corrections, parameter stability |
+| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat (§17.1.1–17.1.13, LOCKED — mimari/tasarım, implementasyon PENDING) | purging/embargo implementasyonu + regression suite'i + acceptance closure'ı (§28.I — 0/N), CPCV, Deflated Sharpe, PBO, multiple-testing corrections, parameter stability |
 | FAZ6D | NOT STARTED | yok | Faz 6 final acceptance audit'i |
 
 Bu tablo, §28.A/B/C/D'nin bağımsız acceptance sayımlarını **birleşik bir yüzdeye veya tek bir sayıya dönüştürmez** — her grup kendi bağımsız kanıtını korur; bu tablo yalnızca hangi grubun hangi alt-fazın kanıtı olduğunu özetler.
@@ -4385,13 +4893,55 @@ precedent):
   BAŞLATILMADI — bunlar ayrı, henüz spec-lock edilmemiş gelecekteki
   adımlardır (FAZ6C/FAZ6D).
 
+FAZ6C — HORIZON + PURGING/EMBARGO SOURCE PREFLIGHT + EXACT CONTRACT LOCK
+— TAMAMLANDI (MS1):
+  — `BacktestPolicy`'nin hiçbir explicit label/outcome-horizon kavramı
+  taşımadığını (17.1 tarihsel bulgusunun tekrar doğrulanması),
+  `TemporalWindow`/`TemporalSplit`'in (windows.py, DEĞİŞMEDEN) zaten
+  half-open/non-overlap invariant'ları taşıdığını ama `TemporalSplit`'in
+  kendi overlap check'inin tek-yönlü (yalnızca tek-IS/tek-OOS) olduğunu,
+  rolling.py'nin duplicate/overlapping pencereleri legal bıraktığını ve
+  hiçbir purge/embargo kavramı taşımadığını, candle_duration/context-
+  lookback/Trial.timeframe'in hiçbirinin bir "embargo duration" ile
+  repository-evidence eşdeğerliği olmadığını doğrudan kaynak koddan
+  doğrulayan bir source-preflight yaptı. Horizon bağımlılığını dürüstçe
+  ikiye ayırdı: (a) label/outcome-horizon'a bağlı KLASİK purging —
+  repository'de hiçbir horizon kavramı olmadığından HÂLÂ implement
+  EDİLEMEZ, deferred kalır (17.1.13); (b) pencere-seviyeli purge (Bölüm
+  7'nin ZATEN LOCKED IS/OOS non-overlap invariant'ının N-pencereli
+  genellemesi) + explicit, caller-supplied bir `embargo: timedelta`
+  buffer'ı — hiçbir label-horizon'a İHTİYAÇ DUYMADAN dürüstçe
+  kilitlenebilir. Yalnızca (b)'yi, Bölüm 17.1.1–17.1.13'te LOCKED olarak
+  kaydetti: yeni `src/crypto_quant_lab/validation/purging.py` modülü,
+  üç bağımsız fonksiyon (`windows_overlap`, `embargo_boundary`,
+  `purge_in_sample_windows`) — exact formüller/operation sırası, exact
+  validation/fail-fast sırası (global-pass eleman tipi kontrolü dahil,
+  Candidate'in düzeltilmiş global-fail-fast precedent'iyle tutarlı),
+  purity/import-direction (acyclic — purging.py yalnızca windows.py'nin
+  `TemporalWindow` tipini import eder; hiçbir mevcut modül purging.py'yi
+  import etmez). §28.I acceptance grubunu, kontrattan türetilen 19
+  kriterle 0/19 olarak ekledi; §28 giriş paragrafını sekizden dokuza
+  güncelledi. §15'in Stage-2 durumu paragrafındaki eski "annualization
+  faktörü... ertelenmiştir" ifadesi, artık implement edilmiş olduğunu
+  netleştirmek için düzeltildi; §28.H'nin "git diff yalnızca iki yeni
+  dosya gösterir" ifadesi, VALIDATION_SPEC.md'nin de değiştiğini
+  açıkça belirtmek üzere düzeltildi. Docs-only; production kod,
+  `purging.py` implementasyonu, veya yeni test içermedi — purging/
+  embargo implementasyonu ve regression suite'i HENÜZ BAŞLAMADI.
+
 Sonraki (henüz başlanmadı):
-  FAZ6C — Advanced Overfitting Controls: purging/embargo (Bölüm 17.1),
-  CPCV (17.2), Deflated Sharpe (17.4), PBO (17.5), multiple-testing
-  corrections (17.6), parameter stability (17.7) — bunların HİÇBİRİ
-  henüz spec-lock edilmemiştir; bu doküman onları henüz TASARLAMAZ.
-  Ardından FAZ6D — Faz 6 Final Acceptance audit'i. Faz 6'nın tamamlanması
-  için FAZ6C/FAZ6D'nin ikisi de gereklidir (bkz. Bölüm 22).
+  Window-level purging/embargo implementasyonu + regression suite'i +
+  post-implementation audit + documentation/acceptance closure, tek bir
+  combined delivery olarak (Annualized Metrics/Candidate-Trial/non-zero-
+  context Layer-2 implementasyonlarının izlediği AYNI precedent) —
+  Bölüm 17.1.1–17.1.13'te LOCKED olan exact kontratı implement eder:
+  `src/crypto_quant_lab/validation/purging.py` (YENİ modül) + ilgili
+  test dosyası (`tests/test_validation_purging.py`). Label/outcome-
+  horizon'a bağlı klasik purging, CPCV, Deflated Sharpe, PBO, multiple-
+  testing corrections, ve parameter stability bu adımda da
+  BAŞLATILMAZ — bunlar ayrı, henüz spec-lock edilmemiş gelecekteki
+  adımlardır. Ardından FAZ6D — Faz 6 Final Acceptance audit'i. Faz 6'nın
+  tamamlanması için FAZ6C/FAZ6D'nin ikisi de gereklidir (bkz. Bölüm 22).
 ```
 
 **MS3 scope (TAMAMLANDI — pre-flight'in kendisi, Bölüm 8.3'te kilitlendi):**
@@ -4474,9 +5024,9 @@ Aynı girdiler → aynı pencere sonuçları — mevcut `run_backtest_from_store
 - external LLM decision-making
 ```
 
-## 28. Acceptance Criteria — Sekiz Ayrı Grup (LOCKED)
+## 28. Acceptance Criteria — Dokuz Ayrı Grup (LOCKED)
 
-Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Annualized Metrics'in (Sharpe/Sortino/CAGR/Calmar) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.H'de kaydedilir (bkz. Bölüm 15.19–15.33, 23 — 30/30). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G/28.H altındaki sayılar). §28.A/B/C/D/E/F/G/H'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
+Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Annualized Metrics'in (Sharpe/Sortino/CAGR/Calmar) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.H'de kaydedilir (bkz. Bölüm 15.19–15.33, 23 — 30/30). Window-level purging/embargo'nun (Bölüm 17.1.1–17.1.13) implementasyon/test acceptance checklist'i, HENÜZ implementation/test exercised OLMAYAN, kontrattan türetilmiş ayrı bir liste olarak 28.I'de kaydedilir (bkz. Bölüm 17.1, 23 — 0/19). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G/28.H/28.I altındaki sayılar). §28.A/B/C/D/E/F/G/H/I'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
 
 ### 28.A — LOCKED FOUNDATION ACCEPTANCE (Runner-Bağımsız)
 
@@ -4678,7 +5228,7 @@ Bu liste, Bölüm 18'de LOCKED olan candidate/trial exact kontratının, `src/cr
 
 ### 28.H — ANNUALIZED METRICS ACCEPTANCE (30/30 IMPLEMENTATION/TEST EXERCISED)
 
-Bu liste, Bölüm 15.19–15.33'te LOCKED olan Annualized Metrics (Sharpe/Sortino/CAGR/Calmar) exact kontratının, `src/crypto_quant_lab/validation/annualized_metrics.py` tarafından karşılandığını kaydeder. **Bu 30 kriterin hepsi artık implementation/test exercised'dır** — `tests/test_validation_annualized_metrics.py`'de 77 test (tümü PASS), ilgili regression suite'ler (`test_validation_metrics.py` — 207 test, `test_validation_candidate.py`, `test_validation_rolling_backtest.py`, `test_validation_windows.py`) DEĞİŞMEDEN yeşil, tam suite 1884/1884 PASS (1807 önceki + 77 yeni), post-implementation audit'i PASS. Davranışsal kriterler doğrudan regression testleriyle, "değişmedi"/"coupled değil"/"yok" türü kriterler ise static/scope kanıtı (kod incelemesi, `git diff` yalnızca iki yeni dosya gösterir, mevcut testlerin DEĞİŞMEDEN yeşil kalması) + tam regression suite uyumluluğuyla kanıtlanır — bu ikisi ayrı ayrı etiketlenir, biri diğeri yerine geçmez.
+Bu liste, Bölüm 15.19–15.33'te LOCKED olan Annualized Metrics (Sharpe/Sortino/CAGR/Calmar) exact kontratının, `src/crypto_quant_lab/validation/annualized_metrics.py` tarafından karşılandığını kaydeder. **Bu 30 kriterin hepsi artık implementation/test exercised'dır** — `tests/test_validation_annualized_metrics.py`'de 77 test (tümü PASS), ilgili regression suite'ler (`test_validation_metrics.py` — 207 test, `test_validation_candidate.py`, `test_validation_rolling_backtest.py`, `test_validation_windows.py`) DEĞİŞMEDEN yeşil, tam suite 1884/1884 PASS (1807 önceki + 77 yeni), post-implementation audit'i PASS. Davranışsal kriterler doğrudan regression testleriyle, "değişmedi"/"coupled değil"/"yok" türü kriterler ise static/scope kanıtı (kod incelemesi; o delivery'nin `git diff --name-status` çıktısı yalnızca iki YENİ production/test dosyası — `annualized_metrics.py`, `test_validation_annualized_metrics.py` — artı `VALIDATION_SPEC.md`'nin kendi dokümantasyon güncellemesini gösterir; hiçbir MEVCUT production/test dosyası değişmez; mevcut testlerin DEĞİŞMEDEN yeşil kalması) + tam regression suite uyumluluğuyla kanıtlanır — bu ikisi ayrı ayrı etiketlenir, biri diğeri yerine geçmez.
 
 1. Dört fonksiyon (`compute_annualized_sharpe_ratio`, `compute_sortino_ratio`, `compute_cagr`, `compute_calmar_ratio`), kilitli modül yolunda (`src/crypto_quant_lab/validation/annualized_metrics.py`), kilitli exact signature'larla (result pozisyonel; timeframe/rate/target keyword-only) mevcut olmalıdır; hepsi bare `Decimal` döner — hiçbir yeni dataclass/value object tanıtılmaz (Bölüm 15.21). **PASS** — `test_all_four_functions_exist_and_are_callable`, `test_sharpe_exact_signature`, `test_sortino_exact_signature`, `test_cagr_exact_signature`, `test_calmar_exact_signature`, `test_all_four_functions_return_bare_decimal_never_a_dataclass`, `test_no_function_ever_returns_none`.
 2. `validation/__init__.py` DEĞİŞMEDEN kalır — bu dört fonksiyon package-root'ta export EDİLMEZ; `BacktestResult`/`WindowResult`/`Candidate`/`Trial`'a hiçbir yeni field EKLENMEZ (Bölüm 15.21, 15.29). **PASS** — `test_validation_package_root_unchanged`, `test_backtest_result_has_no_annualized_fields`, `test_window_result_has_no_annualized_fields`, `test_candidate_and_trial_have_no_annualized_fields`; kod incelemesi: `validation/__init__.py` tek satırlık docstring'i DEĞİŞMEDEN kaldı.
@@ -4713,6 +5263,32 @@ Bu liste, Bölüm 15.19–15.33'te LOCKED olan Annualized Metrics (Sharpe/Sortin
 
 **Annualized Metrics acceptance count: 30 / 30 implementation/test exercised.** Bu, aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: candidate selection/ranking; optimizer/grid/random/Bayesian search; final holdout protection; multiple-testing correction; Stage-3 kontrolleri (Deflated Sharpe, PBO, parameter stability); Faz 6'nın tamamlanması. Bu grup, yalnızca Annualized Metrics'in kendi implementasyon/test acceptance contract'ının karşılandığı anlamına gelir — FAZ6B artık COMPLETE'dir (bkz. Bölüm 22, 22.2), ama bu Faz 6'nın (FAZ6C/FAZ6D dahil) tamamlanması anlamına GELMEZ.
 
+### 28.I — PURGING/EMBARGO ACCEPTANCE (0/19 IMPLEMENTATION/TEST EXERCISED)
+
+Bu liste, Bölüm 17.1.1–17.1.13'te LOCKED olan window-level purging/embargo exact kontratının implementasyon/test acceptance checklist'ini kaydeder. **Bu 19 kriterin HİÇBİRİ henüz implementation/test exercised DEĞİLDİR** — `src/crypto_quant_lab/validation/purging.py` ve `tests/test_validation_purging.py` henüz yaratılmamıştır (bkz. Bölüm 23 — "Sonraki"). Kriterler, kontrattan (Bölüm 17.1.3–17.1.9) türetilmiştir; keyfi bir sayı veya şişirilmiş/duplicate madde yoktur.
+
+1. Üç fonksiyon (`windows_overlap`, `embargo_boundary`, `purge_in_sample_windows`), kilitli modül yolunda (`src/crypto_quant_lab/validation/purging.py`), kilitli exact signature'larla (pozisyonel/keyword-only ayrımı Bölüm 17.1.3'teki gibi) mevcut olmalıdır; bare `bool`/`datetime`/`tuple[TemporalWindow, ...]` döner — hiçbir yeni dataclass/value object tanıtılmaz (Bölüm 17.1.3).
+2. `validation/__init__.py` DEĞİŞMEDEN kalır — bu üç fonksiyon package-root'ta export EDİLMEZ; `TemporalWindow`/`TemporalSplit`/`WindowResult`/`Candidate`/`Trial`'a hiçbir yeni field EKLENMEZ (Bölüm 17.1.3, 17.1.9).
+3. `windows.py`/`rolling.py`/`metrics.py`/`candidate.py`/`annualized_metrics.py`/`models.py` DEĞİŞMEDEN kalır — static `git diff` kanıtı + tam regression suite uyumluluğu (Bölüm 17.1.9).
+4. `windows_overlap`: `first`/`second`'ın HER İKİSİ de `TemporalWindow` olmalıdır; değilse TypeError (Bölüm 17.1.5, 17.1.8).
+5. `windows_overlap`: exact half-open formül `first.start < second.end and second.start < first.end`; touching pencereler (adjacency) overlap SAYILMAZ; predicate simetriktir (`windows_overlap(a, b) == windows_overlap(b, a)`) (Bölüm 17.1.5).
+6. `embargo_boundary`: `out_of_sample` `TemporalWindow`, `embargo` `timedelta` olmalıdır, VE `embargo >= timedelta(0)` olmalıdır — sırasıyla TypeError/TypeError/ValueError (Bölüm 17.1.6, 17.1.8).
+7. `embargo_boundary`: exact formül `out_of_sample.end + embargo`; sıfır embargo -> exact `out_of_sample.end`'e eşit; aşırı büyük embargo -> Python'ın KENDİ deterministik `OverflowError`'ı (mesaj DEĞİŞMEDEN propagate) (Bölüm 17.1.6).
+8. `purge_in_sample_windows`'un kilitli numaralı validation/fail-fast sırası (out_of_sample tipi -> embargo tipi -> embargo non-negatifliği -> in_sample_windows tipi -> her elemanın tipi, GLOBAL bir geçiş olarak) birebir uygulanır (Bölüm 17.1.8).
+9. Purge testi (doğrudan OOS-overlap) HER ZAMAN embargo testinden ÖNCE çalışır; embargo testi YALNIZCA purge testi reddetmediyse VE `embargo > timedelta(0)` ise çalışır; boş embargo bölgesi için hiçbir `TemporalWindow` instance'ı İNŞA EDİLMEZ (Bölüm 17.1.7).
+10. Girdi sırası (`in_sample_windows`) çıktıda KORUNUR — sort/reindex YOK; duplicate IS pencereleri DEDUPE EDİLMEZ (Bölüm 17.1.7).
+11. Boş `in_sample_windows` -> boş `()` döner; TÜM pencereler purge edilirse de boş `()` döner — ikisi de legal, hata DEĞİLDİR (Bölüm 17.1.7).
+12. `in_sample_windows`'ın `out_of_sample`'dan kronolojik olarak önce gelmesi gerektiğine dair hiçbir mekanik invariant ENFORCE EDİLMEZ (Bölüm 17.1.7, 17.1.10).
+13. `purge_in_sample_windows`'ta `embargo` default değeri exact `timedelta(0)`'dır ve yalnızca-purge davranışına degenere eder (Bölüm 17.1.4).
+14. Purge ve embargo, AYNI fonksiyon tarafından uygulanan ama FARKLI zaman bölgelerine karşı test edilen, bağımsız iki reddediş nedenidir — tek, birleşik bir tanım İCAT EDİLMEZ (Bölüm 17.1.2).
+15. Label/outcome-horizon'a bağlı klasik purging bu kontratın kapsamı DIŞINDADIR ve implement EDİLMEZ — repository'de böyle bir horizon kavramı YOKTUR (Bölüm 17.1.1, 17.1.13).
+16. Üç fonksiyon da pure/deterministik/input-mutate-etmeyen'dir; wall-clock/randomness/I/O KULLANMAZ; rolling/candidate/metrics/annualized_metrics orchestration'ı İMPORT ETMEZ (Bölüm 17.1.9).
+17. Import direction acyclic'tir: `purging.py` yalnızca `windows.py`'nin `TemporalWindow` tipini VE stdlib'i import eder; hiçbir mevcut modül `purging.py`'yi import ETMEZ (Bölüm 17.1.9).
+18. Hiçbir float/Decimal aritmetiği kullanılmaz — yalnızca stdlib `datetime`/`timedelta` karşılaştırma ve toplama (Bölüm 17.1.4, 17.1.5, 17.1.6).
+19. `purge_in_sample_windows`, doğrudan inşa edilmiş `TemporalWindow` instance'ları İLE bir `TemporalSplit`'in kendi `in_sample`/`out_of_sample` field'larından türetilen pencereler ÜZERİNDE aynı şekilde çalışır — `TemporalSplit`'e hiçbir coupling/reimplementasyon YAPILMAZ (Bölüm 17.1.1, 17.1.9).
+
+**Purging/embargo acceptance count: 0 / 19 implementation/test exercised.** Bu, aşağıdakilerin HİÇBİRİNİN var olduğu anlamına GELMEZ: purging/embargo implementasyonu; label/outcome-horizon'a bağlı klasik purging; CPCV; Deflated Sharpe; PBO; multiple-testing correction; parameter stability; candidate selection/ranking; optimizer/grid/random/Bayesian search; final holdout protection; FAZ6C'nin tamamlanması; Faz 6'nın tamamlanması. Bu grup, yalnızca Bölüm 17.1.1–17.1.13'te LOCKED olan kontratın mimari/tasarım seviyesinde kilitlendiğini, implementasyonun HENÜZ BAŞLAMADIĞINI kaydeder.
+
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
 ROADMAP.md'deki bir sonraki faz **Faz 7 — İlk Funding/Basis araştırması**dır. Faz 7'nin güvenilir olabilmesi için, en azından Bölüm 22'deki FAZ6A (temporal split + rolling fixed-policy OOS evaluation + basic return/drawdown metrikleri) tamamlanmış olmalıdır — bu, Faz 7'nin IS'te seçilen bir funding/basis sinyalini gerçekten görülmemiş bir OOS penceresinde kontrol edebilmesi için minimum güven sınırıdır. Faz 6'nın daha ileri maddeleri (CPCV/PBO/DSR), Faz 7'nin **başlaması** için zorunlu değildir, ama FAZ6A'nın kendisi zorunludur. Bu doküman Faz 7'nin strateji tasarımını **yapmaz.**
@@ -4730,8 +5306,11 @@ ROADMAP.md'deki bir sonraki faz **Faz 7 — İlk Funding/Basis araştırması**d
   non-zero-context Layer-2, return-series/Sharpe, candidate/trial
   foundation, VE Annualized Metrics [Sharpe/Sortino/Calmar/CAGR]
   hepsi IMPLEMENTED + TESTED'dır, bkz. §22.2, 28.H — 30/30; FAZ6C:
-  advanced overfitting controls — HENÜZ spec-lock edilmemiştir) tamamlamaya
-  devam EDEBİLİR (bu doküman bir sıralama zorunluluğu icat etmez).
+  advanced overfitting controls — yalnızca purging/embargo'nun exact
+  kontratı LOCKED'dır (implementasyon PENDING, §28.I — 0/19); CPCV/
+  Deflated Sharpe/PBO/multiple-testing/parameter-stability HÂLÂ
+  spec-lock edilmemiştir) tamamlamaya devam EDEBİLİR (bu doküman bir
+  sıralama zorunluluğu icat etmez).
 - CPCV/PBO/DSR'nin Faz 7'nin başlaması için zorunlu olmadığına dair
   yukarıdaki cümle DEĞİŞMEMİŞTİR/genişletilmemiştir — bu bölüm yalnızca
   FAZ6A'nın artık karşılanmış olduğunu kaydeder, başka hiçbir izin
