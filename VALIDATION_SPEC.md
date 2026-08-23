@@ -1170,13 +1170,15 @@ Context/lookback kullanmayan trivial bir policy için, bugünkü `run_backtest_f
 
 (A), **"walk-forward optimization" olarak adlandırılmaz** — yalnızca "rolling fixed-policy temporal evaluation" veya benzeri dürüst bir isimle anılır. Bu repo (A)'yı (B)'den önce inşa edebilir; ama ikisi asla karıştırılmaz.
 
-## 15. Metrics Foundation — Staged Bağımlılık (LOCKED) — Stage-1 LOCKED VE IMPLEMENTED + TESTED (FAZ6B MS4 + MS5); Stage-2 Return-Series + Per-Observation Sharpe LOCKED VE IMPLEMENTED + TESTED (commit `e4cedf9`); Annualized Metrics (Sharpe/Sortino/CAGR/Calmar) LOCKED — IMPLEMENTATION PENDING (Bölüm 15.19–15.33, 28.H)
+## 15. Metrics Foundation — Staged Bağımlılık (LOCKED) — Stage-1 LOCKED VE IMPLEMENTED + TESTED (FAZ6B MS4 + MS5); Stage-2 Return-Series + Per-Observation Sharpe LOCKED VE IMPLEMENTED + TESTED (commit `e4cedf9`); Annualized Metrics (Sharpe/Sortino/CAGR/Calmar) LOCKED AND IMPLEMENTED + TESTED (bu combined delivery; Bölüm 15.19–15.33, 28.H)
 
 `BacktestResult` **değişmeden** kalır (Bölüm 4). Metrikler `equity_curve`'den **dışarıda** türetilir.
 
 **Aşama 1 (foundation): total return + max drawdown — exact formül, API, validation ve edge-case davranışı Bölüm 15.1–15.8'de LOCKED'dır (FAZ6B MS4) VE artık IMPLEMENTED + TESTED'dır (FAZ6B MS5).** `equity_curve`'den doğrudan, ek runtime bağımlılık gerektirmeden hesaplanır. `src/crypto_quant_lab/validation/metrics.py`'de implement edilmiştir (commit `a265e44`) — `Stage1Metrics` (frozen, slots) + `compute_stage1_metrics(result: BacktestResult) -> Stage1Metrics` — kendi regression suite'i `tests/test_validation_metrics.py`'de (82 test, tümü PASS). İlgili regression suite'ler (`tests/test_backtest_models.py`, `tests/test_backtest_results.py`, `tests/test_validation_rolling_backtest.py` — 105 test) DEĞİŞMEDEN yeşil kalır; tam suite 1468/1468 PASS. Post-commit implementasyon audit'i — PASS (bkz. Bölüm 23, 28.D — 18/18).
 
-**Aşama 2 — return-series + per-observation Sharpe: exact formül, API, validation, timestamp/cadence ve Decimal-context kontratı Bölüm 15.9–15.18'de LOCKED'dır VE artık IMPLEMENTED + TESTED'dır.** Bölüm 16'nın beş açık sorusundan dördü bu kilitle çözülmüştür (return tipi, periyodiklik, risk-free konvansiyonu, sıfır/negatif equity handling) — yalnızca annualization faktörü, ayrı bir gelecekteki calendar/annualization kontratına ertelenmiştir (bkz. Bölüm 15.9, 16). `src/crypto_quant_lab/validation/metrics.py`'de implement edilmiştir (commit `e4cedf9`) — `Stage2Metrics` (frozen, slots) + `compute_periodic_returns(result: BacktestResult) -> tuple[Decimal, ...]` + `compute_stage2_metrics(result: BacktestResult, *, risk_free_per_period: Decimal = Decimal(0)) -> Stage2Metrics` — kendi regression kanıtı `tests/test_validation_metrics.py`'nin genişletilmiş toplamında (207 test, tümü PASS: 82 Stage-1 DEĞİŞMEDEN + 125 yeni Stage-2). Tam suite 1593/1593 PASS. Post-commit implementasyon audit'i — PASS (bkz. Bölüm 23, 28.E — 29/29). Sortino, Calmar, CAGR, ve Sharpe'ın annualized varyantı bu kilide dahil DEĞİLDİR ve implement EDİLMEMİŞTİR — bunların exact calendar/annualization ve downside-deviation kontratı artık Bölüm 15.19–15.33'te LOCKED'dır (mimari/tasarım) ama implementasyon HENÜZ BAŞLAMAMIŞTIR (bkz. Bölüm 23, 28.H — 0/30).
+**Aşama 2 — return-series + per-observation Sharpe: exact formül, API, validation, timestamp/cadence ve Decimal-context kontratı Bölüm 15.9–15.18'de LOCKED'dır VE artık IMPLEMENTED + TESTED'dır.** Bölüm 16'nın beş açık sorusundan dördü bu kilitle çözülmüştür (return tipi, periyodiklik, risk-free konvansiyonu, sıfır/negatif equity handling) — yalnızca annualization faktörü, ayrı bir gelecekteki calendar/annualization kontratına ertelenmiştir (bkz. Bölüm 15.9, 16). `src/crypto_quant_lab/validation/metrics.py`'de implement edilmiştir (commit `e4cedf9`) — `Stage2Metrics` (frozen, slots) + `compute_periodic_returns(result: BacktestResult) -> tuple[Decimal, ...]` + `compute_stage2_metrics(result: BacktestResult, *, risk_free_per_period: Decimal = Decimal(0)) -> Stage2Metrics` — kendi regression kanıtı `tests/test_validation_metrics.py`'nin genişletilmiş toplamında (207 test, tümü PASS: 82 Stage-1 DEĞİŞMEDEN + 125 yeni Stage-2). Tam suite 1593/1593 PASS. Post-commit implementasyon audit'i — PASS (bkz. Bölüm 23, 28.E — 29/29). Sortino, Calmar, CAGR, ve Sharpe'ın annualized varyantı bu kilide dahil DEĞİLDİR — bunların exact calendar/annualization ve downside-deviation kontratı Bölüm 15.19–15.33'te LOCKED'dır VE artık bu combined delivery ile IMPLEMENTED + TESTED'dır (bkz. Bölüm 23, 28.H — 30/30).
+
+**Annualized Metrics — Sharpe/Sortino/CAGR/Calmar: exact formül, API, calendar-basis, validation ve Decimal-context kontratı Bölüm 15.19–15.33'te LOCKED'dır VE artık IMPLEMENTED + TESTED'dır (bu combined delivery).** `src/crypto_quant_lab/validation/annualized_metrics.py` (YENİ modül) — dört bağımsız, bare-`Decimal` döndüren fonksiyon: `compute_annualized_sharpe_ratio`, `compute_sortino_ratio`, `compute_cagr`, `compute_calmar_ratio`. Hiçbiri yeni bir dataclass/value object TANITMAZ; `Stage1Metrics`, `compute_stage1_metrics`, `Stage2Metrics`, `compute_periodic_returns`, `compute_stage2_metrics` DEĞİŞMEDEN reuse edilir. Kendi regression suite'i `tests/test_validation_annualized_metrics.py`'de (77 test, tümü PASS). İlgili regression suite'ler (`tests/test_validation_metrics.py` — 207 test, `tests/test_validation_candidate.py`, `tests/test_validation_rolling_backtest.py`, `tests/test_validation_windows.py`) DEĞİŞMEDEN yeşil kalır; tam suite 1884/1884 PASS. Post-implementation audit'i — PASS (bkz. Bölüm 23, 28.H — 30/30).
 
 **Aşama 3 (LATER IN FAZ 6):** Deflated Sharpe, PBO, multiple-testing corrections, parameter stability — Bölüm 17.
 
@@ -2942,7 +2944,7 @@ davranışı.
 
 Bu maddeler **deferred boundary'ler** olarak kaydedilir — implement edilmiş özellikler DEĞİL.
 
-**Status: LOCKED (mimari/tasarım) — IMPLEMENTATION PENDING** (bkz. Bölüm 23, 28.H — 0/N).
+**Status: LOCKED AND IMPLEMENTED + TESTED** (bu combined delivery; bkz. Bölüm 23, 28.H — 30/30).
 
 ## 16. Return Series Semantics — Bölüm 15.9–15.18'de LOCKED; Annualization Bölüm 15.19–15.33'te AYRICA LOCKED
 
@@ -2970,7 +2972,7 @@ Sharpe-ailesi metrikler bir return series gerektirir. `EquityPoint`, her candle 
                                       PAYDA fail-fast (Bölüm 15.13, 15.15)
 ```
 
-**Beşinci soru artık AYRICA çözülmüştür:** `1h/4h için annualization faktörü` — exact calendar basis (365 gün, sabit), exact `periods_per_year` türetimi (1h -> 8760, 4h -> 2190), ve annualized Sharpe/Sortino/CAGR/Calmar formülleri artık Bölüm 15.19–15.33'te **LOCKED**'dır (mimari/tasarım seviyesinde — implementasyon HENÜZ BAŞLAMAMIŞTIR, bkz. Bölüm 23, 28.H). Bu, o kontratın kendi ayrı implementasyon/test/audit/closure mikro-adımına kadar **implement edilmiş** anlamına GELMEZ.
+**Beşinci soru artık AYRICA çözülmüştür:** `1h/4h için annualization faktörü` — exact calendar basis (365 gün, sabit), exact `periods_per_year` türetimi (1h -> 8760, 4h -> 2190), ve annualized Sharpe/Sortino/CAGR/Calmar formülleri artık Bölüm 15.19–15.33'te **LOCKED**'dır VE bu combined delivery ile **IMPLEMENTED + TESTED**'dır (`src/crypto_quant_lab/validation/annualized_metrics.py`, bkz. Bölüm 23, 28.H — 30/30).
 
 ## 17. İleri Seviye Validation Tekniklerinin Bağımlılık Haritası (LOCKED — Hiçbiri Sessizce Taşınmaz)
 
@@ -2988,7 +2990,7 @@ Prerequisites: fold model + observation/outcome-horizon contract (17.1) + purge/
 
 ### 17.3 Sharpe-Ailesi Metrikler — Aşama 2 (Bölüm 15/16)
 
-**Non-annualized, per-observation Sharpe'ın kontratı Bölüm 15.9–15.18'de LOCKED'dır VE artık IMPLEMENTED + TESTED'dır** (`compute_stage2_metrics`, commit `e4cedf9`, bkz. Bölüm 23, 28.E — 29/29) — return-series prerequisite'i (Bölüm 16) bu kilitle karşılanmıştır. Annualized Sharpe'ın exact kontratı artık Bölüm 15.19–15.33'te **LOCKED**'dır (mimari/tasarım) ama **implement EDİLMEMİŞTİR** (bkz. Bölüm 23, 28.H — 0/N) — non-annualized Stage-2 Sharpe'ı DOĞRUDAN reuse eder (annualization_factor ile çarparak), ikinci bir Sharpe tanımı İCAT ETMEZ. Sortino ve CAGR/Calmar'ın exact kontratları da AYNI şekilde artık Bölüm 15.24/15.25–15.26'da **LOCKED**'dır ama implement EDİLMEMİŞTİR. Deflated Sharpe (17.4), PBO (17.5), multiple-testing corrections (17.6), ve parameter stability (17.7) bu kilitten **etkilenmez**, implement EDİLMEMİŞTİR, ve **LATER IN FAZ 6** olarak deferred kalır — hiçbiri bu mikro-adımda tamamlanmış olarak işaretlenmez; "Annualized Metrics" (Sharpe/Sortino/CAGR/Calmar) ile "Stage-3" (Deflated Sharpe/PBO/multiple-testing/parameter stability) İKİ AYRI GRUPTUR (bkz. Bölüm 15.20). Basit total-return/max-drawdown'dan **sonra**, ama foundation'ın (Bölüm 13) parçası değil.
+**Non-annualized, per-observation Sharpe'ın kontratı Bölüm 15.9–15.18'de LOCKED'dır VE artık IMPLEMENTED + TESTED'dır** (`compute_stage2_metrics`, commit `e4cedf9`, bkz. Bölüm 23, 28.E — 29/29) — return-series prerequisite'i (Bölüm 16) bu kilitle karşılanmıştır. Annualized Sharpe'ın exact kontratı Bölüm 15.19–15.33'te **LOCKED**'dır VE artık bu combined delivery ile **IMPLEMENTED + TESTED**'dır (bkz. Bölüm 23, 28.H — 30/30) — non-annualized Stage-2 Sharpe'ı DOĞRUDAN reuse eder (annualization_factor ile çarparak), ikinci bir Sharpe tanımı İCAT ETMEZ. Sortino ve CAGR/Calmar'ın exact kontratları da AYNI şekilde artık Bölüm 15.24/15.25–15.26'da **LOCKED** VE **IMPLEMENTED + TESTED**'dır. Deflated Sharpe (17.4), PBO (17.5), multiple-testing corrections (17.6), ve parameter stability (17.7) bu implementasyondan **etkilenmez**, implement EDİLMEMİŞTİR, ve **LATER IN FAZ 6** (FAZ6C) olarak deferred kalır — hiçbiri bu delivery'de tamamlanmış olarak işaretlenmez; "Annualized Metrics" (Sharpe/Sortino/CAGR/Calmar) ile "Stage-3" (Deflated Sharpe/PBO/multiple-testing/parameter stability) İKİ AYRI GRUPTUR (bkz. Bölüm 15.20). Basit total-return/max-drawdown'dan **sonra**, ama foundation'ın (Bölüm 13) parçası değil.
 
 ### 17.4 Deflated Sharpe — LATER IN FAZ 6
 
@@ -3813,30 +3815,33 @@ FAZ 6B — Context-Aware Extensions + Return-Series / Experiment Foundation
         değişmedi.
 
       - Annualized Metrics (Sharpe/Sortino/CAGR/Calmar) source-preflight
-        + exact kontrat (Bölüm 15.19–15.33) — LOCKED (mimari/tasarım):
-        yeni `src/crypto_quant_lab/validation/annualized_metrics.py`
-        modülü, dört bağımsız fonksiyon (`compute_annualized_sharpe_ratio`,
-        `compute_sortino_ratio`, `compute_cagr`, `compute_calmar_ratio`),
-        365-gün calendar basis, exact `periods_per_year` türetimi,
-        exact formüller/operation sıraları, validation/fail-fast sırası,
-        purity/import-direction — tümü kilitlendi. İmplementasyon,
-        regression suite'i, ve §28.H acceptance HENÜZ BAŞLAMAMIŞTIR
-        (bkz. Bölüm 23, 28.H — 0/N).
+        + exact kontrat (Bölüm 15.19–15.33) — LOCKED VE artık İMPLEMENT
+        EDİLMİŞ + TEST EDİLMİŞTİR (bu combined delivery):
+        `src/crypto_quant_lab/validation/annualized_metrics.py` (YENİ
+        modül), dört bağımsız, bare-`Decimal` döndüren fonksiyon
+        (`compute_annualized_sharpe_ratio`, `compute_sortino_ratio`,
+        `compute_cagr`, `compute_calmar_ratio`), 365-gün calendar basis,
+        exact `periods_per_year` türetimi, exact formüller/operation
+        sıraları, validation/fail-fast sırası, purity/import-direction —
+        tümü kilitlendiği gibi implement edildi; hiçbir mevcut production
+        dosyası (metrics.py/rolling.py/windows.py/candidate.py/models.py/
+        market_data/timeframes.py) değişmedi. Kendi regression suite'i
+        `tests/test_validation_annualized_metrics.py`'de (77 test, tümü
+        PASS); bkz. Bölüm 23, 28.H — 30/30.
 
-    Kalan zorunlu bileşenler (HENÜZ PENDING):
-      - Annualized Metrics'in (Bölüm 15.19–15.33) implementasyonu,
-        regression suite'i, ve post-implementation audit/acceptance
-        closure'ı — kontrat LOCKED olmasına rağmen HENÜZ İMPLEMENT
-        EDİLMEMİŞTİR (bkz. Bölüm 23, 28.H — 0/N).
+    Kalan zorunlu bileşenler: **yok** — locked FAZ6B scope içindeki tüm
+    maddeler (Layer-1 context/evaluation, policy-instance-freshness,
+    return-series + per-observation Sharpe, non-zero-context Layer-2,
+    candidate/trial foundation, Annualized Metrics) artık İMPLEMENT
+    EDİLMİŞ + TEST EDİLMİŞTİR.
 
-    Durum: FAZ6B — NOT COMPLETE (bkz. §22.2). Stage-1/Stage-2/non-zero-
-    context Layer-2/candidate-trial foundation implementasyonlarının
-    tamamlanmış olması FAZ6B'yi TEK BAŞINA KAPATMAZ — Annualized Metrics
-    kontratı LOCKED olsa da implementasyonu hâlâ pending'dir; ayrıca
-    candidate/trial foundation'ın kendisi hiçbir candidate
-    selection/ranking, optimizer/search, final holdout protection, veya
-    multiple-testing correction SAĞLAMAZ (§18.9) — bunlar ayrı, henüz
-    spec-lock edilmemiş gelecekteki adımlardır.
+    Durum: FAZ6B — COMPLETE (bkz. §22.2). Bu, candidate/trial
+    foundation'ın kendisinin hiçbir candidate selection/ranking,
+    optimizer/search, final holdout protection, veya multiple-testing
+    correction SAĞLADIĞI anlamına GELMEZ (§18.9) — bunlar FAZ6C/FAZ6D'nin
+    ayrı, henüz tamamlanmamış kapsamıdır; FAZ6B'nin tamamlanması **Faz
+    6'nın tamamlanması anlamına gelmez** (bkz. Bölüm 22 üst metni,
+    FAZ6C/FAZ6D durumu aşağıda).
 
 FAZ 6C — Advanced Overfitting Controls
     purging/embargo (horizon contract'a bağımlı, Bölüm 17.1), CPCV
@@ -3883,7 +3888,7 @@ FAZ 6D — Faz 6 Final Acceptance
 | Phase | Status | Completed scope | Remaining scope |
 |---|---|---|---|
 | FAZ6A | COMPLETE | temporal window/IS-OOS primitives (§28.A — 22/22), zero-context rolling OOS evaluation (§28.C — 12/12), Stage-1 metrics (§28.D — 18/18) | locked FAZ6A scope içinde yok |
-| FAZ6B | NOT COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 (§8.3.16, §28.F — 22/22, LOCKED VE IMPLEMENTED + TESTED), candidate/trial foundation (§18, §28.G — 25/25, LOCKED VE IMPLEMENTED + TESTED), Annualized Metrics exact kontrat (§15.19–15.33, LOCKED — mimari/tasarım) | Annualized Metrics implementasyonu + regression suite'i + acceptance closure'ı (§28.H — 0/N) |
+| FAZ6B | COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 (§8.3.16, §28.F — 22/22, LOCKED VE IMPLEMENTED + TESTED), candidate/trial foundation (§18, §28.G — 25/25, LOCKED VE IMPLEMENTED + TESTED), Annualized Metrics (§15.19–15.33, §28.H — 30/30, LOCKED VE IMPLEMENTED + TESTED) | locked FAZ6B scope içinde yok |
 | FAZ6C | NOT COMPLETE | yok | purging/embargo, CPCV, Deflated Sharpe, PBO, multiple-testing corrections, parameter stability |
 | FAZ6D | NOT STARTED | yok | Faz 6 final acceptance audit'i |
 
@@ -4327,18 +4332,66 @@ TAMAMLANDI:
   veya yeni test içermedi — Annualized Metrics implementasyonu ve
   regression suite'i HENÜZ BAŞLAMADI.
 
+FAZ6B — ANNUALIZED METRICS IMPLEMENTATION + REGRESSION SUITE +
+POST-IMPLEMENTATION AUDIT + DOCUMENTATION/ACCEPTANCE CLOSURE —
+TAMAMLANDI (tek bir combined delivery olarak, Candidate/Trial ve
+non-zero-context Layer-2 implementasyonlarının izlediği AYNI
+precedent):
+  Bölüm 15.19–15.33'te LOCKED olan exact kontratı, yeniden tasarlamadan,
+  birebir implement etti: `src/crypto_quant_lab/validation/annualized_metrics.py`
+  (YENİ modül) — `compute_annualized_sharpe_ratio`, `compute_sortino_ratio`,
+  `compute_cagr`, `compute_calmar_ratio`; hepsi kilitli exact signature'larla
+  (result pozisyonel; timeframe/rate/target keyword-only), bare `Decimal`
+  döner, hiçbir yeni dataclass/value object tanıtılmadı. `Stage1Metrics`,
+  `compute_stage1_metrics`, `Stage2Metrics`, `compute_periodic_returns`,
+  `compute_stage2_metrics` DEĞİŞMEDEN reuse edildi — ikinci bir return-
+  series/stdev/drawdown algoritması İCAT EDİLMEDİ. `candle_duration`
+  (market_data/timeframes.py, DEĞİŞMEDEN) reuse edilerek exact
+  `periods_per_year` (1h -> 8760, 4h -> 2190) integer-mikrosaniye
+  aritmetiğiyle türetildi; 365-gün calendar basis sabit ve configurable
+  DEĞİL. Dört fonksiyonun her biri kendi taze, private, module-privacy
+  nedeniyle yeniden tanımlanmış Decimal context'i (Stage-1/2 ile AYNI
+  shape) kullanır; her power/sqrt/division `localcontext(...)` içinde
+  çalışır. Kilitli numaralı validation/fail-fast sıraları birebir
+  uygulandı (timeframe str+candle_duration önce, sonra ilgili
+  Stage-1/Stage-2/periodic-returns delegasyonu, sonra rate/target
+  kontrolleri, sonra arithmetic, sonra finiteness check). Sortino,
+  `compute_periodic_returns`'ü tüketir (`compute_stage2_metrics`'i DEĞİL)
+  — bu, Stage-2'nin total-stdev>0 şartı ihlal edildiğinde bile (sabit/
+  flat periyodik return serisi) Sortino'nun geçerli kalabildiği canlı bir
+  testle davranışsal olarak kanıtlandı. `validation/__init__.py`,
+  `metrics.py`, `rolling.py`, `windows.py`, `candidate.py`, `models.py`,
+  `market_data/timeframes.py` DEĞİŞMEDEN kaldı (static `git diff` kanıtı).
+  Kendi regression suite'i `tests/test_validation_annualized_metrics.py`'de
+  (77 test, tümü PASS) — API/signature, timeframe/calendar validation
+  sırası, dört formülün exact operation sırası, tüm edge-case'ler (sıfır/
+  negatif/non-finite Sharpe, downside-gözlem-yokluğu, boundary-equality,
+  total-wipeout, negatif final_equity, sıfır max_drawdown), ambient-
+  context bağımsızlığı, no-mutation/determinism, ve gerçek canonical
+  backtest + bağımsız `WindowResult.result` entegrasyonu dahil. Post-
+  implementation audit — kontratın 30 kriterinin HER BİRİ implementasyon/
+  test karşısında tek tek doğrulandı — PASS. Tam suite: 1807 (önceki
+  baseline) + 77 (yeni) = 1884/1884 PASS. Ruff/format/`git diff --check`
+  — hepsi temiz. Değiştirilen dosyalar: yalnızca
+  `src/crypto_quant_lab/validation/annualized_metrics.py` (YENİ),
+  `tests/test_validation_annualized_metrics.py` (YENİ), `VALIDATION_SPEC.md`
+  — hiçbir başka production/test dosyası dokunulmadı. §28.H, 0/30'dan
+  30/30'a kapatıldı; §22.2 tablosunda FAZ6B artık COMPLETE olarak
+  işaretlendi (locked FAZ6B scope içinde kalan madde yok) — bu, Faz 6'nın
+  tamamlandığı anlamına GELMEZ (FAZ6C/FAZ6D hâlâ NOT COMPLETE/NOT
+  STARTED). Candidate selection/ranking, optimizer/grid/random/Bayesian
+  search, final holdout enforcement, ve Stage-3 (Deflated Sharpe, PBO,
+  multiple-testing corrections, parameter stability) bu delivery'de de
+  BAŞLATILMADI — bunlar ayrı, henüz spec-lock edilmemiş gelecekteki
+  adımlardır (FAZ6C/FAZ6D).
+
 Sonraki (henüz başlanmadı):
-  Annualized Metrics implementasyonu + regression suite'i + post-
-  implementation audit + documentation/acceptance closure, tek bir
-  combined delivery olarak (Candidate/Trial ve non-zero-context Layer-2
-  implementasyonlarının izlediği AYNI precedent) — Bölüm 15.19–15.33'te
-  LOCKED olan exact kontratı implement eder:
-  `src/crypto_quant_lab/validation/annualized_metrics.py` (YENİ modül) +
-  ilgili test dosyası (`tests/test_validation_annualized_metrics.py`).
-  Candidate selection/ranking, optimizer/grid/random/Bayesian search,
-  ve Stage-3 (Deflated Sharpe, PBO, multiple-testing corrections,
-  parameter stability) bu adımda da BAŞLATILMAZ — bunlar ayrı, henüz
-  spec-lock edilmemiş gelecekteki adımlardır.
+  FAZ6C — Advanced Overfitting Controls: purging/embargo (Bölüm 17.1),
+  CPCV (17.2), Deflated Sharpe (17.4), PBO (17.5), multiple-testing
+  corrections (17.6), parameter stability (17.7) — bunların HİÇBİRİ
+  henüz spec-lock edilmemiştir; bu doküman onları henüz TASARLAMAZ.
+  Ardından FAZ6D — Faz 6 Final Acceptance audit'i. Faz 6'nın tamamlanması
+  için FAZ6C/FAZ6D'nin ikisi de gereklidir (bkz. Bölüm 22).
 ```
 
 **MS3 scope (TAMAMLANDI — pre-flight'in kendisi, Bölüm 8.3'te kilitlendi):**
@@ -4423,7 +4476,7 @@ Aynı girdiler → aynı pencere sonuçları — mevcut `run_backtest_from_store
 
 ## 28. Acceptance Criteria — Sekiz Ayrı Grup (LOCKED)
 
-Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Annualized Metrics'in (Sharpe/Sortino/CAGR/Calmar) implementasyon/test acceptance checklist'i, HENÜZ implementation/test exercised OLMAYAN, kontrattan türetilmiş ayrı bir liste olarak 28.H'de kaydedilir (bkz. Bölüm 15.19–15.33, 23 — 0/N). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G/28.H altındaki sayılar). §28.A/B/C/D/E/F/G/H'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
+Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Annualized Metrics'in (Sharpe/Sortino/CAGR/Calmar) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.H'de kaydedilir (bkz. Bölüm 15.19–15.33, 23 — 30/30). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G/28.H altındaki sayılar). §28.A/B/C/D/E/F/G/H'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
 
 ### 28.A — LOCKED FOUNDATION ACCEPTANCE (Runner-Bağımsız)
 
@@ -4623,42 +4676,42 @@ Bu liste, Bölüm 18'de LOCKED olan candidate/trial exact kontratının, `src/cr
 
 **Candidate/trial foundation acceptance count: 25 / 25 implementation/test exercised.** Bu, aşağıdakilerin HİÇBİRİNİN var olduğu anlamına GELMEZ: candidate selection/ranking; optimizer/grid/random/Bayesian search; final holdout protection; multiple-testing correction; annualized Sharpe/Sortino/Calmar/CAGR; Stage-3 kontrolleri (Deflated Sharpe, PBO, parameter stability); FAZ6B'nin tamamlanması; Faz 6'nın tamamlanması — yalnızca candidate/trial foundation'ının kendi implementasyon/test acceptance contract'ının karşılandığı anlamına gelir.
 
-### 28.H — ANNUALIZED METRICS ACCEPTANCE (0/30 IMPLEMENTATION/TEST EXERCISED)
+### 28.H — ANNUALIZED METRICS ACCEPTANCE (30/30 IMPLEMENTATION/TEST EXERCISED)
 
-Bu liste, Bölüm 15.19–15.33'te LOCKED olan Annualized Metrics (Sharpe/Sortino/CAGR/Calmar) exact kontratının implementasyon/test acceptance checklist'ini kaydeder. **Bu 30 kriterin HİÇBİRİ henüz implementation/test exercised DEĞİLDİR** — `src/crypto_quant_lab/validation/annualized_metrics.py` ve `tests/test_validation_annualized_metrics.py` henüz yaratılmamıştır (bkz. Bölüm 23 — "Sonraki"). Kriterler, kontrattan (Bölüm 15.21–15.29) türetilmiştir; keyfi bir sayı veya şişirilmiş/duplicate madde yoktur.
+Bu liste, Bölüm 15.19–15.33'te LOCKED olan Annualized Metrics (Sharpe/Sortino/CAGR/Calmar) exact kontratının, `src/crypto_quant_lab/validation/annualized_metrics.py` tarafından karşılandığını kaydeder. **Bu 30 kriterin hepsi artık implementation/test exercised'dır** — `tests/test_validation_annualized_metrics.py`'de 77 test (tümü PASS), ilgili regression suite'ler (`test_validation_metrics.py` — 207 test, `test_validation_candidate.py`, `test_validation_rolling_backtest.py`, `test_validation_windows.py`) DEĞİŞMEDEN yeşil, tam suite 1884/1884 PASS (1807 önceki + 77 yeni), post-implementation audit'i PASS. Davranışsal kriterler doğrudan regression testleriyle, "değişmedi"/"coupled değil"/"yok" türü kriterler ise static/scope kanıtı (kod incelemesi, `git diff` yalnızca iki yeni dosya gösterir, mevcut testlerin DEĞİŞMEDEN yeşil kalması) + tam regression suite uyumluluğuyla kanıtlanır — bu ikisi ayrı ayrı etiketlenir, biri diğeri yerine geçmez.
 
-1. Dört fonksiyon (`compute_annualized_sharpe_ratio`, `compute_sortino_ratio`, `compute_cagr`, `compute_calmar_ratio`), kilitli modül yolunda (`src/crypto_quant_lab/validation/annualized_metrics.py`), kilitli exact signature'larla (result pozisyonel; timeframe/rate/target keyword-only) mevcut olmalıdır; hepsi bare `Decimal` döner — hiçbir yeni dataclass/value object tanıtılmaz (Bölüm 15.21).
-2. `validation/__init__.py` DEĞİŞMEDEN kalır — bu dört fonksiyon package-root'ta export EDİLMEZ; `BacktestResult`/`WindowResult`/`Candidate`/`Trial`'a hiçbir yeni field EKLENMEZ (Bölüm 15.21, 15.29).
-3. `metrics.py`/`rolling.py`/`windows.py`/`candidate.py`/`models.py` DEĞİŞMEDEN kalır — static `git diff` kanıtı + tam regression suite uyumluluğu (Bölüm 15.29).
-4. Dört fonksiyonun HER BİRİNDE `timeframe`, her diğer yeni-parametre/result-delegasyon kontrolünden ÖNCE `str` olarak validate edilir; değilse TypeError (Bölüm 15.27).
-5. `timeframe`, reuse edilen `candle_duration()` ile desteklenmelidir; desteklenmeyen bir string, `candle_duration`'ın KENDİ ValueError'ı ile (mesaj DEĞİŞMEDEN propagate edilerek) reddedilir — yeni bir timeframe/duration tablosu İCAT EDİLMEZ (Bölüm 15.22, 15.27).
-6. `periods_per_year`, exact integer-mikrosaniye aritmetiğiyle (ASLA `timedelta.total_seconds()`, ASLA float) hesaplanır; "1h" için exact `Decimal('8760')`, "4h" için exact `Decimal('2190')` (Bölüm 15.22).
-7. Calendar basis exact 365 gündür, configurable DEĞİLDİR; leap year'lar sabiti ETKİLEMEZ (Bölüm 15.22).
-8. `compute_annualized_sharpe_ratio`, `compute_stage2_metrics`'e TAM olarak delege eder (result/risk_free_per_period validation + non-annualized `sharpe_ratio`) — ikinci bir return-series/stdev algoritması İCAT EDİLMEZ; Stage-2'nin HERHANGİ bir exception'ı tip/mesaj DEĞİŞMEDEN propagate edilir (Bölüm 15.23, 15.27).
-9. Exact formül/operation sırası: `sharpe_ratio * periods_per_year.sqrt()`, yalnızca madde 8 TAMAMEN başarılı olduktan SONRA hesaplanır (Bölüm 15.23).
-10. `risk_free_per_period`, Stage-2 ile BİREBİR AYNI konvansiyonu korur: per-period, ASLA annual, ASLA convert edilir (Bölüm 15.23).
-11. Negatif/sıfır annualized Sharpe legal'dir; hesaplanmış non-finite bir annualized Sharpe deterministik olarak reddedilir (Bölüm 15.23, 15.27).
-12. `compute_sortino_ratio`, `compute_periodic_returns`'ü tüketir (`compute_stage2_metrics`'i DEĞİL) — Sortino'nun geçerliliğinin Stage-2'nin total-stdev>0 şartından BAĞIMSIZ olduğu davranışsal olarak kanıtlanır (Bölüm 15.24).
-13. `minimum_acceptable_return_per_period`, kendi adımlarında tip/finiteness validate edilir; default `Decimal(0)` (Bölüm 15.24, 15.27).
-14. En az İKİ periyodik return gereklidir (`n >= 2`) — downside-deviation formülünün kendisi n=1'de matematiksel olarak tanımlı olsa da, Sharpe/Stage-2 ile AYNI minimum-örneklem eşiği için BİLİNÇLİ OLARAK korunur (Bölüm 15.24).
-15. Downside deviation exact formülü: population divisor (`n`), her gözlem için `min(0, r-MAR)^2`, TÜM `n` gözlem paydaya dahildir — yalnızca-downside-count alternatifi REDDEDİLMİŞTİR (Bölüm 15.24).
-16. Sıfır (veya non-finite) downside deviation — "downside gözlem YOK" durumu DAHİL — deterministik ValueError ile reddedilir; hiçbir zaman None/sıfır/NaN/Infinity döndürülmez (Bölüm 15.24).
-17. Negatif Sortino numerator (mean_return < MAR) legal'dir; annualization `periods_per_year.sqrt()` ile AYNI mekanizmayı kullanır (Sharpe ile); hesaplanmış non-finite bir Sortino deterministik olarak reddedilir (Bölüm 15.24, 15.27).
-18. `compute_cagr`, `compute_stage1_metrics(result).total_return`'ü REUSE eder — `final_equity/initial_cash` ikinci kez bağımsız olarak HESAPLANMAZ (Bölüm 15.25).
-19. Exact formül/operation sırası: `(Decimal(1) + total_return) ** (periods_per_year / Decimal(n)) - Decimal(1)`; `n = len(result.equity_curve)`, yalnızca Stage-1'in kendi validation'ı BAŞARILI olduktan SONRA, yeniden validate EDİLMEDEN okunur (Bölüm 15.25).
-20. `n >= 1` yeterlidir (Stage-1'in zaten LOCKED boş-olmayan-curve alt sınırı) — Sharpe/Sortino'nun `n >= 2` eşiğinden KASITLI OLARAK DAHA GEVŞEKTİR, dokümante edilmiş gerekçeyle (Bölüm 15.25).
-21. `total_return == 0` -> `cagr == 0` (exact, `base == 1`); `total_return == -1` -> `cagr == -1` (exact, `base == 0`, pozitif exponent) — her ikisi de empirik olarak doğrulanmış `Decimal.__pow__` davranışıyla kanıtlanır (Bölüm 15.19, 15.25).
-22. `total_return < -1` (negatif final_equity, Stage-1'de legal) -> `base < 0`, fractional exponent -> NaN -> CAGR deterministik olarak ValueError ile reddedilir (Bölüm 15.25).
-23. Elapsed wall-clock equity-curve timestamp'leri CAGR tarafından HİÇ okunmaz; overflow/underflow'dan doğan hesaplanmış non-finite bir CAGR deterministik olarak reddedilir (Bölüm 15.25, 15.27).
-24. `compute_calmar_ratio`, `compute_cagr`'ı (DEĞİŞMEDEN) VE `compute_stage1_metrics(result).max_drawdown`'ı (DEĞİŞMEDEN) reuse eder — ikinci bir CAGR veya drawdown algoritması İCAT EDİLMEZ; `compute_cagr`'ın HERHANGİ bir başarısızlığı (undefined CAGR dahil) tip/mesaj DEĞİŞMEDEN propagate edilir (Bölüm 15.26, 15.27).
-25. Exact formül: `cagr / max_drawdown` — tek operasyon (Bölüm 15.26).
-26. Sıfır `max_drawdown` deterministik ValueError ile reddedilir (hiçbir zaman `Decimal('Infinity')` döndürülmez); negatif CAGR legal'dir (negatif Calmar); `max_drawdown == 1` ve `max_drawdown > 1` her ikisi de sıradan bölme olarak ele alınır (Bölüm 15.26).
-27. Dört fonksiyonun HER BİRİ, kendi taze, private, module-privacy nedeniyle YENİDEN TANIMLANMIŞ bir Decimal context (Stage-1/2 ile AYNI shape: prec=28, ROUND_HALF_EVEN, Emin=-999999, Emax=999999, capitals=1, clamp=0, traps=[]) kullanır (Bölüm 15.28).
-28. Her power/sqrt/division operasyonu bu private `localcontext(...)` bloğu İÇİNDE çalışır; caller'ın ambient precision/rounding'inin çıktıyı ETKİLEMEDİĞİ davranışsal olarak kanıtlanır (Bölüm 15.28).
-29. Dört fonksiyon da pure/deterministik/input-mutate-etmeyen'dir; wall-clock/randomness/I/O/persistence KULLANMAZ; rolling orchestration/`Candidate`/`Trial`/optimizer İMPORT ETMEZ; cross-window aggregation YAPMAZ (Bölüm 15.29).
-30. Doğrudan bir `BacktestResult` kullanımı VE bağımsız bir `WindowResult.result` kullanımı, hiçbir aggregation olmadan desteklenir — Stage-1/Stage-2 ile AYNI desen; en az bir gerçek `run_backtest_from_store`/`run_rolling_backtest_from_store` entegrasyonuyla kanıtlanır (Bölüm 15.29).
+1. Dört fonksiyon (`compute_annualized_sharpe_ratio`, `compute_sortino_ratio`, `compute_cagr`, `compute_calmar_ratio`), kilitli modül yolunda (`src/crypto_quant_lab/validation/annualized_metrics.py`), kilitli exact signature'larla (result pozisyonel; timeframe/rate/target keyword-only) mevcut olmalıdır; hepsi bare `Decimal` döner — hiçbir yeni dataclass/value object tanıtılmaz (Bölüm 15.21). **PASS** — `test_all_four_functions_exist_and_are_callable`, `test_sharpe_exact_signature`, `test_sortino_exact_signature`, `test_cagr_exact_signature`, `test_calmar_exact_signature`, `test_all_four_functions_return_bare_decimal_never_a_dataclass`, `test_no_function_ever_returns_none`.
+2. `validation/__init__.py` DEĞİŞMEDEN kalır — bu dört fonksiyon package-root'ta export EDİLMEZ; `BacktestResult`/`WindowResult`/`Candidate`/`Trial`'a hiçbir yeni field EKLENMEZ (Bölüm 15.21, 15.29). **PASS** — `test_validation_package_root_unchanged`, `test_backtest_result_has_no_annualized_fields`, `test_window_result_has_no_annualized_fields`, `test_candidate_and_trial_have_no_annualized_fields`; kod incelemesi: `validation/__init__.py` tek satırlık docstring'i DEĞİŞMEDEN kaldı.
+3. `metrics.py`/`rolling.py`/`windows.py`/`candidate.py`/`models.py` DEĞİŞMEDEN kalır — static `git diff` kanıtı + tam regression suite uyumluluğu (Bölüm 15.29). **PASS** — `git diff --stat`/`git status --short`, bu delivery'de yalnızca `src/crypto_quant_lab/validation/annualized_metrics.py` (YENİ) ve `tests/test_validation_annualized_metrics.py` (YENİ) + `VALIDATION_SPEC.md` değişti; `test_existing_stage1_stage2_public_api_still_present_and_callable`; ilgili 331+ regression testi (`test_validation_metrics.py`, `test_validation_candidate.py`, `test_validation_rolling_backtest.py`, `test_validation_windows.py`) DEĞİŞMEDEN yeşil.
+4. Dört fonksiyonun HER BİRİNDE `timeframe`, her diğer yeni-parametre/result-delegasyon kontrolünden ÖNCE `str` olarak validate edilir; değilse TypeError (Bölüm 15.27). **PASS** — `test_timeframe_must_be_str_type_error` (4 fonksiyon, parametrized), `test_timeframe_type_checked_before_risk_free_type_for_sharpe`, `test_timeframe_type_checked_before_target_type_for_sortino`.
+5. `timeframe`, reuse edilen `candle_duration()` ile desteklenmelidir; desteklenmeyen bir string, `candle_duration`'ın KENDİ ValueError'ı ile (mesaj DEĞİŞMEDEN propagate edilerek) reddedilir — yeni bir timeframe/duration tablosu İCAT EDİLMEZ (Bölüm 15.22, 15.27). **PASS** — `test_unsupported_timeframe_propagates_candle_duration_error_unchanged` (4 fonksiyon, parametrized, mesaj eşitliği doğrudan `candle_duration`'ın kendi exception'ıyla karşılaştırılarak), `test_unsupported_timeframe_checked_before_sortino_target_validation`.
+6. `periods_per_year`, exact integer-mikrosaniye aritmetiğiyle (ASLA `timedelta.total_seconds()`, ASLA float) hesaplanır; "1h" için exact `Decimal('8760')`, "4h" için exact `Decimal('2190')` (Bölüm 15.22). **PASS** — `test_periods_per_year_exact_for_1h_and_4h_via_annualized_sharpe` (davranışsal: `compute_stage2_metrics`'in çıktısı `Decimal('8760').sqrt()`/`Decimal('2190').sqrt()` ile çarpılarak üretim çıktısıyla exact karşılaştırılır); kod incelemesi: `_timedelta_to_microseconds` yalnızca `.days`/`.seconds`/`.microseconds` kullanır, `.total_seconds()` YOK.
+7. Calendar basis exact 365 gündür, configurable DEĞİLDİR; leap year'lar sabiti ETKİLEMEZ (Bölüm 15.22). **PASS** — `test_calendar_basis_is_365_days_no_leap_year_effect` (2024-02-29 leap-year sınırını kapsayan bir curve ile ordinary bir curve'ün AYNI CAGR'ı ürettiği), `test_calendar_basis_not_configurable` (hiçbir fonksiyon signature'ında `calendar`/`periods_per_year`/`year_days` parametresi yok).
+8. `compute_annualized_sharpe_ratio`, `compute_stage2_metrics`'e TAM olarak delege eder (result/risk_free_per_period validation + non-annualized `sharpe_ratio`) — ikinci bir return-series/stdev algoritması İCAT EDİLMEZ; Stage-2'nin HERHANGİ bir exception'ı tip/mesaj DEĞİŞMEDEN propagate edilir (Bölüm 15.23, 15.27). **PASS** — `test_sharpe_propagates_stage2_zero_stdev_error_unchanged`, `test_sharpe_propagates_stage2_insufficient_returns_error_unchanged`, `test_sharpe_does_not_reinvent_return_series_or_stdev_algorithm` (kaynak incelemesi: `compute_stage2_metrics(` çağrılır, `equity_curve` hiç referans edilmez).
+9. Exact formül/operation sırası: `sharpe_ratio * periods_per_year.sqrt()`, yalnızca madde 8 TAMAMEN başarılı olduktan SONRA hesaplanır (Bölüm 15.23). **PASS** — `test_sharpe_exact_operation_order_sharpe_ratio_times_sqrt` (non-terminating risk-free rate ile exact Decimal eşitliği).
+10. `risk_free_per_period`, Stage-2 ile BİREBİR AYNI konvansiyonu korur: per-period, ASLA annual, ASLA convert edilir (Bölüm 15.23). **PASS** — `test_sharpe_risk_free_convention_is_per_period_matches_stage2`.
+11. Negatif/sıfır annualized Sharpe legal'dir; hesaplanmış non-finite bir annualized Sharpe deterministik olarak reddedilir (Bölüm 15.23, 15.27). **PASS** — `test_sharpe_negative_is_legal`, `test_sharpe_zero_is_legal_when_mean_equals_risk_free`, `test_sharpe_non_finite_output_rejected`.
+12. `compute_sortino_ratio`, `compute_periodic_returns`'ü tüketir (`compute_stage2_metrics`'i DEĞİL) — Sortino'nun geçerliliğinin Stage-2'nin total-stdev>0 şartından BAĞIMSIZ olduğu davranışsal olarak kanıtlanır (Bölüm 15.24). **PASS** — `test_sortino_succeeds_when_stage2_would_reject_zero_total_stdev` (sabit periyodik return serisi: `compute_stage2_metrics` "return_stdev must be greater than zero" ile reddederken `compute_sortino_ratio` başarıyla exact bir sonuç döner), `test_sortino_does_not_call_stage2_metrics` (kaynak incelemesi).
+13. `minimum_acceptable_return_per_period`, kendi adımlarında tip/finiteness validate edilir; default `Decimal(0)` (Bölüm 15.24, 15.27). **PASS** — `test_sortino_default_minimum_acceptable_return_is_zero`, `test_sortino_rejects_non_decimal_target_type`, `test_sortino_rejects_non_finite_target` (NaN/+Infinity/-Infinity, parametrized).
+14. En az İKİ periyodik return gereklidir (`n >= 2`) — downside-deviation formülünün kendisi n=1'de matematiksel olarak tanımlı olsa da, Sharpe/Stage-2 ile AYNI minimum-örneklem eşiği için BİLİNÇLİ OLARAK korunur (Bölüm 15.24). **PASS** — `test_sortino_requires_at_least_two_returns`.
+15. Downside deviation exact formülü: population divisor (`n`), her gözlem için `min(0, r-MAR)^2`, TÜM `n` gözlem paydaya dahildir — yalnızca-downside-count alternatifi REDDEDİLMİŞTİR (Bölüm 15.24). **PASS** — `test_sortino_downside_denominator_uses_population_n_not_sample_n_minus_1` (population-`n` ve sample-`n-1` sonuçlarının FARKLI olduğu, üretim çıktısının yalnızca population-`n` ile eşleştiği), `test_sortino_mixed_upside_and_downside_observations`.
+16. Sıfır (veya non-finite) downside deviation — "downside gözlem YOK" durumu DAHİL — deterministik ValueError ile reddedilir; hiçbir zaman None/sıfır/NaN/Infinity döndürülmez (Bölüm 15.24). **PASS** — `test_sortino_no_downside_observations_is_rejected`, `test_sortino_boundary_equality_at_target_is_rejected`.
+17. Negatif Sortino numerator (mean_return < MAR) legal'dir; annualization `periods_per_year.sqrt()` ile AYNI mekanizmayı kullanır (Sharpe ile); hesaplanmış non-finite bir Sortino deterministik olarak reddedilir (Bölüm 15.24, 15.27). **PASS** — `test_sortino_negative_numerator_is_legal`, `test_sortino_annualization_same_mechanism_as_sharpe` (1h/4h oranının `sqrt(8760)/sqrt(2190)` oranına exact eşitliği), `test_sortino_non_finite_output_rejected`.
+18. `compute_cagr`, `compute_stage1_metrics(result).total_return`'ü REUSE eder — `final_equity/initial_cash` ikinci kez bağımsız olarak HESAPLANMAZ (Bölüm 15.25). **PASS** — `test_cagr_reuses_stage1_total_return_never_recomputes_independently` (kaynak incelemesi: `compute_stage1_metrics(` çağrılır, `result.final_equity`/`result.initial_cash` doğrudan attribute-access olarak hiç geçmez).
+19. Exact formül/operation sırası: `(Decimal(1) + total_return) ** (periods_per_year / Decimal(n)) - Decimal(1)`; `n = len(result.equity_curve)`, yalnızca Stage-1'in kendi validation'ı BAŞARILI olduktan SONRA, yeniden validate EDİLMEDEN okunur (Bölüm 15.25). **PASS** — `test_cagr_exact_formula_and_operation_order`, `test_cagr_n_equals_len_of_equity_curve`.
+20. `n >= 1` yeterlidir (Stage-1'in zaten LOCKED boş-olmayan-curve alt sınırı) — Sharpe/Sortino'nun `n >= 2` eşiğinden KASITLI OLARAK DAHA GEVŞEKTİR, dokümante edilmiş gerekçeyle (Bölüm 15.25). **PASS** — `test_cagr_succeeds_with_single_equity_point_where_sharpe_sortino_reject` (tek noktalı curve'de CAGR başarılı, Sharpe/Sortino "at least two periodic returns" ile reddeder).
+21. `total_return == 0` -> `cagr == 0` (exact, `base == 1`); `total_return == -1` -> `cagr == -1` (exact, `base == 0`, pozitif exponent) — her ikisi de empirik olarak doğrulanmış `Decimal.__pow__` davranışıyla kanıtlanır (Bölüm 15.19, 15.25). **PASS** — `test_cagr_flat_equity_is_exact_zero`, `test_cagr_total_wipeout_is_exact_negative_one`.
+22. `total_return < -1` (negatif final_equity, Stage-1'de legal) -> `base < 0`, fractional exponent -> NaN -> CAGR deterministik olarak ValueError ile reddedilir (Bölüm 15.25). **PASS** — `test_cagr_negative_final_equity_below_negative_one_total_return_rejected` (7 noktalı curve, `periods_per_year / n` kasıtlı olarak fractional bırakılarak integer-exponent özel durumundan kaçınılır).
+23. Elapsed wall-clock equity-curve timestamp'leri CAGR tarafından HİÇ okunmaz; overflow/underflow'dan doğan hesaplanmış non-finite bir CAGR deterministik olarak reddedilir (Bölüm 15.25, 15.27). **PASS** — `test_cagr_ignores_equity_curve_timestamps` (aynı `total_return`/`n`, radikal farklı gap'lerle AYNI CAGR), `test_cagr_overflow_is_rejected`.
+24. `compute_calmar_ratio`, `compute_cagr`'ı (DEĞİŞMEDEN) VE `compute_stage1_metrics(result).max_drawdown`'ı (DEĞİŞMEDEN) reuse eder — ikinci bir CAGR veya drawdown algoritması İCAT EDİLMEZ; `compute_cagr`'ın HERHANGİ bir başarısızlığı (undefined CAGR dahil) tip/mesaj DEĞİŞMEDEN propagate edilir (Bölüm 15.26, 15.27). **PASS** — `test_calmar_reuses_cagr_and_stage1_max_drawdown` (kaynak incelemesi), `test_calmar_propagates_undefined_cagr_error_unchanged`.
+25. Exact formül: `cagr / max_drawdown` — tek operasyon (Bölüm 15.26). **PASS** — `test_calmar_exact_formula`.
+26. Sıfır `max_drawdown` deterministik ValueError ile reddedilir (hiçbir zaman `Decimal('Infinity')` döndürülmez); negatif CAGR legal'dir (negatif Calmar); `max_drawdown == 1` ve `max_drawdown > 1` her ikisi de sıradan bölme olarak ele alınır (Bölüm 15.26). **PASS** — `test_calmar_zero_drawdown_is_rejected_never_infinity`, `test_calmar_negative_cagr_is_legal`, `test_calmar_max_drawdown_equal_to_one`, `test_calmar_max_drawdown_greater_than_one`.
+27. Dört fonksiyonun HER BİRİ, kendi taze, private, module-privacy nedeniyle YENİDEN TANIMLANMIŞ bir Decimal context (Stage-1/2 ile AYNI shape: prec=28, ROUND_HALF_EVEN, Emin=-999999, Emax=999999, capitals=1, clamp=0, traps=[]) kullanır (Bölüm 15.28). **PASS** — kod incelemesi: `_annualized_metrics_decimal_context()` her çağrıda yeni bir `Context(...)` instance'ı döner (paylaşılan modül-seviyeli sabit DEĞİL), dört fonksiyonun her biri onu `localcontext(...)` ile kendi hesaplama bloklarında çağırır; madde 28'in ambient-independence testleri bu davranışı davranışsal olarak da doğrular.
+28. Her power/sqrt/division operasyonu bu private `localcontext(...)` bloğu İÇİNDE çalışır; caller'ın ambient precision/rounding'inin çıktıyı ETKİLEMEDİĞİ davranışsal olarak kanıtlanır (Bölüm 15.28). **PASS** — `test_sharpe_independent_of_low_ambient_precision` (ambient prec=3), `test_sortino_independent_of_high_ambient_precision` (ambient prec=200), `test_cagr_independent_of_ambient_rounding_mode` (ambient `ROUND_DOWN`, prec=5), `test_calmar_deterministic_after_ambient_context_mutation`.
+29. Dört fonksiyon da pure/deterministik/input-mutate-etmeyen'dir; wall-clock/randomness/I/O/persistence KULLANMAZ; rolling orchestration/`Candidate`/`Trial`/optimizer İMPORT ETMEZ; cross-window aggregation YAPMAZ (Bölüm 15.29). **PASS** — `test_annualized_metrics_module_does_not_import_rolling_windows_candidate`, `test_annualized_metrics_module_only_imports_public_metrics_symbols`, `test_functions_do_not_mutate_input_result`, `test_deterministic_repeated_calls`, `test_no_cross_window_aggregation_between_independent_results`, `test_no_float_conversion_anywhere_in_module_source` (float/numpy/pandas/`.quantize(` YOKLUĞU).
+30. Doğrudan bir `BacktestResult` kullanımı VE bağımsız bir `WindowResult.result` kullanımı, hiçbir aggregation olmadan desteklenir — Stage-1/Stage-2 ile AYNI desen; en az bir gerçek `run_backtest_from_store`/`run_rolling_backtest_from_store` entegrasyonuyla kanıtlanır (Bölüm 15.29). **PASS** — `test_all_four_functions_work_on_a_real_canonical_backtest_result` (`run_backtest_from_store` ile), `test_all_four_functions_work_on_independent_window_result` (`run_rolling_backtest_from_store` + bağımsız `WindowResult.result` ile).
 
-**Annualized Metrics acceptance count: 0 / 30 implementation/test exercised.** Bu, aşağıdakilerin HİÇBİRİNİN var olduğu anlamına GELMEZ: Annualized Metrics implementasyonu; candidate selection/ranking; optimizer/grid/random/Bayesian search; final holdout protection; multiple-testing correction; Stage-3 kontrolleri (Deflated Sharpe, PBO, parameter stability); FAZ6B'nin tamamlanması; Faz 6'nın tamamlanması. Bu grup, yalnızca Bölüm 15.19–15.33'te LOCKED olan kontratın mimari/tasarım seviyesinde kilitlendiğini, implementasyonun HENÜZ BAŞLAMADIĞINI kaydeder.
+**Annualized Metrics acceptance count: 30 / 30 implementation/test exercised.** Bu, aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: candidate selection/ranking; optimizer/grid/random/Bayesian search; final holdout protection; multiple-testing correction; Stage-3 kontrolleri (Deflated Sharpe, PBO, parameter stability); Faz 6'nın tamamlanması. Bu grup, yalnızca Annualized Metrics'in kendi implementasyon/test acceptance contract'ının karşılandığı anlamına gelir — FAZ6B artık COMPLETE'dir (bkz. Bölüm 22, 22.2), ama bu Faz 6'nın (FAZ6C/FAZ6D dahil) tamamlanması anlamına GELMEZ.
 
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
@@ -4671,14 +4724,14 @@ ROADMAP.md'deki bir sonraki faz **Faz 7 — İlk Funding/Basis araştırması**d
   FAZ6A: COMPLETE).
 - Faz 7 HENÜZ BAŞLAMAMIŞTIR — bu doküman Faz 7'yi başlatmaz, tasarlamaz,
   veya scope etmez.
-- FAZ6A'nın karşılanmış olması, kalan FAZ6B/FAZ6C işinin atlandığı veya
-  tamamlandığı anlamına GELMEZ — proje, Faz 7'ye başlamadan ÖNCE Faz
-  6'nın geri kalanını (FAZ6B: Annualized Metrics'in [Sharpe/Sortino/
-  Calmar/CAGR] implementasyonu — kontratı LOCKED'dır ama implement
-  EDİLMEMİŞTİR, bkz. §22.2, 28.H; non-zero-context Layer-2, return-
-  series/Sharpe, ve candidate/trial foundation'ı artık IMPLEMENTED +
-  TESTED'dır; FAZ6C: advanced overfitting controls) tamamlamaya devam
-  EDEBİLİR (bu doküman bir sıralama zorunluluğu icat etmez).
+- FAZ6A'nın (ve artık FAZ6B'nin) karşılanmış olması, kalan FAZ6C işinin
+  atlandığı veya tamamlandığı anlamına GELMEZ — proje, Faz 7'ye
+  başlamadan ÖNCE Faz 6'nın geri kalanını (FAZ6B artık COMPLETE'dir:
+  non-zero-context Layer-2, return-series/Sharpe, candidate/trial
+  foundation, VE Annualized Metrics [Sharpe/Sortino/Calmar/CAGR]
+  hepsi IMPLEMENTED + TESTED'dır, bkz. §22.2, 28.H — 30/30; FAZ6C:
+  advanced overfitting controls — HENÜZ spec-lock edilmemiştir) tamamlamaya
+  devam EDEBİLİR (bu doküman bir sıralama zorunluluğu icat etmez).
 - CPCV/PBO/DSR'nin Faz 7'nin başlaması için zorunlu olmadığına dair
   yukarıdaki cümle DEĞİŞMEMİŞTİR/genişletilmemiştir — bu bölüm yalnızca
   FAZ6A'nın artık karşılanmış olduğunu kaydeder, başka hiçbir izin
