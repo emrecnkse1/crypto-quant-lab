@@ -1,6 +1,6 @@
 # FUNDING_RESEARCH_SPEC
 
-Bu doküman, Faz 7 — İlk Funding/Basis araştırmasının **ilk çalıştırılabilir, leakage-safe dikey dilimini** (§1–§9) ve **ikinci dikey dilimini** — USDⓈ-M perpetual kline ingestion, mekanik market provenance'ı, gerçek veri smoke run'ı (§10–§14) — ve **üçüncü dikey dilimini** — USDⓈ-M index-price ingestion, zaman güvenli close basis, resmî basis çapraz kontrolü (§15–§16) — tanımlar ve kapatır. Faz 7'nin tamamı bu dilimlerle TAMAMLANMIŞ SAYILMAZ.
+Bu doküman, Faz 7 — İlk Funding/Basis araştırmasının **ilk çalıştırılabilir, leakage-safe dikey dilimini** (§1–§9) ve **ikinci dikey dilimini** — USDⓈ-M perpetual kline ingestion, mekanik market provenance'ı, gerçek veri smoke run'ı (§10–§14) — ve **üçüncü dikey dilimini** — USDⓈ-M index-price ingestion, zaman güvenli close basis, resmî basis çapraz kontrolü (§15–§16) — tanımlar ve kapatır; §17 araştırma operasyon katmanını ve güncel durum özetini içerir. Faz 7'nin tamamı bu dilimlerle TAMAMLANMIŞ SAYILMAZ.
 
 ## 1. Başlangıç Koşulu ve Kapsam
 
@@ -787,4 +787,127 @@ Kanıt: `tests/test_usdm_index_basis.py` (72 test, tümü PASS); `tests/test_usd
 
 ## 16. Sıradaki Somut İş
 
+[2026-09-24 itibarıyla hâlâ geçerli; §17 operasyon paketi bunu değiştirmedi.]
+
 Çok bacaklı (trade edilebilir Binance Spot bacağı + USDⓈ-M perpetual bacağı) muhasebe/execution sözleşmesinin yazılması: iki fill akışı, bacak başına maliyet, yalnız perpetual bacağında funding, hedge oranı, senkron execution/legging varsayımı, margin/liquidation sınırı ve portföy equity'si — mevcut tek bacaklı motor kontratını bozmadan. Bu yapılmadan gerçek basis/carry hipotezi sınanamaz.
+
+## 17. Araştırma Operasyon Katmanı (gece paketi, 2026-09-24)
+
+**Durum:** tamamlandı. Yeni araştırma yeteneği, strateji veya ekonomik varsayım EKLEMEZ; mevcut production API'lerini tekrar çalıştırılabilir, raporlanabilir ve denetlenebilir hâle getirir. Kullanım: `docs/RESEARCH_RUNBOOK.md`.
+
+### 17.1 Komutlar
+
+```
+python -m crypto_quant_lab.research doctor            --config C [--output O]
+python -m crypto_quant_lab.research inspect           --config C --output O
+python -m crypto_quant_lab.research basis-report      --config C --output O
+python -m crypto_quant_lab.research funding-research  --config C --output O
+python -m crypto_quant_lab.research offline-smoke     --output O
+python -m crypto_quant_lab.research public-smoke      --allow-network [--symbol BTCUSDT|ETHUSDT]... --output O
+```
+Varsayılan offline; ağ yalnız `public-smoke --allow-network` ile. Config JSON
+v1 (runbook §7): float yasak (ondalıklar string), açık UTC offset'i, ızgaraya
+hizalı aralık, `as_of >= end`, alan adını söyleyen erken hata.
+
+### 17.2 Salt okunur store erişimi
+
+Var olan bir store, production store sınıfıyla açılmadan önce read-only SQLite
+bağlantısıyla denetlenir: dosya yoksa oluşturulmaz; production store'un
+oluşturacağı tablolardan biri eksikse (eski/yabancı dosya) açılmaz — böylece
+araçlar kullanıcı DB'sine tablo ekleyemez. Tüm tablolar varken store açmak
+yalnız no-op `CREATE TABLE IF NOT EXISTS` çalıştırır (dosya baytları
+değişmez; testle doğrulandı).
+
+### 17.3 Rapor/manifest sözleşmesi (`research/report.py`)
+
+```
+schema_version   "crypto-quant-lab/research-report/v1"
+run_kind, status ("succeeded" | "failed": hata ya da başarısız kontrol varsa failed)
+deterministic    config (store yolları yalnız dosya adı), config_sha256, inputs,
+                 checks[{name, status passed|failed|skipped, detail}], results,
+                 errors, limitations, does_not_prove
+deterministic_sha256   SHA-256(canonical JSON(deterministic))
+run_metadata     created_at, git_revision, git_tracked_changes, package/python
+                 sürümü, decimal context — HASH'E GİRMEZ
+```
+Serileştirme: Decimal -> string, datetime -> UTC "+00:00", float/NaN/naive
+reddedilir, anahtarlar sıralı, kompakt, ASCII. Girdi parmak izi MANTIKSALDIR:
+store API'lerinin döndürdüğü satırlar + provenance + coverage üzerinden
+SHA-256; SQLite dosya baytları hash'lenmez (sayfa düzeni/WAL/journal içerikten
+bağımsız değişir ve açık dosya tutarlı snapshot değildir). Çıktı: hedefin
+yanında staging dizini, tamamlanınca `rename`; var olan hedef asla ezilmez;
+başarısız çalıştırma da `failed` durumlu bir paket üretir. Hata mesajlarında
+kullanıcı ev dizini `~` ile maskelenir.
+
+### 17.4 Offline fixture (`research/offline_fixture.py`)
+
+`FIXTUREUSDT`, 1h, 24 mum; üç store production ingestion yoluyla kurulur.
+Senaryolar ve elle türetilmiş beklentiler modül docstring'indedir: pozitif /
+negatif / sıfır close basis, hour 9'da index eksikliği (doldurulmaz),
+önceden sabitlenmiş eşiğin tetiklendiği pencere (2 fill, final equity
+999.805 = 1000 − 2·0.1 komisyon + 0.005 funding), eşiğin tetiklenmediği pencere
+(0 fill) ve no-trade kontrolü. Eşik, gerçek smoke'taki candidate ile aynıdır
+(short ≥ 0.0002, long ≤ −0.0001, 9 saat); sonuçlara göre değiştirilmedi.
+
+### 17.5 "Neden işlem yok?" teşhisi (`research/diagnostics.py`)
+
+Policy artık tek saf kuralı `decide_funding_carry` çağırır (davranış aynı:
+mevcut policy testleri değişmeden geçer ve kural/policy eşdeğerliği ayrıca
+test edilir). Teşhis, değerlendirilmiş bir Trial'ın karar anlarını bu kuralla
+salt okunur yeniden oynatır ve ayrı sayımlar verir: değerlendirilen karar,
+sinyal görülebilen, taze sinyal, eşiği karşılayan, hedef değişimi,
+uygulanabilir hedef değişimi, son mumda uygulanamayan karar, motorun kendi
+fill/trade sayısı. Nedenler yalnız kodda gerçekten ayrışanlardır
+(`no_settled_signal`, `stale_signal`, `neutral_band`, `short_threshold_met`,
+`long_threshold_met`, kontrol kolu için `control_always_flat`). Risk filtresi
+yoktur, uydurulmaz. Bu, Faz 8 Risk Engine'i veya kullanıcıya dönük
+"işlem açılmama açıklaması" özelliğini TAMAMLAMAZ.
+
+### 17.6 Regression denetimi
+
+`tests/test_faz7_regression_audit.py` (20 test): naive zaman reddi (yan etki
+öncesi), eşdeğer timezone anları, sınırlı index retry, başarısız ikinci
+ingestion'ın önceki coverage'ı koruması, bitişik/sırasız ingestion'ların tek
+kapsama oluşturması, aynı fiziksel DB'nin başka yol/bağlantıyla verilmesi,
+coverage birleşimi uç durumları, sNaN/−Infinity, ortam Decimal
+hassasiyet/trap'lerinin basis katmanına sızmaması, girdi mutasyonu yokluğu.
+Production bug bulunmadı. Bulgu (düzeltilmedi, kilitli sözleşme): motorun
+muhasebe/maliyet aritmetiği process-global Decimal context'ini kullanır
+(COST_MODEL_SPEC.md); CLI context'i değiştirmez ve raporda kaydeder.
+
+### 17.7 Public smoke (opt-in) sonucu — 2026-09-23T22:54Z
+
+Komut: `public-smoke --allow-network --symbol BTCUSDT --symbol ETHUSDT`.
+Pencere kuralla [2026-09-16T00:00Z, 2026-09-23T00:00Z) — §15.9 ile AYNI
+pencere; yani BTCUSDT verisi daha önce görülmüş veridir, "görülmemiş veri
+doğrulaması" değildir. Tolerans 0.0001 kod sabitidir (§15.9'dan devralındı).
+```
+BTCUSDT: 168/168 contract ve index mumu, 168 eşleşme, boşluk 0; resmî 168
+  kayıt 168/168 cebirsel tutarlı; 167 karşılaştırma, 4 tolerans aşımı —
+  §15.9 ile birebir aynı istatistikler (bağımsız CLI yolu aynı sonucu üretti)
+ETHUSDT: 168/168, 168 eşleşme, boşluk 0; premium 5, discount 163, sıfır 0;
+  close_basis min −2.45279070, max 0.51069767; resmî 168/168 tutarlı;
+  167 karşılaştırma, max |rate farkı| 0.000261348, ortalama 0.0000217834;
+  7 tolerans aşımı (09-16 11:00, 15:00, 19:00, 23:00; 09-17 15:00, 16:00, 17:00)
+Rapor durumu: failed (within_rate_tolerance kontrolleri) — hata yok.
+```
+Yorum sınırı: snapshot (resmî kayıt) ile kapanış (close basis) semantik farkı
+nedeniyle aşımlar beklenebilir (§15.9 teşhisi yalnız BTCUSDT'nin 4 noktası
+içindi; ETHUSDT aşımları bu gece ayrıca teşhis EDİLMEDİ). Kârlılık, arbitraj
+veya sinyal iddiası yoktur.
+
+### 17.8 Güncel Durum Özeti (2026-09-24; tarihsel dilim sayıları kendi bölümlerinde kalır)
+
+```
+Faz 6: FAZ6A, FAZ6B tamamlandı; FAZ6C TAMAMLANMADI (CPCV, geçerli p-değeri
+       üretimi / aile kapsamı / seçim politikası, parameter stability,
+       efektif-N, çok pencereli DSR, PBO yan istatistikleri açık);
+       FAZ6D BAŞLAMADI.
+Faz 7: funding temeli, contract-trade ingestion, index-price/close-basis
+       temeli ve araştırma operasyon katmanı tamamlandı; Faz 7 bütünü
+       TAMAMLANMADI. Motor tek bacaklı; close basis araştırma feature'ı;
+       index trade edilebilir bacak değil; gerçek basis/carry hedge'i yok.
+Sıradaki somut iş: §16 (çok bacaklı muhasebe/execution sözleşmesi) — değişmedi.
+```
+Bölüm 8, 13 ve 15.10'daki test sayıları (2320, 2367, 2439) o dilimlerin
+tarihindeki anlık görüntülerdir; güncel sayı `docs/NIGHT_CHECKPOINT.md`'dedir.

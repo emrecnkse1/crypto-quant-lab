@@ -77,6 +77,7 @@ Bu doküman, Local Crypto Quant Research + Execution Platform projesinin fazlar�
   - Üçüncü dilim (index/basis temeli): Binance USDⓈ-M index-price kline ingestion (`/fapi/v1/indexPriceKlines`, ayrı store + kendi provenance'ı), kaynakla doğrulanmış sözleşme, zaman güvenli yerel close basis (contract close − index close; oran / index close), `available_at` kapılı history, resmî `/futures/data/basis` (yalnız son 30 gün) cebirsel/zaman denetimi ve çapraz karşılaştırması; 25/25 üçüncü dilim acceptance kriteri PASS
   - Gerçek veri basis smoke'u (BTCUSDT 1h, 7 gün, önceden sabitlenmiş config): 168/168 eşleşme, resmî kayıtlar 168/168 cebirsel tutarlı; 1 bp önceden seçilmiş toleransla 167 karşılaştırmanın 4'ü aşıyor (snapshot vs. kapanış semantiği, index tarafı) — betimsel, kârlılık/arbitraj iddiası yok
   - Basis yalnız araştırma feature'ı: mevcut motor tek bacaklı olduğundan basis işlemi / hedge / PnL üretilmedi
+  - Araştırma operasyon katmanı (2026-09-24): `python -m crypto_quant_lab.research` (doctor, inspect, basis-report, funding-research, offline-smoke, opt-in public-smoke), deterministik JSON/Markdown rapor + manifest, sentetik offline fixture, salt okunur "neden işlem yok?" araştırma teşhisi, Faz 7 regression denetimi — kullanım: `docs/RESEARCH_RUNBOOK.md`; yeni strateji/ekonomik varsayım eklemez
   - Açık: çok bacaklı (spot + perpetual) muhasebe/execution sözleşmesi ve gerçek basis/carry araştırması, trade edilebilir spot bacağı, mark-price ingestion, eşik araştırması, çoklu sembol / uzun dönem çalıştırma
 - **Faz 8:** Risk Engine
 - **Faz 9:** Paper trading
@@ -91,3 +92,12 @@ Bu doküman, Local Crypto Quant Research + Execution Platform projesinin fazlar�
 - **Faz 18:** Küçük sermaye live execution
 - **Faz 19:** Monitoring/dashboard
 - **Faz 20:** Controlled self-improvement
+
+## Planlanan Kullanıcı/Risk Gereksinimleri (HENÜZ UYGULANMADI)
+
+Kaybolmamaları için burada kayıtlıdır; hangi fazda uygulanacakları kullanıcı kararıdır.
+
+- Kullanıcının 1–10 risk profili.
+- Türkiye saatiyle 00:00 günlük öneri.
+- İşlem açılmadığında nedeninin kullanıcıya açıklanması (Faz 7'deki araştırma teşhisi `research/diagnostics.py` bunun yerine geçmez).
+- Risk tercihi hiçbir zaman sert güvenlik sınırlarını (PROJECT_RULES.md) aşamaz.
