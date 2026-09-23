@@ -4114,11 +4114,11 @@ backtest_results — 790 test) DEĞİŞMEDEN yeşil; tam suite 2154/2154 PASS
 (2045 önceki + 109 yeni).
 ```
 
-### 17.5 PBO — LATER IN FAZ 6 (Önkoşul: Trial Return Matrix Foundation LOCKED VE IMPLEMENTED + TESTED, §17.5.1–17.5.12, §28.L — 22/22)
+### 17.5 PBO — CSCV Exact Contract LOCKED VE IMPLEMENTED + TESTED (§17.5.13–17.5.24, §28.M — 24/24); Önkoşul Trial Return Matrix (§17.5.1–17.5.12, §28.L — 22/22)
 
 Prerequisites: birden fazla candidate/trial (18) + birden fazla partition + deterministic performance matrix + explicit selection rule. Bölüm 18 artık tek bir candidate'in tek bir trial'ını implement eder (28.G — 25/25); çoklu-candidate/trial karşılaştırma/aggregation ve deterministic performance matrix HENÜZ MEVCUT DEĞİLDİR (§18.9, 18.13) — bu nedenle PBO ilk primitive olarak **anlamlı şekilde implement edilemez** (foundation pre-flight'in kendi bulgusuyla tutarlı).
 
-**Durum güncellemesi (FAZ6C — PBO önkoşulu: trial return matrix foundation):** PBO'nun "çoklu candidate/trial karşılaştırması" ve "deterministic performance matrix" önkoşulu, birincil kaynağın tanımladığı biçimde aşağıdaki Bölüm 17.5.1–17.5.12'de LOCKED VE IMPLEMENTED + TESTED'dır (`TrialReturnMatrix`, `build_trial_return_matrix`; §28.L — 22/22). PBO'nun KENDİSİ (CSCV bölümleme, seçim kuralı, rank/logit, PBO olasılığı) spec-lock EDİLMEMİŞTİR ve implement EDİLMEMİŞTİR.
+**Durum güncellemesi (FAZ6C — PBO önkoşulu: trial return matrix foundation):** PBO'nun "çoklu candidate/trial karşılaştırması" ve "deterministic performance matrix" önkoşulu, birincil kaynağın tanımladığı biçimde aşağıdaki Bölüm 17.5.1–17.5.12'de LOCKED VE IMPLEMENTED + TESTED'dır (`TrialReturnMatrix`, `build_trial_return_matrix`; §28.L — 22/22). PBO'nun KENDİSİ (CSCV bölümleme, seçim kuralı, rank/logit, PBO olasılığı) bu durum güncellemesi yazıldığında spec-lock/implement edilmemişti (tarihsel); artık §17.5.13–17.5.24'te LOCKED VE IMPLEMENTED + TESTED'dır (§28.M — 24/24).
 
 **17.5.1 Source-Preflight ve Bağımlılık Seçimi**
 
@@ -4373,7 +4373,7 @@ kuralı, gerçek rolling entegrasyonunun gösterdiği mum-kapanışı zaman
 damgası semantiğine göre "(start, end]" olarak düzeltildi (17.5.2).
 ```
 
-**17.5.12 PBO İçin Kalan Açık Kararlar (Kilitlenmez)**
+**17.5.12 PBO İçin Kalan Açık Kararlar (Kilitlenmez — tarihsel; artık §17.5.15–17.5.16'da karara bağlandı)**
 
 ```
 S (çift sayı) ve eşit-boyutlu blok kuralı (T'nin S'ye bölünememesi),
@@ -4382,6 +4382,250 @@ belirlenir, alt-örneklem metriği (örn. Stage-2 Sharpe blok birleşimi
 üzerinde — tanımsız stdev durumu), eşitlik (tie) durumunda seçim ve
 rank kuralı, ω̄ = 0 veya 1 olamayacağının (N+1 paydası) doğrulanması,
 C(S, S/2) hesap maliyeti sınırı.
+```
+
+**Durum güncellemesi (FAZ6C — PBO/CSCV exact contract + implementation):** PBO'nun kendisi, TrialReturnMatrix üzerinde CSCV ile, aşağıdaki Bölüm 17.5.13–17.5.24'te LOCKED VE IMPLEMENTED + TESTED'dır (`compute_probability_of_backtest_overfitting`, `PboResult`, `CscvCombination`; §28.M — 24/24). §17.5.12'deki açık kararlar §17.5.15'te karara bağlanmıştır. CSCV, CPCV DEĞİLDİR; CPCV hâlâ spec-lock edilmemiştir.
+
+**17.5.13 Kaynak Bulguları (render ile okundu; §17.5.1'e ek)**
+
+```
+Bailey, Borwein, López de Prado, Zhu — yazar PDF'i (34 s., 2015-02-27):
+  - s. 9 (§2.1): sıralama ARTAN yöndedir — örnek R^c = (0.5, 1.1, 0.7)
+    -> r^c = (1, 3, 2); IS-optimal strateji Ω*_n = {f : f_n = N}, yani
+    IS'te N. sırada olandır.
+  - s. 10, Definition 2.2 (Eq. 2.2):
+    PBO = Σ_n Prob[r̄_n < N/2 | r ∈ Ω*_n] Prob[r ∈ Ω*_n]  (KESİN "<").
+  - s. 11-12, Algorithm 2.3: çift S, eşit boyutlu ayrık alt matrisler,
+    C(S, S/2) kombinasyon (Eq. 2.3), J = c'deki alt matrislerin
+    "original order"da birleşimi, J̄ = tümleyen, n* = IS'te en iyi,
+    ω̄c = r̄_{n*}/(N+1), λc = ln(ω̄c/(1 - ω̄c)), f(λ) (Eq. 2.4).
+  - s. 13 (§3.1): "The PBO ... may now be estimated using the CSCV method
+    with φ = ∫_{-∞}^{0} f(λ)dλ" — 0 DAHİL; s. 14: backtest yardımcıysa
+    "That is the case when λc > 0".
+  - s. 13 (Figure 1): her training kombinasyonu testing olarak da
+    kullanılır (simetri).
+Kaynak içi tutarsızlıklar (kaydedilir, sessizce seçilmez):
+  (a) Definition 2.2'nin kesin r̄ < N/2 koşulu ile §3.1'in λ <= 0
+      (r̄ <= (N+1)/2) kestiricisi medyanda ayrışır.
+  (b) s. 11: "if S = 16, we will form 12,780 combinations" —
+      C(16, 8) = 12,870'tir (yazım hatası).
+  (c) s. 12 adım (c) "the nth column of J (the testing set)" — J
+      training set'tir (§17.5.1'de kaydedildi).
+Kaynağın ELE ALMADIKLARI: IS kazananında eşitlik, OOS sıralamasında
+eşitlik, T'nin S'ye bölünememesi, alt-örneklemde tanımsız metrik,
+hesap maliyeti sınırı. Bunlar §17.5.15'te PROJE KONVANSİYONU olarak
+kilitlenir.
+```
+
+**17.5.14 Exact Public API (LOCKED)**
+
+```python
+# Modül: src/crypto_quant_lab/validation/pbo.py (YENİ modül)
+
+
+@dataclass(frozen=True, slots=True)
+class CscvCombination:
+    in_sample_blocks: tuple[int, ...]
+    selected_candidate_ids: tuple[str, ...]
+    out_of_sample_ranks: tuple[Decimal, ...]
+    logits: tuple[Decimal, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PboResult:
+    block_count: int
+    combinations: tuple[CscvCombination, ...]
+    probability_of_backtest_overfitting: Decimal
+
+
+def compute_probability_of_backtest_overfitting(
+    matrix: TrialReturnMatrix,
+    *,
+    block_count: int,
+    risk_free_per_period: Decimal = Decimal(0),
+) -> PboResult: ...
+```
+
+```
+- Public semboller TAM OLARAK bu üçü; import'lar private alias'larla;
+  package-root export YOK; hiçbir mevcut modül değişmez.
+- Sonuç denetlenebilirdir: her kombinasyon için IS blokları, IS
+  kazanan(lar)ı, OOS sırası ve logit; PBO bunlardan yeniden
+  hesaplanabilir. IS/OOS Sharpe değerleri, satır matrisi veya f(λ)
+  histogramı SAKLANMAZ (gereksiz büyüme).
+- CscvCombination: dört alan tuple; selected boş olamaz; selected/ranks/
+  logits eşit uzunlukta. PboResult: block_count int (bool değil),
+  combinations CscvCombination tuple'ı, PBO finite ve [0, 1] içinde.
+```
+
+**17.5.15 Konvansiyonlar — Kaynak ve Proje Ayrımı (LOCKED)**
+
+```
+KAYNAKTAN:
+  - S çift; satırlar S eşit, ayrık alt matrise bölünür; C(S, S/2)
+    kombinasyonun TAMAMI kullanılır; tümleyen = OOS; alt matrisler
+    orijinal sırada birleştirilir.
+  - Artan sıralama; IS-optimal = en yüksek IS performansı;
+    ω̄ = r̄/(N+1); λ = ln(ω̄/(1 - ω̄)).
+  - PBO kestiricisi φ = ∫_{-∞}^{0} f(λ)dλ, yani λ <= 0 (medyan DAHİL)
+    aşırı uyum sayılır — §3.1'in CSCV kestiricisi seçildi; Definition
+    2.2'nin kesin "<" okuması SEÇİLMEDİ (tutarsızlık (a)). Medyan
+    durumu sonuçta görünür kalır (rank = (N+1)/2, logit = 0).
+PROJE KONVANSİYONLARI (kaynak belirtmez):
+  1. Bloklar ARDIŞIK satır bloklarıdır: blok b = satırlar
+     [b*T/S, (b+1)*T/S). T % S != 0 -> ValueError; satır silme, kırpma,
+     padding YOK. S >= 2, çift; N >= 2 (N = 1'de sıralama anlamsız,
+     her kombinasyon medyana düşer); T/2 >= 2 (sample stdev için).
+  2. Kombinasyonlar itertools.combinations(range(S), S/2) sırasıyla
+     (leksikografik) ve TEMBEL üretilir; yalnızca kombinasyon başı
+     kayıt saklanır.
+  3. Alt-örneklem metriği: Stage-2'nin per-observation Sharpe'ı
+     (Bölüm 15.16) — arithmetic mean, sample stdev (n-1), (mean - rf)
+     / stdev, Bölüm 15.17 context shape'i (prec=28). compute_stage2_
+     metrics bir BacktestResult ister ve getirileri doğrudan KABUL
+     ETMEZ; sahte BacktestResult üretilmez ve private helper import
+     EDİLMEZ — aynı formül ve işlem sırası yerel olarak tanımlanır ve
+     bir BacktestResult'ın kendi getirileri üzerinde compute_stage2_
+     metrics ile BİREBİR (bit-bit) eşitliği test edilir. Sharpe satır
+     sırasından bağımsızdır; "original order" korunur ama sonucu
+     değiştirmez.
+  4. Sıfır stdev (IS veya OOS, herhangi bir aday): Sharpe TANIMSIZ ->
+     ValueError (aday ve kombinasyonu tanımlar); 0/sonsuz ile
+     DEĞİŞTİRİLMEZ; kombinasyon paydadan ÇIKARILMAZ (tüm hesap fail
+     eder).
+  5. IS kazananında eşitlik: en yüksek IS Sharpe'ına (28 basamaklı
+     Decimal değer eşitliği) sahip TÜM adaylar seçilir; kombinasyonun
+     aşırı-uyum ağırlığı = (λ <= 0 olan seçilmişlerin sayısı) / (seçilmiş
+     sayısı). Gerekçe: Definition 2.2'nin Σ_n ... Prob[r ∈ Ω*_n] yapısında
+     eşitliği düzgün (uniform) rastgele kıran bir seçimin beklenen
+     değerine eşittir; sütun sırasına BAĞIMSIZDIR. Seçilmişler sonuçta
+     matris sütun sırasıyla raporlanır.
+  6. OOS sıralamasında eşitlik: ortalama (orta) sıra — r̄ = (2*alttaki +
+     eşit + 1)/2; r̄ in [1, N], ω̄ in (0, 1) kalır; sütun sırasından
+     bağımsızdır.
+  7. λ <= 0 kararı TAM rasyonel karşılaştırmayla verilir: 2 r̄ <= N + 1
+     (ln yuvarlamasına dayanmaz). Raporlanan logit = ln(r̄/(N + 1 - r̄)),
+     prec=28 private context'te.
+  8. PBO = Σ_c ağırlık_c / C(S, S/2), fractions.Fraction ile TAM
+     hesaplanır, sonra prec=28 context'te bir kez Decimal'e bölünür.
+  9. risk_free_per_period (per-observation, Decimal, finite, varsayılan
+     0) tüm adayların IS ve OOS Sharpe'ına aynı şekilde uygulanır.
+```
+
+**17.5.16 Maliyet Sınırı (LOCKED)**
+
+```
+cell_evaluations = C(S, S/2) * T * N  (her kombinasyon her adayın tüm
+T satırını IS + OOS olarak bir kez dolaşır). cell_evaluations >
+20,000,000 -> ValueError (değerler mesajda); rastgele örneklemeye veya
+kısmi hesaba GEÇİLMEZ. Sınır, maliyetin C ile birlikte T ve N'e de
+bağlı olduğunu yansıtır. Ölçülen hız (bu makine): ~0.4-0.8 µs/hücre
+-> sınırda en fazla ~16 s. Örnek: S=16 (C=12,870), N=10 için T <= 155.
+```
+
+**17.5.17 Matris Girdisinin Sınırları (LOCKED)**
+
+```
+- Girdi yalnızca TrialReturnMatrix'tir; yapısal geçerliliği (eşzamanlı
+  satırlar, kronolojik/ayrık pencereler, (start, end] sahipliği)
+  §17.5.4-17.5.5'te zaten kanıtlanmıştır — burada yeniden
+  doğrulanmaz.
+- Çok pencereli matrisler KABUL edilir ve bloklar pencere sınırlarını
+  AŞABİLİR. Sharpe satır sırasından bağımsız olduğundan pencere
+  boşlukları ve sınırları metriği değiştirmez; her pencerenin ilk
+  getirisi o pencerenin taze sermayesine göredir (Bölüm 11, 15.13).
+  DOĞRULANMAMIŞ VARSAYIM: pencereler arası getirilerin aynı stratejinin
+  değiştirilebilir (exchangeable) gözlemleri olduğu; matris modeli
+  rejim/koşul bilgisi TAŞIMAZ ve bu varsayım mekanik olarak
+  doğrulanamaz. Pencere hizalı blok zorunluluğu getirilmedi (kaynak
+  gerektirmez); çağıran isterse pencere başına eşit gözlem sayısı ve
+  S = pencere sayısı seçerek blokları pencerelerle hizalayabilir.
+- Mevcut çok pencereli matris desteği DEĞİŞMEZ; PBO'ya özgü tüm
+  koşullar yalnızca bu fonksiyonun girişinde uygulanır.
+```
+
+**17.5.18 Validation / Fail-Fast Sırası ve Exact Mesajlar (LOCKED)**
+
+```
+1. matrix TrialReturnMatrix değil -> TypeError("matrix must be a TrialReturnMatrix, got {type}")
+2. block_count int değil veya bool -> TypeError("block_count must be an int, got {type}")
+3. block_count < 2 veya tek -> ValueError("block_count must be an even integer >= 2, got {S}")
+4. risk_free_per_period Decimal değil -> TypeError("risk_free_per_period must be a Decimal, got {type}");
+   finite değil -> ValueError("risk_free_per_period must be finite, got {v}")
+5. N < 2 -> ValueError("at least two candidates are required to rank out-of-sample performance, got {N}")
+6. T % S != 0 -> ValueError("row count {T} is not divisible by block_count {S}; rows are never trimmed or padded")
+7. T // 2 < 2 -> ValueError("each half-sample must contain at least two rows to compute a sample standard deviation, got {T//2}")
+8. maliyet -> ValueError("CSCV cost of {cells} cell evaluations (C({S}, {S/2})={C} x T={T} x N={N}) exceeds the limit of 20000000; no sampling is performed")
+9. Kombinasyonlar leksikografik; her birinde önce tüm adayların IS
+   Sharpe'ı, sonra OOS Sharpe'ı (sütun sırasıyla); sıfır stdev ->
+   ValueError("{in-sample|out-of-sample} Sharpe ratio is undefined for candidate {id!r} in combination with in-sample blocks {blocks}: zero standard deviation");
+   sonlu olmayan ara değer -> ValueError.
+```
+
+**17.5.19 Purity, Determinism, Context (LOCKED)**
+
+```
+Girdi mutasyonu YOK; aynı girdi -> eşit (ve eşit-hash) sonuç; tüm
+Decimal aritmetiği (Sharpe, sıra, λ karşılaştırması, logit, PBO) taze
+private prec=28 context'te; ambient context sonucu değiştirmez;
+wall-clock, randomness, float, I/O, persistence YOK. Import'lar:
+dataclasses, decimal, fractions, itertools, math (stdlib) ve
+validation.return_matrix.TrialReturnMatrix.
+```
+
+**17.5.20 Kapsam Dışı ve İddia Edilmeyenler**
+
+```
+CPCV, fold modeli, label/outcome-horizon purging, performance
+degradation / probability of loss / stochastic dominance (§3.2-3.4),
+f(λ) histogramı/grafik, PBO eşiği (örn. kaynaktaki 0.05) veya
+"geçti/kaldı" etiketi, efektif-N, multiple-testing, parameter
+stability, canlı strateji seçimi, emir, risk profili kararı. PBO bir
+araştırma değerlendirmesidir; bağımsızlık, tam araştırma geçmişi,
+aynı maliyet modeli veya holdout koruması kanıtı DEĞİLDİR.
+```
+
+**17.5.21 Dosya Kapsamı**
+
+```
+Yeni: src/crypto_quant_lab/validation/pbo.py, tests/test_validation_pbo.py.
+Doküman: VALIDATION_SPEC.md. Değişmeyen: tüm mevcut production/test
+dosyaları, __init__.py, ROADMAP.md, pyproject.toml, AGENTS.md, CLAUDE.md.
+```
+
+**17.5.22 Doğrulama Yöntemi**
+
+```
+Beklenen değerler production algoritmasından ÜRETİLMEZ: küçük, elle
+izlenebilen matrislerde (her iki-satırlık yarıda eşit yayılım ->
+Sharpe sırası satır toplamı sırasıyla aynı) PBO = 1 (anti-kalıcı),
+PBO = 0 (kalıcı), medyan (λ = 0) ve IS-eşitliği (PBO = 1/4) elle
+türetildi; logit sabitleri (ln 2, ln 3, ln(5/3)) mpmath ile bağımsız
+doğrulandı. Sharpe eşdeğerliği mevcut compute_stage2_metrics'e karşı
+bit-bit test edilir. Entegrasyon: gerçek SQLite + rolling -> TrialGroup
+-> TrialReturnMatrix -> PBO.
+```
+
+**17.5.23 Durum ve Implementation Evidence**
+
+```
+LOCKED VE IMPLEMENTED + TESTED (aynı combined delivery). §28.M — 24/24.
+Production: src/crypto_quant_lab/validation/pbo.py (YENİ).
+Test: tests/test_validation_pbo.py (YENİ) — 35 test, tümü PASS.
+İlgili regression suite'ler (return_matrix, trial_group, candidate,
+metrics, deflated_sharpe, rolling, windows, purging,
+annualized_metrics, backtest_models, backtest_results — 954 test)
+DEĞİŞMEDEN yeşil; tam suite 2244/2244 PASS (2209 önceki + 35 yeni).
+```
+
+**17.5.24 Kalan Sınırlamalar**
+
+```
+Pencereler arası exchangeability varsayımı doğrulanamaz; eşitlik
+konvansiyonları kaynağa değil projeye aittir; Definition 2.2'nin
+kesin okumasıyla medyanda fark olabilir (sonuçta görünür); maliyet
+sınırı büyük S/T/N kombinasyonlarını reddeder (örnekleme yok);
+§3.2-3.4 istatistikleri ve CPCV yapılmadı.
 ```
 
 ### 17.6 Multiple-Testing Corrections — LATER IN FAZ 6
@@ -5865,10 +6109,17 @@ FAZ 6C — Advanced Overfitting Controls
         (55 test, tümü PASS); bkz. Bölüm 23, 28.L — 22/22. PBO'nun
         kendisi DEĞİLDİR.
 
+      - PBO / CSCV (Bölüm 17.5.13–17.5.24) — LOCKED VE İMPLEMENT
+        EDİLMİŞ + TEST EDİLMİŞTİR: `compute_probability_of_backtest_
+        overfitting`, `PboResult`, `CscvCombination`
+        (`src/crypto_quant_lab/validation/pbo.py`, YENİ); kendi
+        regression suite'i `tests/test_validation_pbo.py` (35 test,
+        tümü PASS); bkz. Bölüm 23, 28.M — 24/24. CSCV, CPCV DEĞİLDİR.
+
     Kalan zorunlu bileşenler (HENÜZ PENDING):
-      - CPCV (17.2), PBO (17.5), multiple-testing corrections (17.6),
-        parameter stability (17.7) — hiçbiri henüz spec-lock
-        edilmemiştir; bu doküman onları henüz TASARLAMAZ.
+      - CPCV (17.2), multiple-testing corrections (17.6), parameter
+        stability (17.7) — hiçbiri henüz spec-lock edilmemiştir; bu
+        doküman onları henüz TASARLAMAZ.
 
     Durum: FAZ6C — NOT COMPLETE. Purging/embargo foundation'ının
     implement/test edilmiş olması, CPCV/Deflated Sharpe/PBO/multiple-
@@ -5909,7 +6160,7 @@ FAZ 6D — Faz 6 Final Acceptance
 |---|---|---|---|
 | FAZ6A | COMPLETE | temporal window/IS-OOS primitives (§28.A — 22/22), zero-context rolling OOS evaluation (§28.C — 12/12), Stage-1 metrics (§28.D — 18/18) | locked FAZ6A scope içinde yok |
 | FAZ6B | COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 (§8.3.16, §28.F — 22/22, LOCKED VE IMPLEMENTED + TESTED), candidate/trial foundation (§18, §28.G — 25/25, LOCKED VE IMPLEMENTED + TESTED), Annualized Metrics (§15.19–15.33, §28.H — 30/30, LOCKED VE IMPLEMENTED + TESTED) | locked FAZ6B scope içinde yok |
-| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + kaydedilmiş Trial sayısı exact kontratı + implementasyonu (§20.1–20.14, §28.J — 19/19, LOCKED VE IMPLEMENTED + TESTED); Deflated Sharpe exact kontratı + implementasyonu (§17.4.1–17.4.17, §28.K — 27/27, LOCKED VE IMPLEMENTED + TESTED); PBO önkoşulu trial return matrix (§17.5.1–17.5.12, §28.L — 22/22, LOCKED VE IMPLEMENTED + TESTED) | CPCV, PBO, multiple-testing corrections, parameter stability |
+| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + kaydedilmiş Trial sayısı exact kontratı + implementasyonu (§20.1–20.14, §28.J — 19/19, LOCKED VE IMPLEMENTED + TESTED); Deflated Sharpe exact kontratı + implementasyonu (§17.4.1–17.4.17, §28.K — 27/27, LOCKED VE IMPLEMENTED + TESTED); PBO önkoşulu trial return matrix (§17.5.1–17.5.12, §28.L — 22/22, LOCKED VE IMPLEMENTED + TESTED); PBO/CSCV (§17.5.13–17.5.24, §28.M — 24/24, LOCKED VE IMPLEMENTED + TESTED) | CPCV, multiple-testing corrections, parameter stability |
 | FAZ6D | NOT STARTED | yok | Faz 6 final acceptance audit'i |
 
 Bu tablo, §28.A/B/C/D'nin bağımsız acceptance sayımlarını **birleşik bir yüzdeye veya tek bir sayıya dönüştürmez** — her grup kendi bağımsız kanıtını korur; bu tablo yalnızca hangi grubun hangi alt-fazın kanıtı olduğunu özetler.
@@ -6629,17 +6880,41 @@ CONTRACT + IMPLEMENTATION + REGRESSION SUITE + CLOSURE — TAMAMLANDI
   --check` temiz. §28.L 22/22. PBO, CSCV, CPCV, efektif-N ve
   multiple-testing BAŞLATILMADI. FAZ6C ve Faz 6 NOT COMPLETE kalır.
 
+FAZ6C — PBO / CSCV SOURCE VERIFICATION + CONTRACT + IMPLEMENTATION +
+REGRESSION SUITE + CLOSURE — TAMAMLANDI (tek combined delivery):
+  Birincil kaynağın s. 9-14'ü render edilerek okundu: artan sıralama
+  (s. 9 örneği), Definition 2.2 (kesin r̄ < N/2), Algorithm 2.3 (CSCV)
+  ve §3.1'in φ = ∫_{-∞}^{0} f(λ)dλ kestiricisi. Kaynak içi
+  tutarsızlıklar kaydedildi (medyanda Definition 2.2 ile §3.1 farkı;
+  "12,780" yerine C(16,8) = 12,870). §17.5.12'deki açık kararlar
+  §17.5.15-17.5.16'da kilitlendi: ardışık eşit bloklar, T % S = 0
+  (kırpma/padding yok), N >= 2, T/2 >= 2, leksikografik ve tembel
+  kombinasyonlar, Stage-2 ile bit-bit aynı yerel Sharpe (sahte
+  BacktestResult veya private import yok), sıfır stdev -> hata, IS
+  eşitliğinde ağırlık bölüşümü (uniform tie-break beklentisi), OOS
+  eşitliğinde orta sıra, λ <= 0 (medyan dahil) tam rasyonel kararla,
+  PBO tam kesirle, maliyet sınırı C(S,S/2)*T*N <= 20,000,000 (örnekleme
+  yok). Implementasyon: `src/crypto_quant_lab/validation/pbo.py` (YENİ).
+  Test: `tests/test_validation_pbo.py` (YENİ, 35 test, tümü PASS; elle
+  izlenebilir PBO = 1 / 0 / medyan / 1/4 örnekleri, logit sabitleri
+  mpmath ile doğrulandı, gerçek rolling entegrasyonu). İlgili regression
+  suite'ler (954 test) DEĞİŞMEDEN yeşil; tam suite 2244/2244 PASS
+  (2209 + 35). Ruff/format/`git diff --check` temiz. §28.M 24/24.
+  CPCV, performance degradation/probability of loss/stochastic
+  dominance, multiple-testing ve parameter stability BAŞLATILMADI.
+  FAZ6C ve Faz 6 NOT COMPLETE kalır.
+
 Sonraki (henüz başlanmadı):
-  PBO'nun kendi source-preflight + exact kontrat kilidi (§17.5.12'deki
-  açık kararlar: S ve eşit-blok kuralı, blokların pencere mi eşit satır
-  mı olduğu, alt-örneklem metriği ve tanımsız stdev davranışı, tie/rank
-  kuralı, C(S, S/2) maliyet sınırı) — TrialReturnMatrix üzerine. CPCV
-  (fold modeli + label/outcome-horizon purging engeli), multiple-testing
-  corrections (yöntem kararı) ve parameter stability (parametre uzayı
-  engeli) hâlâ spec-lock edilmemiştir. Candidate selection/ranking,
-  optimizer ve final holdout enforcement BAŞLATILMAZ. Ardından FAZ6D —
-  Faz 6 Final Acceptance audit'i. Faz 6'nın tamamlanması için
-  FAZ6C/FAZ6D'nin ikisi de gereklidir (bkz. Bölüm 22).
+  FAZ6C'nin kalanları: CPCV (17.2 — fold modeli ve label/outcome-
+  horizon purging önkoşulları hâlâ YOK), multiple-testing corrections
+  (17.6 — test istatistiği ve düzeltme ailesi yöntem kararı gerekir),
+  parameter stability (17.7 — Candidate.parameters için parametre
+  uzayı/komşuluk tanımı YOK). Deferred: efektif-N estimator'ı (DSR Ek
+  A.3; TrialReturnMatrix artık hizalı getiri girdisini sağlar), çok
+  pencereli DSR pooling, PBO'nun §3.2-3.4 yan istatistikleri. Candidate
+  selection/ranking, optimizer ve final holdout enforcement
+  BAŞLATILMAZ. Ardından FAZ6D — Faz 6 Final Acceptance audit'i. Faz 6'nın
+  tamamlanması için FAZ6C/FAZ6D'nin ikisi de gereklidir (bkz. Bölüm 22).
 ```
 
 **MS3 scope (TAMAMLANDI — pre-flight'in kendisi, Bölüm 8.3'te kilitlendi):**
@@ -6722,9 +6997,9 @@ Aynı girdiler → aynı pencere sonuçları — mevcut `run_backtest_from_store
 - external LLM decision-making
 ```
 
-## 28. Acceptance Criteria — On İki Ayrı Grup (LOCKED)
+## 28. Acceptance Criteria — On Üç Ayrı Grup (LOCKED)
 
-Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Annualized Metrics'in (Sharpe/Sortino/CAGR/Calmar) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.H'de kaydedilir (bkz. Bölüm 15.19–15.33, 23 — 30/30). Window-level purging/embargo'nun (Bölüm 17.1.1–17.1.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.I'de kaydedilir (bkz. Bölüm 17.1, 23 — 19/19). Trial-group / recorded-trial-count foundation'ının (Bölüm 20.1–20.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.J'de kaydedilir (bkz. Bölüm 20, 23 — 19/19). Deflated Sharpe'ın (Bölüm 17.4.1–17.4.17) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.K'de kaydedilir (bkz. Bölüm 17.4, 23 — 27/27). Trial return matrix foundation'ının (Bölüm 17.5.1–17.5.12) implementasyon/test acceptance checklist'i de, implementation/test exercised olan ayrı bir liste olarak 28.L'de kaydedilir (bkz. Bölüm 17.5, 23 — 22/22). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G/28.H/28.I/28.J/28.K/28.L altındaki sayılar). §28.A/B/C/D/E/F/G/H/I/J/K/L'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
+Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Annualized Metrics'in (Sharpe/Sortino/CAGR/Calmar) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.H'de kaydedilir (bkz. Bölüm 15.19–15.33, 23 — 30/30). Window-level purging/embargo'nun (Bölüm 17.1.1–17.1.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.I'de kaydedilir (bkz. Bölüm 17.1, 23 — 19/19). Trial-group / recorded-trial-count foundation'ının (Bölüm 20.1–20.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.J'de kaydedilir (bkz. Bölüm 20, 23 — 19/19). Deflated Sharpe'ın (Bölüm 17.4.1–17.4.17) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.K'de kaydedilir (bkz. Bölüm 17.4, 23 — 27/27). Trial return matrix foundation'ının (Bölüm 17.5.1–17.5.12) implementasyon/test acceptance checklist'i de, implementation/test exercised olan ayrı bir liste olarak 28.L'de kaydedilir (bkz. Bölüm 17.5, 23 — 22/22). PBO/CSCV'nin (Bölüm 17.5.13–17.5.24) implementasyon/test acceptance checklist'i de, implementation/test exercised olan ayrı bir liste olarak 28.M'de kaydedilir (bkz. Bölüm 17.5, 23 — 24/24). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G/28.H/28.I/28.J/28.K/28.L/28.M altındaki sayılar). §28.A/B/C/D/E/F/G/H/I/J/K/L/M'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
 
 ### 28.A — LOCKED FOUNDATION ACCEPTANCE (Runner-Bağımsız)
 
@@ -7076,6 +7351,37 @@ Bu liste, Bölüm 17.5.1–17.5.12'de LOCKED olan trial return matrix foundation
 
 **Trial return matrix acceptance count: 22 / 22 implementation/test exercised.** Bu, aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: PBO; CSCV bölümleme/kombinasyonlar; seçim kuralı; rank/logit; CPCV; fold modeli; label/outcome-horizon purging; efektif-N/korelasyon tahmini; çok pencereli DSR pooling; aynı maliyet modelinin, sızıntısızlığın, bağımsızlığın veya holdout korumasının kanıtı; FAZ6C'nin veya Faz 6'nın tamamlanması.
 
+### 28.M — PBO / CSCV ACCEPTANCE (24/24 IMPLEMENTATION/TEST EXERCISED)
+
+Bu liste, Bölüm 17.5.13–17.5.24'te LOCKED olan PBO/CSCV kontratının `src/crypto_quant_lab/validation/pbo.py` tarafından karşılandığını kaydeder. Kontrat ve implementasyon AYNI combined delivery'de yapıldı; **24 kriterin hepsi implementation/test exercised'dır** — `tests/test_validation_pbo.py`'de 35 test (tümü PASS); ilgili regression suite'ler (954 test) DEĞİŞMEDEN yeşil; tam suite 2244/2244 PASS (2209 önceki + 35 yeni). Test sayısı (35) ile kriter sayısı (24) ayrı sayımlardır.
+
+1. Public semboller tam olarak `CscvCombination`, `PboResult`, `compute_probability_of_backtest_overfitting`; imza (matrix pozisyonel, block_count keyword-only, risk_free_per_period=Decimal(0)), alan sıraları, frozen/slotted (§17.5.14). **PASS** — `test_public_symbols_are_exactly_the_locked_api`, `test_signature_and_result_shapes_are_locked`.
+2. Package-root export YOK; import yönü yalnızca stdlib + `return_matrix`; hiçbir mevcut modül pbo'yu import etmez; mevcut dosyalar değişmez (§17.5.14, 17.5.19, 17.5.21). **PASS** — `test_not_exported_at_package_root`, `test_import_direction_and_forbidden_scope`, `test_no_existing_module_imports_pbo` (6 modül); static `git diff --stat`: yalnızca iki yeni dosya + `VALIDATION_SPEC.md`.
+3. Adım 1-4 (matrix tipi, block_count tipi/çift >= 2, rf tipi/sonluluk) exact mesajlarla (§17.5.18). **PASS** — `test_invalid_inputs_have_exact_messages` (8 durum).
+4. N < 2 exact mesajla reddedilir (§17.5.15.1, 17.5.18 adım 5). **PASS** — `test_single_candidate_is_rejected`.
+5. T % S != 0 reddedilir; satır kırpma/padding yok (§17.5.15.1, adım 6). **PASS** — `test_rows_are_never_trimmed_or_padded`.
+6. T/2 < 2 reddedilir (§17.5.15.1, adım 7). **PASS** — `test_half_sample_needs_two_rows`.
+7. Maliyet C(S,S/2)*T*N > 20,000,000 örnekleme yapılmadan reddedilir; sınır kapsayıcıdır ve T ile N'i içerir (§17.5.16, adım 8). **PASS** — `test_cost_limit_rejects_without_sampling` (C(24,12) x 24 x 2; sabit sütunlar değerlendirilmeden), `test_cost_limit_boundary_counts_rows_and_candidates` (16 geçer, 15 reddeder).
+8. Validation sırası 1 > 2 > 3 > 4 > 5 > 6 ve maliyet > tanımsız Sharpe eşzamanlı ihlallerle kanıtlanır (§17.5.18). **PASS** — `test_validation_order`, `test_cost_limit_rejects_without_sampling`.
+9. C(S, S/2) kombinasyonun tamamı leksikografik sırada üretilir; her kombinasyonun tümleyeni de mevcuttur (§17.5.15). **PASS** — `test_all_combinations_in_lexicographic_order_with_complements`, `test_single_row_blocks_with_s_equal_t` (6 kombinasyon).
+10. Bloklar orijinal sırada ardışık satır bloklarıdır (§17.5.15.1). **PASS** — `test_blocks_are_contiguous_in_original_row_order` (ardışık bölme PBO=1, araya serpiştirilmiş bölme farklı).
+11. Alt-örneklem Sharpe'ı Stage-2 ile bit-bit aynıdır (rf dahil) (§17.5.15.3). **PASS** — `test_subsample_sharpe_equals_stage2_sharpe_exactly` (rf ∈ {0, 0.0003}; mevcut `compute_stage2_metrics` referans).
+12. Sıfır stdev (IS ve OOS) Sharpe'ı tanımsız kılar; 0/sonsuz ile değiştirilmez, exact ValueError (§17.5.15.4). **PASS** — `test_zero_in_sample_stdev_is_an_error_not_zero_or_infinity`, `test_zero_out_of_sample_stdev_is_an_error`, `test_subsample_sharpe_returns_none_for_zero_stdev`.
+13. IS kazananı en yüksek IS Sharpe'ıdır; eşitlikte tüm eşit adaylar sütun sırasıyla seçilir (§17.5.15.5). **PASS** — `test_anti_persistent_selection_has_pbo_one`, `test_in_sample_tie_splits_the_combination_weight_across_tied_winners`.
+14. OOS sırası artan ortalama sıradır (eşitlikte orta sıra) (§17.5.15.6). **PASS** — `test_in_sample_tie_splits_the_combination_weight_across_tied_winners` (2.5), `test_persistent_selection_has_pbo_zero`, `test_anti_persistent_selection_has_pbo_one`.
+15. λ <= 0 (tam medyan dahil) aşırı uyum sayılır ve karar tam rasyonel karşılaştırmayla verilir; medyanda logit tam 0'dır (§17.5.15, 17.5.15.7). **PASS** — `test_exact_oos_median_counts_as_overfit` (Definition 2.2'nin kesin okuması 0.5 verirdi; seçilen kestirici 1).
+16. Logit = ln(r̄/(N+1-r̄)), bağımsız sabitlerle doğrulanır (§17.5.15.7). **PASS** — ln 2, -ln 2, -ln 3, ln(5/3) karşılaştırmaları (mpmath ile doğrulanmış sabitler, tolerans 1e-26).
+17. PBO = Σ ağırlık / C(S,S/2) tam kesirle; bilinen sonuçlar 1, 0, 1 (medyan), 1/4 (eşitlik) (§17.5.15.8). **PASS** — `test_anti_persistent_selection_has_pbo_one`, `test_persistent_selection_has_pbo_zero`, `test_exact_oos_median_counts_as_overfit`, `test_in_sample_tie_splits_the_combination_weight_across_tied_winners`.
+18. Sütun sırası PBO'yu ve eşitlik ağırlığını değiştirmez (§17.5.15.5-6). **PASS** — `test_column_order_does_not_change_pbo_or_tie_handling`, entegrasyondaki ters sıralı grup.
+19. risk_free_per_period tüm adaylara uygulanır ve IS kazananını değiştirebilir (§17.5.15.9). **PASS** — `test_risk_free_rate_can_change_the_in_sample_winner`.
+20. Sonuç modelleri kendi alanlarını doğrular (§17.5.14). **PASS** — `test_result_model_validates_its_own_fields`.
+21. Determinizm ve girdi değişmezliği (§17.5.19). **PASS** — `test_determinism_and_input_immutability`, entegrasyonda tekrarlı çağrı eşitliği.
+22. Ambient Decimal context sonucu değiştirmez (§17.5.19). **PASS** — `test_ambient_decimal_context_does_not_change_result` (prec=2, ROUND_DOWN, Inexact/Rounded/DivisionByZero trap'leri).
+23. Kombinasyonlar tembel üretilir; satır matrisi veya Sharpe tabloları sonuçta saklanmaz (§17.5.15.2, 17.5.14). **PASS** — Kod incelemesi: `for in_sample_blocks in _combinations(...)` (liste yok); `PboResult`/`CscvCombination` alanları yalnızca kombinasyon başı kayıt taşır (`test_signature_and_result_shapes_are_locked`).
+24. Gerçek SQLite + `run_rolling_backtest_from_store` (iki boşluklu pencere, LONG/SHORT/alternating) -> TrialGroup -> TrialReturnMatrix (T=12) -> PBO (S=4, 6 kombinasyon) çalışır; aday sırası sonucu değiştirmez (§17.5.17, 17.5.22). **PASS** — `test_real_rolling_trial_group_matrix_pbo_integration`.
+
+**PBO / CSCV acceptance count: 24 / 24 implementation/test exercised.** Bu, aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: CPCV; fold modeli; label/outcome-horizon purging; performance degradation / probability of loss / stochastic dominance; PBO eşiği veya geçti/kaldı kararı; canlı strateji seçimi, emir veya risk kararı; bağımsızlık, tam araştırma geçmişi, aynı maliyet modeli veya holdout koruması kanıtı; multiple-testing; parameter stability; FAZ6C'nin veya Faz 6'nın tamamlanması.
+
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
 ROADMAP.md'deki bir sonraki faz **Faz 7 — İlk Funding/Basis araştırması**dır. Faz 7'nin güvenilir olabilmesi için, en azından Bölüm 22'deki FAZ6A (temporal split + rolling fixed-policy OOS evaluation + basic return/drawdown metrikleri) tamamlanmış olmalıdır — bu, Faz 7'nin IS'te seçilen bir funding/basis sinyalini gerçekten görülmemiş bir OOS penceresinde kontrol edebilmesi için minimum güven sınırıdır. Faz 6'nın daha ileri maddeleri (CPCV/PBO/DSR), Faz 7'nin **başlaması** için zorunlu değildir, ama FAZ6A'nın kendisi zorunludur. Bu doküman Faz 7'nin strateji tasarımını **yapmaz.**
@@ -7098,7 +7404,8 @@ ROADMAP.md'deki bir sonraki faz **Faz 7 — İlk Funding/Basis araştırması**d
   foundation'ı LOCKED VE IMPLEMENTED + TESTED'dır (§28.J — 19/19);
   Deflated Sharpe exact kontratı LOCKED VE IMPLEMENTED + TESTED (§28.K —
   27/27); PBO önkoşulu trial return matrix LOCKED VE IMPLEMENTED +
-  TESTED (§28.L — 22/22); CPCV/PBO/multiple-testing/parameter-stability HÂLÂ
+  TESTED (§28.L — 22/22); PBO/CSCV LOCKED VE IMPLEMENTED + TESTED
+  (§28.M — 24/24); CPCV/multiple-testing/parameter-stability HÂLÂ
   spec-lock edilmemiştir) tamamlamaya devam EDEBİLİR (bu doküman bir
   sıralama zorunluluğu icat etmez).
 - CPCV/PBO/DSR'nin Faz 7'nin başlaması için zorunlu olmadığına dair
