@@ -25,6 +25,7 @@ no best-candidate selection, no orders, no risk decisions.
 
 from bisect import bisect_right as _bisect_right
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -43,6 +44,13 @@ from crypto_quant_lab.validation.windows import TemporalWindow
 
 FUNDING_CARRY_STRATEGY = "funding_carry_v1"
 NO_TRADE_CONTROL_STRATEGY = "no_trade_control"
+
+# Decision reasons of `decide_funding_carry` (read-only research visibility).
+NO_SETTLED_SIGNAL = "no_settled_signal"
+STALE_SIGNAL = "stale_signal"
+NEUTRAL_BAND = "neutral_band"
+SHORT_THRESHOLD_MET = "short_threshold_met"
+LONG_THRESHOLD_MET = "long_threshold_met"
 
 _FUNDING_CARRY_KEYS = (
     "long_entry_rate",
@@ -269,6 +277,42 @@ def load_funding_signal_history(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class FundingCarryDecision:
+    """One funding-carry decision and the rule branch that produced it."""
+
+    target: PositionTarget
+    reason: str
+    event: FundingEvent | None
+
+
+def decide_funding_carry(
+    history: FundingSignalHistory,
+    as_of_time: datetime,
+    *,
+    short_entry_rate: Decimal,
+    long_entry_rate: Decimal,
+    max_funding_age: timedelta,
+) -> FundingCarryDecision:
+    """The single decision rule used by `FundingCarryPolicy` (and by diagnostics).
+
+    Branches, in order: no settled event known yet -> FLAT
+    (`no_settled_signal`); latest known event older than `max_funding_age`
+    -> FLAT (`stale_signal`); rate >= `short_entry_rate` -> SHORT; rate <=
+    `long_entry_rate` -> LONG; otherwise FLAT (`neutral_band`).
+    """
+    event = history.latest_settled_at(as_of_time)
+    if event is None:
+        return FundingCarryDecision(PositionTarget.FLAT, NO_SETTLED_SIGNAL, None)
+    if as_of_time - event.event_time > max_funding_age:
+        return FundingCarryDecision(PositionTarget.FLAT, STALE_SIGNAL, event)
+    if event.funding_rate >= short_entry_rate:
+        return FundingCarryDecision(PositionTarget.SHORT, SHORT_THRESHOLD_MET, event)
+    if event.funding_rate <= long_entry_rate:
+        return FundingCarryDecision(PositionTarget.LONG, LONG_THRESHOLD_MET, event)
+    return FundingCarryDecision(PositionTarget.FLAT, NEUTRAL_BAND, event)
+
+
 class FundingCarryPolicy:
     """SHORT at/above `short_entry_rate`, LONG at/below `long_entry_rate`, FLAT otherwise.
 
@@ -312,14 +356,13 @@ class FundingCarryPolicy:
                     f"context candle symbol {candle.symbol!r} does not match funding history "
                     f"symbol {self._history.symbol!r}"
                 )
-        event = self._history.latest_settled_at(context.as_of_time)
-        if event is None or context.as_of_time - event.event_time > self._max_funding_age:
-            return PositionTarget.FLAT
-        if event.funding_rate >= self._short_entry_rate:
-            return PositionTarget.SHORT
-        if event.funding_rate <= self._long_entry_rate:
-            return PositionTarget.LONG
-        return PositionTarget.FLAT
+        return decide_funding_carry(
+            self._history,
+            context.as_of_time,
+            short_entry_rate=self._short_entry_rate,
+            long_entry_rate=self._long_entry_rate,
+            max_funding_age=self._max_funding_age,
+        ).target
 
 
 class NoTradeControlPolicy:
