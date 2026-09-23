@@ -3481,7 +3481,7 @@ Prerequisites: fold model + observation/outcome-horizon contract (17.1) + purge/
 
 Prerequisites: tanımlı Sharpe istatistiği (17.3) + candidate/trial history (18) + (efektif) trial sayısı + gerekli dağılımsal girdiler. Bölüm 18'in candidate/trial foundation'ı artık IMPLEMENTED + TESTED'dır (28.G — 25/25), ama yalnızca TEK bir candidate'in TEK bir trial'ını value object olarak temsil eder — çoklu-trial history/registry/trial-count tracking bu foundation'ın DIŞINDADIR (§18.9, 18.13) ve henüz mevcut değildir. Standalone bir formül olarak, deneysel/trial framework'ünden **kopuk** implement edilmez.
 
-**Durum güncellemesi (FAZ6C — DSR bağımlılık çözümü, docs-only):** "candidate/trial history" ve "trial sayısı"nın **ham** kısmı için gereken en küçük foundation — tek bir karşılaştırılabilir deneme grubunu temsil eden `TrialGroup` ve `recorded_trial_count` (`src/crypto_quant_lab/validation/trial_group.py`) — Bölüm 20.1–20.13'te **LOCKED**'dır ama **HENÜZ İMPLEMENT EDİLMEMİŞTİR** (§28.J — 0/19). Deflated Sharpe'ın KENDİSİ hâlâ **spec-lock EDİLMEMİŞTİR**; efektif trial sayısı, N'in kapsamı, başarısız denemeler, çok-pencereli trial Sharpe tanımı, skewness/kurtosis, Decimal normal-CDF kaynağı ve seçilmiş denemenin belirtilmesi hâlâ açık bağımlılıklardır (§20.12). Ham kaydedilmiş sayı efektif/bağımsız deneme sayısı DEĞİLDİR (§20.7).
+**Durum güncellemesi (FAZ6C — DSR bağımlılık çözümü, docs-only):** "candidate/trial history" ve "trial sayısı"nın **ham** kısmı için gereken en küçük foundation — tek bir karşılaştırılabilir deneme grubunu temsil eden `TrialGroup` ve `recorded_trial_count` (`src/crypto_quant_lab/validation/trial_group.py`) — Bölüm 20.1–20.13'te **LOCKED**'dır VE artık **IMPLEMENTED + TESTED**'dır (§20.14, §28.J — 19/19). Deflated Sharpe'ın KENDİSİ hâlâ **spec-lock EDİLMEMİŞTİR**; efektif trial sayısı, N'in kapsamı, başarısız denemeler, çok-pencereli trial Sharpe tanımı, skewness/kurtosis, Decimal normal-CDF kaynağı ve seçilmiş denemenin belirtilmesi hâlâ açık bağımlılıklardır (§20.12). Kaydedilmiş sayı, verilen gruptaki kabul edilmiş Trial kayıtlarının tam sayısıdır — efektif/bağımsız deneme sayısı, benzersiz strateji sayısı veya gerçek araştırma deneme yüküne göre koşulsuz bir alt/üst sınır DEĞİLDİR (§20.7).
 
 ### 17.5 PBO — LATER IN FAZ 6
 
@@ -3489,7 +3489,7 @@ Prerequisites: birden fazla candidate/trial (18) + birden fazla partition + dete
 
 ### 17.6 Multiple-Testing Corrections — LATER IN FAZ 6
 
-Prerequisites: trial-count tracking (18) — candidate/trial foundation'ına bağımlı. Bölüm 18'in kendisi artık IMPLEMENTED + TESTED'dır (28.G), ama trial-count tracking (kaç candidate/trial değerlendirildiğinin kaydı, Bölüm 20) bu foundation'ın kapsamı DIŞINDADIR ve henüz mevcut değildir. **Durum güncellemesi:** tek-grup kapsamlı, ham trial-count kaydının exact kontratı Bölüm 20.1–20.13'te LOCKED'dır (HENÜZ İMPLEMENT EDİLMEMİŞTİR, §28.J — 0/19); multiple-testing correction'ın kendisi, gruplar-arası sayım ve efektif sayı hâlâ spec-lock edilmemiştir.
+Prerequisites: trial-count tracking (18) — candidate/trial foundation'ına bağımlı. Bölüm 18'in kendisi artık IMPLEMENTED + TESTED'dır (28.G), ama trial-count tracking (kaç candidate/trial değerlendirildiğinin kaydı, Bölüm 20) bu foundation'ın kapsamı DIŞINDADIR ve henüz mevcut değildir. **Durum güncellemesi:** tek-grup kapsamlı, ham trial-count kaydının exact kontratı Bölüm 20.1–20.13'te LOCKED'dır VE artık IMPLEMENTED + TESTED'dır (§20.14, §28.J — 19/19); multiple-testing correction'ın kendisi, gruplar-arası sayım ve efektif sayı hâlâ spec-lock edilmemiştir.
 
 ### 17.7 Parameter Stability — LATER IN FAZ 6
 
@@ -4198,7 +4198,7 @@ windows.py, models.py, policy.py, ve tüm mevcut testler DEĞİŞMEDEN — stati
   run_rolling_backtest_from_store'un kendisi için geçerlidir
 ```
 
-## 20. Multiple Testing — Kayıt Prensibi (LOCKED, İmplementasyon Yok)
+## 20. Multiple Testing — Kayıt Prensibi (LOCKED) — Trial-Group / Recorded-Trial-Count Foundation LOCKED VE IMPLEMENTED + TESTED (Bölüm 20.1–20.14, 28.J)
 
 Bölüm 18'in candidate/trial foundation'ı (`Candidate`, `Trial`) artık IMPLEMENTED + TESTED'dır (28.G), ama trial-count tracking/registry SAĞLAMAZ (§18.9, 18.13). Gelecekteki, bu foundation'ın ÜZERİNE inşa edilecek bir orchestration/tracking katmanı, en azından şunu **kaydedebilmelidir** (implement edilmez, yalnızca prensip):
 
@@ -4209,7 +4209,7 @@ Bölüm 18'in candidate/trial foundation'ı (`Candidate`, `Trial`) artık IMPLEM
 - hangi OOS evaluation, dondurulmuş seçime aittir
 ```
 
-**Durum güncellemesi (FAZ6C — Deflated Sharpe bağımlılık çözümü, docs-only):** Yukarıdaki dört kayıt maddesinden YALNIZCA ilki ("kaç candidate/trial değerlendirildi") ve üçüncüsünün mekanik olarak doğrulanabilen kısmı ("hangi data partition kullanıldı" — yalnızca `Trial`'ın taşıdığı provenance + evaluation pencereleri düzeyinde), aşağıdaki Bölüm 20.1–20.13'te, **tek bir karşılaştırılabilir deneme grubu** kapsamında, exact bir foundation kontratı olarak **LOCKED**'dır — **HENÜZ İMPLEMENT EDİLMEMİŞTİR** (bkz. §28.J — 0/19). "Hangi metrik bir candidate'i seçti" ve "hangi OOS evaluation dondurulmuş seçime aittir" maddeleri (selection rule, selection/test role, final holdout) bu kontratın **DIŞINDA** kalır ve hâlâ yalnızca prensiptir. Bu bölüm başlığındaki "İmplementasyon Yok" ifadesi bu nedenle hâlâ doğrudur.
+**Durum güncellemesi (FAZ6C — Deflated Sharpe bağımlılık çözümü, docs-only):** Yukarıdaki dört kayıt maddesinden YALNIZCA ilki ("kaç candidate/trial değerlendirildi") ve üçüncüsünün mekanik olarak doğrulanabilen kısmı ("hangi data partition kullanıldı" — yalnızca `Trial`'ın taşıdığı provenance + evaluation pencereleri düzeyinde), aşağıdaki Bölüm 20.1–20.13'te, **tek bir karşılaştırılabilir deneme grubu** kapsamında, exact bir foundation kontratı olarak **LOCKED**'dır — kilit zamanında (commit `1b666fd`) henüz implement edilmemişti (§28.J — 0/19); artık **IMPLEMENTED + TESTED**'dır (`src/crypto_quant_lab/validation/trial_group.py`, `tests/test_validation_trial_group.py`; bkz. §20.14, §28.J — 19/19). "Hangi metrik bir candidate'i seçti" ve "hangi OOS evaluation dondurulmuş seçime aittir" maddeleri (selection rule, selection/test role, final holdout) bu kontratın **DIŞINDA** kalır ve hâlâ yalnızca prensiptir — implement EDİLMEMİŞTİR.
 
 ### 20.1 Source-Preflight Bulguları (FAZ6C — DSR Bağımlılık Çözümü)
 
@@ -4464,15 +4464,20 @@ recorded_trial_count(group) == len(group.trials)
 
 ```
 SAYAR:
-- Yalnızca bu TrialGroup'a caller tarafından AÇIKÇA verilmiş, başarılı,
-  candidate_id'si benzersiz Trial'ları. Ağırlıklandırma, dedupe,
-  korelasyon düzeltmesi YOK.
+- Yalnızca bu TrialGroup'a caller tarafından AÇIKÇA verilmiş ve kabul
+  edilmiş, başarılı, candidate_id'si benzersiz Trial KAYITLARINI —
+  sayı, verilen gruptaki kabul edilmiş Trial kayıtlarının TAM
+  sayısıdır. Ağırlıklandırma, dedupe, korelasyon düzeltmesi YOK.
 
 KANITLAMAZ (her biri açıkça):
-- Araştırmada denenen TÜM denemelerin sayısını. Başarısız (raise
-  edilmiş), iptal edilmiş, sonuçsuz veya caller'ın kaydetmediği
-  denemeler bu sayıda YOKTUR -> sayı, bu grubun partition'ındaki gerçek
-  deneme yükü için yalnızca bir ALT SINIRDIR (lower bound) ve tamlık
+- Araştırmada denenen TÜM denemelerin sayısını VEYA benzersiz strateji
+  sayısını. Başarısız (raise edilmiş), iptal edilmiş, sonuçsuz veya
+  caller'ın kaydetmediği denemeler bu sayıda YOKTUR (sayıyı gerçek
+  deneme yükünün ALTINDA bırakabilir); aynı konfigürasyon farklı
+  candidate_id'lerle birden fazla kez kaydedilmiş olabilir (§20.5 —
+  sayıyı benzersiz denemelerin ÜSTÜNE çıkarabilir). Bu iki etki aynı
+  anda mümkün olduğundan sayı, gerçek araştırma deneme sayısına göre
+  KOŞULSUZ bir alt sınır VEYA üst sınır garantisi VERMEZ ve tamlık
   kanıtı DEĞİLDİR. Eksik geçmiş "tam" SAYILMAZ; tamlık iddiası taşıyan
   hiçbir alan/fonksiyon yoktur.
 - Diğer TrialGroup'lardaki (farklı coin/timeframe/as_of_time/config/
@@ -4493,6 +4498,8 @@ KANITLAMAZ (her biri açıkça):
   kullanılmasını hiçbir şekilde MEŞRULAŞTIRMAZ (§18 zorunlu prensibi,
   §18.7, §18.9, Bölüm 19 DEĞİŞMEDEN geçerlidir).
 ```
+
+**Sayım-garantisi açıklama düzeltmesi (implementation combined delivery ile eklendi — kontratın kilitlendiği `1b666fd` commit'indeki ifadeyi AÇIKLIĞA KAVUŞTURUR):** Kilit sürümündeki §20.7 metni, sayıyı gerçek deneme yükünün koşulsuz bir "ALT SINIRI (lower bound)" olarak tanımlıyordu. Bu garanti mevcut API'den çıkarılamaz: §20.5, aynı `parameters`'ın farklı `candidate_id`'lerle kaydedilmesini KABUL EDER ve bunun ham sayıyı şişirebileceğini zaten kaydeder — dolayısıyla eksik kayıtlar sayıyı düşürürken mükerrer temsil onu yükseltebilir ve hiçbir yöndeki sınır koşulsuz değildir. Yukarıdaki metin buna göre düzeltildi. Bu yalnızca bir **açıklama düzeltmesidir** — API, algoritma veya davranış DEĞİŞMEZ: aynı `candidate_id` hâlâ reddedilir; aynı `parameters` + farklı `candidate_id` hâlâ kabul edilir; sayı hâlâ `len(group.trials)`'dır; hiçbir yeni alan, dedupe veya sayım algoritması eklenmez; §28.J kriter sayısı 19 kalır. §23'teki kilit kaydının "(alt sınır, tamlık kanıtı değil)" ifadesi tarihsel kayıt olarak korunur ve bu not ile açıklığa kavuşturulmuş sayılır.
 
 ### 20.8 Validation / Fail-Fast Sırası ve Exact Mesajlar (LOCKED)
 
@@ -4695,6 +4702,86 @@ paper/live trading, Candidate/Trial değişikliği.
 
 Bu maddeler **deferred boundary'ler** olarak kaydedilir — implement edilmiş özellikler DEĞİL. Bu kontratın LOCKED olması, Deflated Sharpe'ın spec-lock edildiği, FAZ6C'nin veya Faz 6'nın tamamlandığı anlamına GELMEZ (bkz. Bölüm 22, 22.2, 28.J).
 
+### 20.14 Implementation Evidence (IMPLEMENTED + TESTED — combined delivery ile eklendi)
+
+```
+Production: src/crypto_quant_lab/validation/trial_group.py (YENİ dosya)
+  - TrialGroup (frozen, slots) — group_id: str, trials: tuple[Trial, ...]
+    (kilitli field sırası, §20.4 ile birebir; default dataclass eq/hash,
+    order=False).
+  - recorded_trial_count(group: TrialGroup) -> int — yalnızca tip kontrolü
+    + len(group.trials).
+  - __post_init__: §20.8'in 13 adımı birebir — adım 1-2 group_id (yerel
+    olarak yeniden tanımlanmış kimlik kuralı, candidate.py private
+    helper'ları İMPORT EDİLMEDEN), 3 tuple, 4 non-empty, 5 eleman tipi
+    (global geçiş), 6 candidate_id benzersizliği (global geçiş, ilk-görülen
+    index raporlanır), 7-12 exchange/market_type/symbol/timeframe/
+    as_of_time/config için alan-başı AYRI global geçişler (trials[0]'a
+    karşı), 13 ordered evaluation pencere dizisi (global geçiş). Kilitli
+    exception türleri ve mesajları birebir.
+  - imports: `from dataclasses import dataclass as _dataclass` ve
+    `from crypto_quant_lab.validation.candidate import Trial as _Trial` —
+    YALNIZCA. Private alias'lar, modülün public sembol kümesinin TAM
+    OLARAK {TrialGroup, recorded_trial_count} kalması içindir (§20.4);
+    çözümlenmiş annotation'lar kilitli API ile aynıdır
+    (typing.get_type_hints: group_id -> str, trials -> tuple[Trial, ...];
+    recorded_trial_count: group -> TrialGroup, return -> int). §20.4'teki
+    örnek import satırları alias'sız yazılmıştı; bu, import edilen
+    sembolün veya yönün değişmesi DEĞİL, yalnızca yerel isim gizlemedir
+    (import direction §20.9 ile birebir: trial_group.py -> candidate.py).
+Test: tests/test_validation_trial_group.py (YENİ dosya) — 99 test
+  (60 test fonksiyonu, parametrize ile 99 collected), tümü PASS.
+  - API/shape: modül yolu, public sembol kümesi, field sırası, çözümlenmiş
+    annotation'lar, signature, frozen/slotted, default eq/hash, package-
+    root export yokluğu, Candidate/Trial/WindowResult field'larının
+    değişmediği.
+  - group_id: tip/boş/whitespace/padding exact mesajları, case-sensitivity
+    ve Unicode normalizasyon yokluğu.
+  - trials: non-tuple, boş, index 0 ve sonraki index yanlış eleman.
+  - Duplicate: eşit tekrar çalıştırma, aynı obje iki kez, farklı
+    parameters ile çakışan kayıt, ilk-görülen index; aynı parameters +
+    farklı candidate_id KABUL ve count == 2 (iki bağımsız strateji kanıtı
+    olarak SUNULMAZ — yalnızca kayıt sayısı).
+  - Provenance: 6 alanın her biri için index 1 ve sonraki index uyuşmazlığı;
+    ardışık her alan çifti için "önceki alanın geçişi, daha sonraki index'te
+    olsa bile kazanır" (tek-döngülü per-trial implementasyonu ayırt eden
+    testler); aynı-an farklı tzinfo'lu as_of_time ve değer-eşit config
+    KABUL.
+  - Pencere dizisi: kısa/uzun/yeniden sıralı/farklı değer reddi, sonraki
+    index, birebir aynı duplicate+overlapping dizi KABUL, aynı-an farklı
+    tzinfo'lu pencere KABUL.
+  - Global stage sırası: 1>3, 2>3, 3>4, 5>6 (sonraki index), 6>7 (sonraki
+    index), 6>13, 7>8>...>12 (ardışık çiftler), 12>13 (sonraki index).
+    Adım 4'ün adım 5'e üstünlüğü yapısal olarak zorunludur (boş tuple
+    yanlış-tipli eleman içeremez) — ayrı eşzamanlı-ihlal testi mümkün
+    değildir; adım 1'in adım 2'ye üstünlüğü de aynı şekilde yapısaldır.
+  - Değer semantiği: tek/çoklu grup ve tam int count, girdi sırasının
+    korunması, `is` kimliği/no-copy/no-mutation, değer-eşitliği, sıra-
+    duyarlı eşitlik, group_id eşitsizliği, hashability (set/dict),
+    tekrarlı construction/call determinism, aynı Trial'ların iki ayrı
+    grupta gruplar-arası tespit OLMADAN bulunabilmesi.
+  - recorded_trial_count yanlış girdi (None/tuple/list/str/int/Trial)
+    exact mesaj.
+  - Absence/static: yasak alan (role/score/rank/winner/selected/effective/
+    status/failed/complete/holdout/...) ve yasak sembol (effective count/
+    DSR/selection/persistence/registry/optimizer) yokluğu; import
+    satırlarının tam listesi; hiçbir validation modülünün trial_group'u
+    import etmediği; Decimal/float/clock/randomness import'u yokluğu.
+  - Entegrasyon: gerçek SQLite store (tmp_path) + run_rolling_backtest_
+    from_store ile iki pencere üzerinde FLAT ve LONG policy'lerinden
+    üretilmiş iki Trial bir TrialGroup oluşturur (count == 2); tek
+    pencereli üçüncü bir Trial exact mesajla reddedilir.
+İlgili regression suite'ler (test_validation_candidate.py,
+test_validation_rolling_backtest.py, test_validation_windows.py,
+test_validation_metrics.py, test_validation_annualized_metrics.py,
+test_validation_purging.py, test_backtest_models.py,
+test_backtest_results.py — 691 test) DEĞİŞMEDEN yeşil; tam suite
+2045/2045 PASS (1946 önceki + 99 yeni).
+Değiştirilen mevcut production/test dosyası: YOK.
+```
+
+**Status: LOCKED AND IMPLEMENTED + TESTED** (bkz. Bölüm 23, 28.J — 19/19). Bu, Deflated Sharpe'ın spec-lock veya implement edildiği ya da §20.12'deki açık bağımlılıkların çözüldüğü anlamına GELMEZ.
+
 ## 21. Backward Compatibility (LOCKED)
 
 ```
@@ -4843,20 +4930,23 @@ FAZ 6C — Advanced Overfitting Controls
         `tests/test_validation_purging.py`'de (62 test, tümü PASS);
         bkz. Bölüm 23, 28.I — 19/19.
 
-    Kilitlenmiş, HENÜZ İMPLEMENT EDİLMEMİŞ prerequisite foundation:
-      - Karşılaştırılabilir deneme grubu + ham kaydedilmiş deneme sayısı
-        (Bölüm 20.1–20.13) — `TrialGroup`, `recorded_trial_count`
-        (`src/crypto_quant_lab/validation/trial_group.py`, YENİ modül,
-        henüz yok). Deflated Sharpe (17.4) ve multiple-testing
-        corrections'ın (17.6) "trial history / trial-count" önkoşulunun
-        YALNIZCA tek-grup, ham-sayım kısmını karşılar; FAZ6C listesine
-        yeni bir madde EKLEMEZ, 17.4/17.6'nın alt-foundation'ıdır
-        (purging/embargo foundation'ının 17.1'e ait olması gibi).
-        §28.J — 0/19.
+      - Karşılaştırılabilir deneme grubu + kaydedilmiş Trial sayısı
+        exact kontratı (Bölüm 20.1–20.13) — LOCKED VE artık İMPLEMENT
+        EDİLMİŞ + TEST EDİLMİŞTİR: yeni
+        `src/crypto_quant_lab/validation/trial_group.py` modülü
+        (`TrialGroup`, `recorded_trial_count`). Deflated Sharpe (17.4) ve
+        multiple-testing corrections'ın (17.6) "trial history /
+        trial-count" önkoşulunun YALNIZCA tek-grup, ham kayıt-sayımı
+        kısmını karşılar; FAZ6C listesine yeni bir madde EKLEMEZ,
+        17.4/17.6'nın alt-foundation'ıdır (purging/embargo
+        foundation'ının 17.1'e ait olması gibi). Hiçbir mevcut production
+        dosyası değişmedi. Kendi regression suite'i
+        `tests/test_validation_trial_group.py`'de (99 test, tümü PASS);
+        bkz. Bölüm 20.14, 23, 28.J — 19/19. (Kontrat kilit zamanında —
+        commit `1b666fd` — bu madde "kilitlenmiş, henüz implement
+        edilmemiş" olarak kaydedilmişti, §28.J — 0/19.)
 
     Kalan zorunlu bileşenler (HENÜZ PENDING):
-      - Yukarıdaki trial-group foundation'ının implementasyonu + test
-        suite'i (§28.J).
       - CPCV (17.2), Deflated Sharpe (17.4), PBO (17.5), multiple-testing
         corrections (17.6), parameter stability (17.7) — hiçbiri henüz
         spec-lock edilmemiştir; bu doküman onları henüz TASARLAMAZ.
@@ -4900,7 +4990,7 @@ FAZ 6D — Faz 6 Final Acceptance
 |---|---|---|---|
 | FAZ6A | COMPLETE | temporal window/IS-OOS primitives (§28.A — 22/22), zero-context rolling OOS evaluation (§28.C — 12/12), Stage-1 metrics (§28.D — 18/18) | locked FAZ6A scope içinde yok |
 | FAZ6B | COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 (§8.3.16, §28.F — 22/22, LOCKED VE IMPLEMENTED + TESTED), candidate/trial foundation (§18, §28.G — 25/25, LOCKED VE IMPLEMENTED + TESTED), Annualized Metrics (§15.19–15.33, §28.H — 30/30, LOCKED VE IMPLEMENTED + TESTED) | locked FAZ6B scope içinde yok |
-| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + ham kaydedilmiş deneme sayısı exact kontratı (§20.1–20.13, LOCKED — implementasyon YOK, §28.J — 0/19) | trial-group implementasyonu; CPCV, Deflated Sharpe, PBO, multiple-testing corrections, parameter stability |
+| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + kaydedilmiş Trial sayısı exact kontratı + implementasyonu (§20.1–20.14, §28.J — 19/19, LOCKED VE IMPLEMENTED + TESTED) | CPCV, Deflated Sharpe, PBO, multiple-testing corrections, parameter stability |
 | FAZ6D | NOT STARTED | yok | Faz 6 final acceptance audit'i |
 
 Bu tablo, §28.A/B/C/D'nin bağımsız acceptance sayımlarını **birleşik bir yüzdeye veya tek bir sayıya dönüştürmez** — her grup kendi bağımsız kanıtını korur; bu tablo yalnızca hangi grubun hangi alt-fazın kanıtı olduğunu özetler.
@@ -5497,16 +5587,48 @@ TRIAL COUNT SOURCE PREFLIGHT + EXACT CONTRACT LOCK — TAMAMLANDI
   optimizer, persistence ve final holdout enforcement BAŞLATILMADI.
   FAZ6C ve Faz 6 NOT COMPLETE kalır.
 
+FAZ6C — TRIAL-GROUP / RECORDED TRIAL COUNT FOUNDATION COMBINED
+DELIVERY — TAMAMLANDI:
+  Bölüm 20.1–20.13'te LOCKED olan kontratı, yeniden tasarlamadan, tek
+  bir combined delivery olarak implement etti: yeni
+  `src/crypto_quant_lab/validation/trial_group.py` modülü — `TrialGroup`
+  (frozen/slotted, `group_id`, `trials`) ve `recorded_trial_count`
+  (tip kontrolü + `len`). §20.8'in 13 adımlı global fail-fast sırası
+  birebir uygulandı (eleman tipi, candidate_id benzersizliği, altı
+  provenance alanının her biri ve pencere dizisi AYRI global geçişler;
+  kilitli exception türleri/mesajları). Import yönü: yalnızca
+  `candidate.Trial` + stdlib `dataclasses` (private alias'larla, public
+  sembol kümesi TAM OLARAK {TrialGroup, recorded_trial_count}; §20.14).
+  Kendi regression suite'i `tests/test_validation_trial_group.py`'de
+  (99 test, tümü PASS) — gerçek SQLite + run_rolling_backtest_from_store
+  entegrasyonu dahil. İlgili regression suite'ler (691 test) DEĞİŞMEDEN
+  yeşil; tam suite 2045/2045 PASS (1946 önceki + 99 yeni). Ruff/format/
+  `git diff --check` temiz. Post-implementation audit: §28.J'nin 19
+  kriterinin HER BİRİ somut test veya static/scope kanıtına eşlendi;
+  §28.J 0/19'dan 19/19'a kapatıldı. Tek yetkili kontrat açıklama
+  düzeltmesi (§20.7 sonundaki not): kilit sürümündeki "sayı, gerçek
+  deneme yükünün ALT SINIRIDIR" ifadesi, §20.5'in aynı parameters +
+  farklı candidate_id kabulüyle çeliştiği için düzeltildi — sayı,
+  verilen gruptaki kabul edilmiş Trial kayıtlarının TAM sayısıdır ve
+  gerçek araştırma deneme sayısına göre koşulsuz alt/üst sınır garantisi
+  VERMEZ; API/algoritma/davranış DEĞİŞMEDİ, kilit kaydındaki tarihsel
+  ifade korunarak açıklığa kavuşturuldu. §17.4, §17.6, §20, §22, §22.2
+  ve §28 girişi buna göre güncellendi. Değiştirilen dosyalar: yalnızca
+  `trial_group.py` (YENİ), `test_validation_trial_group.py` (YENİ),
+  `VALIDATION_SPEC.md`. Deflated Sharpe hâlâ spec-lock EDİLMEMİŞTİR;
+  §20.12'deki açık bağımlılıkların hiçbiri çözülmedi. Efektif trial-count,
+  PBO, CPCV, multiple-testing correction, parameter stability, candidate
+  selection, optimizer, persistence ve final holdout enforcement
+  BAŞLATILMADI. FAZ6C ve Faz 6 NOT COMPLETE kalır.
+
 Sonraki (henüz başlanmadı):
-  Bölüm 20.1–20.13'te LOCKED olan trial-group / recorded-trial-count
-  kontratının, yeniden tasarlanmadan, tek bir combined implementation
-  delivery olarak implement edilmesi (`src/crypto_quant_lab/validation/
-  trial_group.py` + `tests/test_validation_trial_group.py` + §28.J
-  closure) — önceki iki-aşamalı precedent'in ikinci aşaması. Bundan
-  SONRA, Deflated Sharpe'ın kendi source-preflight + exact kontrat kilidi
-  ancak §20.12'deki açık kararlar (özellikle N semantiği/kapsamı, çok
-  pencereli trial Sharpe tanımı, yüksek momentler ve Decimal normal-CDF
-  kaynağı) çözüldükten sonra yapılabilir. CPCV, PBO, multiple-testing
+  Deflated Sharpe'ın (17.4) kendi source-preflight + exact kontrat
+  kilidi — ancak §20.12'deki açık kararlar (özellikle N semantiği ve
+  kapsamı, başarısız denemelerin durumu, çok pencereli trial Sharpe
+  tanımı ve T, per-observation vs. annualized ölçek, skewness/kurtosis,
+  Decimal normal-CDF kaynağı, seçilmiş denemenin explicit girdisi)
+  kullanıcı tarafından çözüldükten sonra; bu adım o kararları
+  BAŞLATMAZ veya kendiliğinden SEÇMEZ. CPCV, PBO, multiple-testing
   corrections ve parameter stability hâlâ spec-lock edilmemiştir.
   Candidate selection/ranking, optimizer/grid/random/Bayesian search ve
   final holdout enforcement BAŞLATILMAZ. Ardından FAZ6D — Faz 6 Final
@@ -5596,7 +5718,7 @@ Aynı girdiler → aynı pencere sonuçları — mevcut `run_backtest_from_store
 
 ## 28. Acceptance Criteria — On Ayrı Grup (LOCKED)
 
-Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Annualized Metrics'in (Sharpe/Sortino/CAGR/Calmar) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.H'de kaydedilir (bkz. Bölüm 15.19–15.33, 23 — 30/30). Window-level purging/embargo'nun (Bölüm 17.1.1–17.1.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.I'de kaydedilir (bkz. Bölüm 17.1, 23 — 19/19). Trial-group / recorded-trial-count foundation'ının (Bölüm 20.1–20.13) implementasyon/test acceptance checklist'i, HENÜZ implementation/test exercised OLMAYAN ayrı bir liste olarak 28.J'de kaydedilir (bkz. Bölüm 20, 23 — 0/19). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G/28.H/28.I/28.J altındaki sayılar). §28.A/B/C/D/E/F/G/H/I/J'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
+Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Annualized Metrics'in (Sharpe/Sortino/CAGR/Calmar) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.H'de kaydedilir (bkz. Bölüm 15.19–15.33, 23 — 30/30). Window-level purging/embargo'nun (Bölüm 17.1.1–17.1.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.I'de kaydedilir (bkz. Bölüm 17.1, 23 — 19/19). Trial-group / recorded-trial-count foundation'ının (Bölüm 20.1–20.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.J'de kaydedilir (bkz. Bölüm 20, 23 — 19/19). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G/28.H/28.I/28.J altındaki sayılar). §28.A/B/C/D/E/F/G/H/I/J'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
 
 ### 28.A — LOCKED FOUNDATION ACCEPTANCE (Runner-Bağımsız)
 
@@ -5859,31 +5981,31 @@ Bu liste, Bölüm 17.1.1–17.1.13'te LOCKED olan window-level purging/embargo e
 
 **Purging/embargo acceptance count: 19 / 19 implementation/test exercised.** Bu, aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: label/outcome-horizon'a bağlı klasik purging; CPCV; Deflated Sharpe; PBO; multiple-testing correction; parameter stability; candidate selection/ranking; optimizer/grid/random/Bayesian search; final holdout protection; FAZ6C'nin tamamlanması; Faz 6'nın tamamlanması. Bu grup, yalnızca Bölüm 17.1.1–17.1.13'te LOCKED olan window-level purging/embargo foundation kontratının kendisinin implement edilmiş + test edilmiş olduğu anlamına gelir — FAZ6C hâlâ NOT COMPLETE'dir (bkz. Bölüm 22, 22.2), çünkü CPCV/Deflated Sharpe/PBO/multiple-testing corrections/parameter stability hiçbiri henüz spec-lock edilmemiştir.
 
-### 28.J — TRIAL-GROUP / RECORDED TRIAL COUNT ACCEPTANCE (0/19 IMPLEMENTATION/TEST EXERCISED)
+### 28.J — TRIAL-GROUP / RECORDED TRIAL COUNT ACCEPTANCE (19/19 IMPLEMENTATION/TEST EXERCISED)
 
-Bu liste, Bölüm 20.1–20.13'te LOCKED olan trial-group / recorded-trial-count exact kontratının gelecekteki implementasyonu için acceptance kriterlerini kaydeder. **Bu 19 kriterin HİÇBİRİ henüz implementation/test exercised DEĞİLDİR** — `src/crypto_quant_lab/validation/trial_group.py` ve `tests/test_validation_trial_group.py` henüz mevcut değildir.
+Bu liste, Bölüm 20.1–20.13'te LOCKED olan trial-group / recorded-trial-count exact kontratının, `src/crypto_quant_lab/validation/trial_group.py` tarafından karşılandığını kaydeder. **Bu 19 kriterin hepsi artık implementation/test exercised'dır** — `tests/test_validation_trial_group.py`'de 99 test (tümü PASS; 60 test fonksiyonu), ilgili regression suite'ler (`test_validation_candidate.py`, `test_validation_rolling_backtest.py`, `test_validation_windows.py`, `test_validation_metrics.py`, `test_validation_annualized_metrics.py`, `test_validation_purging.py`, `test_backtest_models.py`, `test_backtest_results.py` — 691 test) DEĞİŞMEDEN yeşil; tam suite 2045/2045 PASS (1946 önceki + 99 yeni). Grup, kontrat kilidiyle (commit `1b666fd`) 0/19 olarak eklenmişti; bu combined delivery ile 19/19'a kapatıldı. Test sayısı (99) ile acceptance kriter sayısı (19) ayrı sayımlardır.
 
-1. `TrialGroup` (`group_id: str`, `trials: tuple[Trial, ...]`) ve `recorded_trial_count(group: TrialGroup) -> int`, kilitli modül yolunda (`src/crypto_quant_lab/validation/trial_group.py`) mevcuttur; `TrialGroup` frozen/slotted ve field sırası kilitlidir; modülün public sembolleri TAM OLARAK bu ikisidir (Bölüm 20.4). **PENDING**
-2. `validation/__init__.py` DEĞİŞMEZ ve iki sembol package-root'ta export EDİLMEZ; `Candidate`/`Trial`/`WindowResult`/`TemporalWindow`/`BacktestConfig`'e hiçbir alan eklenmez; `candidate.py`/`rolling.py`/`windows.py`/`metrics.py`/`annualized_metrics.py`/`purging.py`/`backtest/models.py` DEĞİŞMEZ (Bölüm 20.4, 20.10 — static `git diff` + tam regression suite). **PENDING**
-3. `group_id` `str` değilse exact mesajlı TypeError (Bölüm 20.8 adım 1). **PENDING**
-4. `group_id` boş/yalnızca-whitespace veya padded ise exact mesajlı ValueError; case-sensitive, strip/normalizasyon YOK (Bölüm 20.5, 20.8 adım 2). **PENDING**
-5. `trials` tuple değilse TypeError, boşsa ValueError — exact mesajlarla (Bölüm 20.8 adım 3-4). **PENDING**
-6. `trials`'ın her elemanı `Trial` olmalıdır; index-specific exact mesajlı TypeError, global geçiş olarak (Bölüm 20.8 adım 5). **PENDING**
-7. Aynı `candidate_id`'li ikinci Trial — eşit tekrar çalıştırma VE çakışan kayıt — iki index'i tanımlayan exact mesajlı ValueError ile reddedilir; dedupe YOK (Bölüm 20.5, 20.8 adım 6). **PENDING**
-8. Aynı `parameters`'a sahip ama farklı `candidate_id`'li Trial'lar KABUL edilir (Bölüm 20.5). **PENDING**
-9. `exchange`/`market_type`/`symbol`/`timeframe`/`as_of_time`/`config`, `trials[0]`'a karşı alan-başı ayrı global geçişlerle, kilitli sırayla ve exact mesajla doğrulanır; aynı anı gösteren farklı tzinfo'lu `as_of_time` KABUL edilir (Bölüm 20.6, 20.8 adım 7-12). **PENDING**
-10. Ordered evaluation pencere dizisi (`tuple(r.window for r in trial.results)`) `trials[0]` ile uzunluk/sıra/değer olarak eşit olmalıdır; aksi exact mesajlı ValueError; duplicate/overlapping pencereli birebir aynı dizi KABUL (Bölüm 20.6, 20.8 adım 13). **PENDING**
-11. 13 adımın global fail-fast sırası, eşzamanlı-ihlal testleriyle birebir kanıtlanır (Bölüm 20.8). **PENDING**
-12. Girdi sırası korunur (sort/dedupe/filter YOK); equality sıraya duyarlıdır; tek-Trial grup legal'dir (Bölüm 20.4, 20.8). **PENDING**
-13. Equality/hash frozen-dataclass default'udur; grup hashable'dır; eşit girdilerden tekrar construction eşit ve eşit-hash değer üretir (Bölüm 20.4, 20.9). **PENDING**
-14. Construction `trials` tuple'ını ve Trial elemanlarını kopyalamaz/mutate etmez (`is` kimliği) (Bölüm 20.9). **PENDING**
-15. `recorded_trial_count`, `TrialGroup` olmayan girdide exact mesajlı TypeError verir ve tam olarak `len(group.trials)` değerini `int` olarak döndürür (bool değil; ağırlıklandırma/dedupe/korelasyon düzeltmesi YOK) (Bölüm 20.7, 20.8). **PENDING**
-16. `TrialGroup` hiçbir role/score/rank/winner/selected/effective/status/failed/complete/holdout alanı taşımaz; modülde effective count/DSR/selection/persistence/registry sembolü YOKTUR (absence kanıtı) (Bölüm 20.2, 20.3, 20.4, 20.7). **PENDING**
-17. `trial_group.py` yalnızca `candidate.Trial` ve stdlib `dataclasses` import eder; `candidate.py`'nin private helper'larını import ETMEZ; hiçbir validation modülü `trial_group.py`'yi import ETMEZ (Bölüm 20.8, 20.9). **PENDING**
-18. Wall-clock/randomness/I/O/metrik hesaplama/Decimal aritmetiği/float kullanımı YOKTUR (Bölüm 20.9). **PENDING**
-19. Gerçek `run_rolling_backtest_from_store` çıktısından aynı pencerelerle üretilmiş iki farklı-candidate Trial bir `TrialGroup` oluşturur (`recorded_trial_count == 2`); farklı pencere dizili bir Trial reddedilir (Bölüm 20.11). **PENDING**
+1. `TrialGroup` (`group_id: str`, `trials: tuple[Trial, ...]`) ve `recorded_trial_count(group: TrialGroup) -> int`, kilitli modül yolunda (`src/crypto_quant_lab/validation/trial_group.py`) mevcuttur; `TrialGroup` frozen/slotted ve field sırası kilitlidir; modülün public sembolleri TAM OLARAK bu ikisidir (Bölüm 20.4). **PASS** — `@dataclass(frozen=True, slots=True) class TrialGroup` (private `_dataclass` alias ile); `test_symbols_available_at_locked_module_path`, `test_module_public_symbols_are_exactly_the_locked_api`, `test_trial_group_field_order_is_locked`, `test_trial_group_resolved_annotations_match_locked_api`, `test_recorded_trial_count_signature_is_locked`, `test_trial_group_is_frozen`, `test_trial_group_is_slotted`.
+2. `validation/__init__.py` DEĞİŞMEZ ve iki sembol package-root'ta export EDİLMEZ; `Candidate`/`Trial`/`WindowResult`/`TemporalWindow`/`BacktestConfig`'e hiçbir alan eklenmez; `candidate.py`/`rolling.py`/`windows.py`/`metrics.py`/`annualized_metrics.py`/`purging.py`/`backtest/models.py` DEĞİŞMEZ (Bölüm 20.4, 20.10 — static `git diff` + tam regression suite). **PASS** — `test_trial_group_not_exported_at_package_root`, `test_candidate_and_trial_fields_are_unchanged`; static kanıt: bu delivery'nin `git diff --stat`/`git status`'u yalnızca `trial_group.py` (YENİ), `test_validation_trial_group.py` (YENİ) ve `VALIDATION_SPEC.md`'yi gösterir; 691 ilgili + 2045 tam suite testi DEĞİŞMEDEN yeşil.
+3. `group_id` `str` değilse exact mesajlı TypeError (Bölüm 20.8 adım 1). **PASS** — `test_group_id_wrong_type_is_rejected` (4 varyant), `test_stage1_group_id_type_wins_over_trials_type`.
+4. `group_id` boş/yalnızca-whitespace veya padded ise exact mesajlı ValueError; case-sensitive, strip/normalizasyon YOK (Bölüm 20.5, 20.8 adım 2). **PASS** — `test_group_id_empty_or_whitespace_only_is_rejected` (3 varyant), `test_group_id_padding_is_rejected_not_stripped` (4 varyant), `test_group_id_is_case_sensitive_and_not_normalized` (case + NFC/NFD), `test_group_id_with_internal_whitespace_is_accepted`.
+5. `trials` tuple değilse TypeError, boşsa ValueError — exact mesajlarla (Bölüm 20.8 adım 3-4). **PASS** — `test_trials_non_tuple_is_rejected` (5 varyant), `test_trials_empty_tuple_is_rejected`.
+6. `trials`'ın her elemanı `Trial` olmalıdır; index-specific exact mesajlı TypeError, global geçiş olarak (Bölüm 20.8 adım 5). **PASS** — `test_trials_invalid_element_at_index_0_is_rejected`, `test_trials_invalid_element_at_later_index_is_rejected`, `test_stage5_element_type_at_later_index_wins_over_earlier_duplicate` (global geçiş kanıtı).
+7. Aynı `candidate_id`'li ikinci Trial — eşit tekrar çalıştırma VE çakışan kayıt — iki index'i tanımlayan exact mesajlı ValueError ile reddedilir; dedupe YOK (Bölüm 20.5, 20.8 adım 6). **PASS** — `test_equal_rerun_trial_is_rejected_as_duplicate`, `test_same_trial_object_twice_is_rejected_as_duplicate`, `test_conflicting_duplicate_with_different_parameters_is_rejected`, `test_duplicate_message_reports_first_seen_index`, `test_stage6_duplicate_wins_over_window_mismatch`, `test_candidate_id_uniqueness_is_case_sensitive`.
+8. Aynı `parameters`'a sahip ama farklı `candidate_id`'li Trial'lar KABUL edilir (Bölüm 20.5). **PASS** — `test_same_parameters_different_candidate_id_is_accepted_and_counted_as_two_records` (count == 2 yalnızca kayıt sayısıdır; iki bağımsız strateji kanıtı olarak sunulmaz, §20.7).
+9. `exchange`/`market_type`/`symbol`/`timeframe`/`as_of_time`/`config`, `trials[0]`'a karşı alan-başı ayrı global geçişlerle, kilitli sırayla ve exact mesajla doğrulanır; aynı anı gösteren farklı tzinfo'lu `as_of_time` KABUL edilir (Bölüm 20.6, 20.8 adım 7-12). **PASS** — `test_provenance_mismatch_at_index_1_is_rejected` (6 alan), `test_provenance_mismatch_at_later_index_is_rejected` (6 alan), `test_earlier_field_pass_wins_even_at_a_later_index` (5 ardışık alan çifti), `test_first_field_pass_wins_over_last_field_pass`, `test_same_instant_as_of_time_with_different_tzinfo_is_accepted`, `test_equal_valued_config_instances_are_accepted`.
+10. Ordered evaluation pencere dizisi (`tuple(r.window for r in trial.results)`) `trials[0]` ile uzunluk/sıra/değer olarak eşit olmalıdır; aksi exact mesajlı ValueError; duplicate/overlapping pencereli birebir aynı dizi KABUL (Bölüm 20.6, 20.8 adım 13). **PASS** — `test_window_sequence_mismatch_is_rejected` (kısa/uzun/yeniden sıralı/farklı değer), `test_window_sequence_mismatch_at_later_index_is_rejected`, `test_identical_duplicate_and_overlapping_window_sequences_are_accepted`, `test_same_instant_windows_with_different_tzinfo_are_accepted`.
+11. 13 adımın global fail-fast sırası, eşzamanlı-ihlal testleriyle birebir kanıtlanır (Bölüm 20.8). **PASS** — `test_stage1_group_id_type_wins_over_trials_type`, `test_stage2_group_id_content_wins_over_trials_type`, `test_stage3_trials_type_wins_over_emptiness`, `test_stage5_element_type_at_later_index_wins_over_earlier_duplicate`, `test_stage6_duplicate_at_later_index_wins_over_earlier_provenance_mismatch`, `test_stage6_duplicate_wins_over_window_mismatch`, `test_earlier_field_pass_wins_even_at_a_later_index` (7>8>9>10>11>12), `test_stage12_config_at_later_index_wins_over_earlier_window_mismatch`; 1>2 ve 4>5 yapısal olarak zorunludur (aynı anda ihlal edilemez, §20.14).
+12. Girdi sırası korunur (sort/dedupe/filter YOK); equality sıraya duyarlıdır; tek-Trial grup legal'dir (Bölüm 20.4, 20.8). **PASS** — `test_input_order_is_preserved_not_sorted`, `test_equality_is_order_sensitive`, `test_single_trial_group_is_legal_and_counts_one`.
+13. Equality/hash frozen-dataclass default'udur; grup hashable'dır; eşit girdilerden tekrar construction eşit ve eşit-hash değer üretir (Bölüm 20.4, 20.9). **PASS** — `test_trial_group_uses_default_dataclass_equality_and_hash`, `test_equality_is_value_based`, `test_different_group_id_is_not_equal`, `test_trial_group_is_hashable_as_set_member_and_dict_key`, `test_repeated_construction_and_count_are_deterministic`.
+14. Construction `trials` tuple'ını ve Trial elemanlarını kopyalamaz/mutate etmez (`is` kimliği) (Bölüm 20.9). **PASS** — `test_construction_does_not_copy_or_mutate_trials` (`is` kimliği + hash snapshot), `test_same_instant_as_of_time_with_different_tzinfo_is_accepted` (değer normalize edilmeden `is` ile korunur).
+15. `recorded_trial_count`, `TrialGroup` olmayan girdide exact mesajlı TypeError verir ve tam olarak `len(group.trials)` değerini `int` olarak döndürür (bool değil; ağırlıklandırma/dedupe/korelasyon düzeltmesi YOK) (Bölüm 20.7, 20.8). **PASS** — `test_recorded_trial_count_rejects_non_trial_group` (5 varyant), `test_recorded_trial_count_rejects_trial_and_trial_tuple`, `test_single_trial_group_is_legal_and_counts_one`, `test_multi_trial_group_counts_exact_int` (`type(count) is int`), `test_same_trials_can_form_separate_groups_without_cross_group_detection`.
+16. `TrialGroup` hiçbir role/score/rank/winner/selected/effective/status/failed/complete/holdout alanı taşımaz; modülde effective count/DSR/selection/persistence/registry sembolü YOKTUR (absence kanıtı) (Bölüm 20.2, 20.3, 20.4, 20.7). **PASS** — `test_trial_group_has_no_role_score_status_or_effective_field`, `test_module_defines_no_effective_dsr_selection_persistence_or_registry_symbol`, `test_module_public_symbols_are_exactly_the_locked_api`.
+17. `trial_group.py` yalnızca `candidate.Trial` ve stdlib `dataclasses` import eder; `candidate.py`'nin private helper'larını import ETMEZ; hiçbir validation modülü `trial_group.py`'yi import ETMEZ (Bölüm 20.8, 20.9). **PASS** — `test_trial_group_module_imports_only_candidate_trial_and_stdlib_dataclass` (import satırlarının TAM listesi), `test_no_existing_validation_module_imports_trial_group` (7 modül).
+18. Wall-clock/randomness/I/O/metrik hesaplama/Decimal aritmetiği/float kullanımı YOKTUR (Bölüm 20.9). **PASS** — `test_trial_group_module_uses_no_decimal_float_clock_or_randomness_import`; kod incelemesi: `trial_group.py` yalnızca `isinstance`, `==`/`!=`, `getattr`, `len` ve tuple inşası kullanır — metrik fonksiyonu, I/O veya aritmetik yoktur.
+19. Gerçek `run_rolling_backtest_from_store` çıktısından aynı pencerelerle üretilmiş iki farklı-candidate Trial bir `TrialGroup` oluşturur (`recorded_trial_count == 2`); farklı pencere dizili bir Trial reddedilir (Bölüm 20.11). **PASS** — `test_real_rolling_trials_form_group_and_mismatched_windows_are_rejected` (gerçek SQLite store `tmp_path`'te, FLAT ve LONG policy'leri, iki pencere; count == 2; tek pencereli üçüncü Trial exact mesajla reddedilir).
 
-**Trial-group / recorded-trial-count acceptance count: 0 / 19 implementation/test exercised.** Bu grubun ileride 19/19 olması da aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: Deflated Sharpe; efektif/bağımsız trial sayısı; gruplar-arası veya tüm-araştırma-programı deneme sayımı; başarısız/iptal deneme kaydı; PBO; CPCV; multiple-testing correction; parameter stability; candidate selection/ranking; optimizer/search; final holdout protection; persistence; FAZ6C'nin veya Faz 6'nın tamamlanması.
+**Trial-group / recorded-trial-count acceptance count: 19 / 19 implementation/test exercised.** (Kilit zamanındaki tarihsel sayım: 0 / 19, commit `1b666fd`.) Bu grubun 19/19 olması, aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: Deflated Sharpe; efektif/bağımsız trial sayısı; gruplar-arası veya tüm-araştırma-programı deneme sayımı; başarısız/iptal deneme kaydı; PBO; CPCV; multiple-testing correction; parameter stability; candidate selection/ranking; optimizer/search; final holdout protection; persistence; FAZ6C'nin veya Faz 6'nın tamamlanması.
 
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
