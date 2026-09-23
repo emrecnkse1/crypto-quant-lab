@@ -4628,9 +4628,208 @@ sınırı büyük S/T/N kombinasyonlarını reddeder (örnekleme yok);
 §3.2-3.4 istatistikleri ve CPCV yapılmadı.
 ```
 
-### 17.6 Multiple-Testing Corrections — LATER IN FAZ 6
+### 17.6 Multiple-Testing Corrections — Holm Düzeltme Temeli LOCKED VE IMPLEMENTED + TESTED (§17.6.1–17.6.10, §28.N — 18/18); p-Değeri Üretimi, Aile Kapsamı ve Seçim Politikası AÇIK
 
 Prerequisites: trial-count tracking (18) — candidate/trial foundation'ına bağımlı. Bölüm 18'in kendisi artık IMPLEMENTED + TESTED'dır (28.G), ama trial-count tracking (kaç candidate/trial değerlendirildiğinin kaydı, Bölüm 20) bu foundation'ın kapsamı DIŞINDADIR ve henüz mevcut değildir. **Durum güncellemesi:** tek-grup kapsamlı, ham trial-count kaydının exact kontratı Bölüm 20.1–20.13'te LOCKED'dır VE artık IMPLEMENTED + TESTED'dır (§20.14, §28.J — 19/19); multiple-testing correction'ın kendisi, gruplar-arası sayım ve efektif sayı hâlâ spec-lock edilmemiştir.
+
+**Durum güncellemesi (FAZ6C — Holm düzeltme temeli):** Dışarıdan verilen p-değerleri için Holm çoklu-test düzeltmesi aşağıdaki Bölüm 17.6.1–17.6.10'da LOCKED VE IMPLEMENTED + TESTED'dır (`apply_holm_correction`; §28.N — 18/18). Bu YALNIZCA bir düzeltme katmanıdır: getirilerden geçerli p-değeri üretimi, test ailesinin araştırma geçmişine göre kapsamı ve sonuç seçim politikası AÇIKTIR; "multiple-testing corrections" başlığı ve FAZ6C bu teslimatla TAMAMLANMIŞ SAYILMAZ.
+
+**17.6.1 Kaynaklar ve Kaynak Kuralları**
+
+```
+Birincil referans: Holm, S. (1979). "A Simple Sequentially Rejective
+Multiple Test Procedure." Scandinavian Journal of Statistics 6, 65-70 —
+orijinal makale bu turda OKUNMADI (erişilmedi). Formül ve özellikler,
+yöntemin standart referans implementasyonundan doğrulandı:
+  - R stats::p.adjust belgesi (stat.ethz.ch/R-manual/R-devel/library/
+    stats/html/p.adjust.html, ERİŞİLDİ): Holm (1979) Bonferroni'den
+    "less conservative"; ilk dört yöntem "strong control of the
+    family-wise error rate" için tasarlanmıştır; Bonferroni "dominated
+    by Holm's method, which is also valid under arbitrary assumptions";
+    n > length(p) verilirse gözlenmeyen p-değerleri Holm için "greater
+    than all the observed p" varsayılır; çıktı girişle aynı uzunlukta
+    ve aynı adlarla döner.
+  - R kaynak kodu src/library/stats/R/p.adjust.R (ERİŞİLDİ):
+      holm = { i <- seq_len(lp); o <- order(p); ro <- order(o)
+               pmin(1, cummax((n+1L - i) * p[o]))[ro] }
+    ve "if (n <= 1) return(p0)".
+KAYNAKTAN: artan sıralama; i. sıradaki p'nin (m + 1 - i) ile çarpımı;
+kümülatif maksimum; 1 ile üst sınır; sonuçların giriş sırasına geri
+eşlenmesi; m <= 1 için p değişmez (formülün m = 1 hâli ile aynı);
+keyfî bağımlılık altında güçlü FWER kontrolü.
+```
+
+**17.6.2 Proje Tercihleri (kaynak belirtmez veya kasıtlı kısıtlanır)**
+
+```
+1. Aile büyüklüğü m = verilen hipotez sayısıdır. R'nin n > length(p)
+   seçeneği (gözlenmeyen hipotezler) SUNULMAZ; eksik hipotez için
+   varsayımsal p-değeri veya tahmini toplam sayı EKLENMEZ.
+2. Karar: adjusted_p <= significance_level ise reddedilir (eşitlik
+   RED). Bu, adım-azalan Holm prosedürüne (p_(i) <= α/(m - i + 1) ilk
+   başarısızlığa kadar) tam eşdeğerdir: 0 < α < 1 iken adjusted_(i) <= α
+   <=> her j <= i için (m + 1 - j) p_(j) <= α.
+3. Aritmetik TAM'dır: (m + 1 - j) * p, p'nin tam sayı katsayısı
+   üzerinden kurulur; yalnızca karşılaştırma, max ve min uygulanır.
+   Hiçbir Decimal context kullanılmaz ve yuvarlama YOKTUR — karar
+   sınırındaki davranış tamdır (örn. 0.0125 x 4 = 0.05 == α -> RED;
+   28 basamağın ötesindeki p-değerleri de tam çarpılır). Düzeltilmiş
+   değerler girişten fazla basamak taşıyabilir; -0 girişi 0 olarak
+   döner.
+4. Eşit p-değerleri: sıralama (p, giriş index'i) ile kararlıdır; eşit
+   p'lerin düzeltilmiş değerleri kümülatif maksimum nedeniyle
+   matematiksel olarak EŞİTTİR — giriş sırası hiçbir hipotezin
+   sonucunu değiştirmez.
+5. significance_level açıkça verilir, Decimal, sonlu ve 0 < α < 1
+   (0 ve 1 dejenere olduğundan reddedilir); varsayılan YOK.
+6. Kimlikler: family_id ve hypothesis_id, candidate_id ile AYNI kural
+   (str, boş/yalnızca-boşluk değil, baş/son boşluk yok; case-sensitive).
+   Aile içinde hypothesis_id benzersizdir. p-değeri Decimal, sonlu,
+   [0, 1] içinde (int/float/bool/str REDDEDİLİR).
+7. Hiçbir kayıt sessizce çıkarılmaz; geçersiz girdi hesabı durdurur.
+```
+
+**17.6.3 Exact Public API (LOCKED)**
+
+```python
+# Modül: src/crypto_quant_lab/validation/multiple_testing.py (YENİ modül)
+
+
+@dataclass(frozen=True, slots=True)
+class HypothesisPValue:
+    hypothesis_id: str
+    p_value: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class HolmAdjustedHypothesis:
+    hypothesis_id: str
+    p_value: Decimal
+    adjusted_p_value: Decimal
+    rejected: bool
+
+
+@dataclass(frozen=True, slots=True)
+class HolmCorrectionResult:
+    family_id: str
+    significance_level: Decimal
+    hypotheses: tuple[HolmAdjustedHypothesis, ...]
+
+
+def apply_holm_correction(
+    family_id: str,
+    hypotheses: tuple[HypothesisPValue, ...],
+    *,
+    significance_level: Decimal,
+) -> HolmCorrectionResult: ...
+```
+
+```
+- Public semboller TAM OLARAK bu dördü; package-root export YOK.
+- Sonuç hipotezleri GİRİŞ SIRASINDADIR; her biri kendi hypothesis_id'si
+  ve ham p_value nesnesiyle (kopyalanmadan) eşlenir; family_id ve
+  significance_level sonuçta korunur. Aile büyüklüğü len(hypotheses)'tır.
+- Sonuç modelleri kendi alanlarını doğrular (kimlik, [0, 1] olasılıklar,
+  bool karar, tuple tipleri).
+- Modül yalnızca dataclasses ve decimal import eder; TrialGroup, DSR,
+  PBO veya başka bir validation modülüne BAĞLANMAZ.
+```
+
+**17.6.4 Algoritma (LOCKED)**
+
+```
+m = len(hypotheses)
+order = giriş index'lerinin (p_value, index) anahtarıyla artan sırası
+running_max yok
+her konum k = 0 .. m-1 için (index = order[k]):
+    product = (m - k) * p_value[index]            # tam
+    running_max = product (ilk adım) veya max(running_max, product)
+    adjusted[index] = min(running_max, 1)
+rejected[index] = adjusted[index] <= significance_level
+```
+
+**17.6.5 Validation / Fail-Fast Sırası ve Exact Mesajlar (LOCKED)**
+
+```
+HypothesisPValue.__post_init__:
+  hypothesis_id str değil -> TypeError("hypothesis_id must be a str, got {type}")
+  boş/yalnızca-boşluk -> ValueError("hypothesis_id must not be empty or whitespace-only")
+  padding -> ValueError("hypothesis_id must not have leading/trailing whitespace padding")
+  p_value Decimal değil -> TypeError("p_value must be a Decimal, got {type}")
+  sonlu değil veya [0, 1] dışı -> ValueError("p_value must be finite and within [0, 1], got {v}")
+apply_holm_correction:
+  1-2. family_id (aynı kimlik kuralı ve mesaj kalıbı, alan adı family_id)
+  3. hypotheses tuple değil -> TypeError("hypotheses must be a tuple, got {type}")
+  4. boş -> ValueError("hypotheses must not be empty")
+  5. GLOBAL: eleman HypothesisPValue değil ->
+     TypeError("hypotheses[{i}] must be a HypothesisPValue, got {type}")
+  6. GLOBAL: yinelenen kimlik ->
+     ValueError("hypotheses[{i}].hypothesis_id {id!r} duplicates hypotheses[{j}].hypothesis_id")
+  7. significance_level Decimal değil -> TypeError("significance_level must be a Decimal, got {type}")
+  8. sonlu değil veya 0 < α < 1 değil ->
+     ValueError("significance_level must be finite and satisfy 0 < significance_level < 1, got {α}")
+```
+
+**17.6.6 Kapsam Sınırları ve İddia Edilmeyenler**
+
+```
+- p-değeri ÜRETİLMEZ: Sharpe, DSR (1 - DSR dahil) veya PBO p-değeri
+  olarak KABUL EDİLMEZ ve hiçbir dönüşüm uygulanmaz; getirilerden
+  istatistiksel olarak geçerli p-değeri üretimi ayrı ve AÇIK bir iştir.
+- TrialGroup.recorded_trial_count ile hipotez sayısı OTOMATİK
+  EŞİTLENMEZ: aday, pencere ve ölçülen hipotez aynı kavram değildir.
+- Bir family_id yazılması, hipotezlerin önceden belirlendiğini, ailenin
+  araştırma geçmişinin tamamını kapsadığını veya seçilerek raporlanmış
+  sonuçların hariç tutulmadığını KANITLAMAZ; bunlar caller disiplinidir.
+- "Reddedildi" yalnızca Holm'un FWER kontrolü altında istatistiksel
+  anlamlılıktır; kârlılık olasılığı, strateji seçimi, emir veya risk
+  profili kararı DEĞİLDİR.
+- Hochberg/Hommel/BH/BY, n > m seçeneği, p-değeri üretimi, aile kapsamı
+  politikası, sonuç seçim politikası: kapsam dışı.
+```
+
+**17.6.7 Dosya Kapsamı**
+
+```
+Yeni: src/crypto_quant_lab/validation/multiple_testing.py,
+tests/test_validation_multiple_testing.py. Doküman: VALIDATION_SPEC.md.
+Değişmeyen: tüm mevcut production/test dosyaları, __init__.py,
+ROADMAP.md, pyproject.toml, AGENTS.md, CLAUDE.md.
+```
+
+**17.6.8 Doğrulama Yöntemi**
+
+```
+Beklenen düzeltilmiş p-değerleri R'nin Holm tanımından (17.6.1) ELLE
+türetilmiş tam rasyonellerdir ve testte literal olarak yazılıdır
+(modülden üretilmez); kararlar ayrıca adım-azalan prosedürle elle
+çapraz kontrol edilir. Yeni runtime bağımlılığı YOK (R/statsmodels
+kullanılmadı).
+```
+
+**17.6.9 Durum ve Implementation Evidence**
+
+```
+LOCKED VE IMPLEMENTED + TESTED (aynı combined delivery). §28.N — 18/18.
+Production: src/crypto_quant_lab/validation/multiple_testing.py (YENİ).
+Test: tests/test_validation_multiple_testing.py (YENİ) — 41 test, tümü
+PASS. İlgili regression suite'ler (pbo, deflated_sharpe, trial_group,
+return_matrix, candidate, metrics — 653 test) DEĞİŞMEDEN yeşil; tam
+suite 2285/2285 PASS (2244 önceki + 41 yeni).
+```
+
+**17.6.10 Multiple-Testing Başlığında Kalan Somut Bağımlılıklar**
+
+```
+1. Geçerli p-değeri üretimi: hangi test istatistiği (örn. Sharpe için
+   bir t/PSR tabanlı test), hangi null hipotez, tek/çift yön, bağımlı
+   gözlemler (otokorelasyon) ve çok pencereli birleştirme kararı.
+2. Aile kapsamı politikası: bir ailenin hangi aday/pencere/ölçüm
+   hipotezlerinden oluştuğu ve kaydedilmemiş/başarısız denemelerin
+   nasıl ele alınacağı (n > m seçeneği bilinçli olarak kapalı).
+3. Sonuç seçimi/raporlama politikası: hangi düzeltilmiş sonuçların
+   hangi karara girdi olacağı (şu an hiçbirine girmez).
+```
 
 ### 17.7 Parameter Stability — LATER IN FAZ 6
 
@@ -6116,10 +6315,19 @@ FAZ 6C — Advanced Overfitting Controls
         regression suite'i `tests/test_validation_pbo.py` (35 test,
         tümü PASS); bkz. Bölüm 23, 28.M — 24/24. CSCV, CPCV DEĞİLDİR.
 
+      - Multiple-testing için Holm düzeltme temeli (Bölüm 17.6.1–
+        17.6.10) — LOCKED VE İMPLEMENT EDİLMİŞ + TEST EDİLMİŞTİR:
+        `apply_holm_correction` (`src/crypto_quant_lab/validation/
+        multiple_testing.py`, YENİ); kendi regression suite'i
+        `tests/test_validation_multiple_testing.py` (41 test, tümü
+        PASS); bkz. Bölüm 23, 28.N — 18/18. Yalnızca düzeltme
+        katmanıdır; multiple-testing başlığı TAMAMLANMADI.
+
     Kalan zorunlu bileşenler (HENÜZ PENDING):
-      - CPCV (17.2), multiple-testing corrections (17.6), parameter
-        stability (17.7) — hiçbiri henüz spec-lock edilmemiştir; bu
-        doküman onları henüz TASARLAMAZ.
+      - CPCV (17.2) ve parameter stability (17.7) — spec-lock
+        edilmemiştir; multiple-testing (17.6) için geçerli p-değeri
+        üretimi, aile kapsamı ve sonuç seçim politikası (§17.6.10)
+        AÇIKTIR.
 
     Durum: FAZ6C — NOT COMPLETE. Purging/embargo foundation'ının
     implement/test edilmiş olması, CPCV/Deflated Sharpe/PBO/multiple-
@@ -6160,7 +6368,7 @@ FAZ 6D — Faz 6 Final Acceptance
 |---|---|---|---|
 | FAZ6A | COMPLETE | temporal window/IS-OOS primitives (§28.A — 22/22), zero-context rolling OOS evaluation (§28.C — 12/12), Stage-1 metrics (§28.D — 18/18) | locked FAZ6A scope içinde yok |
 | FAZ6B | COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 (§8.3.16, §28.F — 22/22, LOCKED VE IMPLEMENTED + TESTED), candidate/trial foundation (§18, §28.G — 25/25, LOCKED VE IMPLEMENTED + TESTED), Annualized Metrics (§15.19–15.33, §28.H — 30/30, LOCKED VE IMPLEMENTED + TESTED) | locked FAZ6B scope içinde yok |
-| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + kaydedilmiş Trial sayısı exact kontratı + implementasyonu (§20.1–20.14, §28.J — 19/19, LOCKED VE IMPLEMENTED + TESTED); Deflated Sharpe exact kontratı + implementasyonu (§17.4.1–17.4.17, §28.K — 27/27, LOCKED VE IMPLEMENTED + TESTED); PBO önkoşulu trial return matrix (§17.5.1–17.5.12, §28.L — 22/22, LOCKED VE IMPLEMENTED + TESTED); PBO/CSCV (§17.5.13–17.5.24, §28.M — 24/24, LOCKED VE IMPLEMENTED + TESTED) | CPCV, multiple-testing corrections, parameter stability |
+| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + kaydedilmiş Trial sayısı exact kontratı + implementasyonu (§20.1–20.14, §28.J — 19/19, LOCKED VE IMPLEMENTED + TESTED); Deflated Sharpe exact kontratı + implementasyonu (§17.4.1–17.4.17, §28.K — 27/27, LOCKED VE IMPLEMENTED + TESTED); PBO önkoşulu trial return matrix (§17.5.1–17.5.12, §28.L — 22/22, LOCKED VE IMPLEMENTED + TESTED); PBO/CSCV (§17.5.13–17.5.24, §28.M — 24/24, LOCKED VE IMPLEMENTED + TESTED); Holm düzeltme temeli (§17.6.1–17.6.10, §28.N — 18/18, LOCKED VE IMPLEMENTED + TESTED) | CPCV, multiple-testing p-değeri üretimi/aile kapsamı/seçim politikası, multiple-testing corrections, parameter stability |
 | FAZ6D | NOT STARTED | yok | Faz 6 final acceptance audit'i |
 
 Bu tablo, §28.A/B/C/D'nin bağımsız acceptance sayımlarını **birleşik bir yüzdeye veya tek bir sayıya dönüştürmez** — her grup kendi bağımsız kanıtını korur; bu tablo yalnızca hangi grubun hangi alt-fazın kanıtı olduğunu özetler.
@@ -6904,15 +7112,32 @@ REGRESSION SUITE + CLOSURE — TAMAMLANDI (tek combined delivery):
   dominance, multiple-testing ve parameter stability BAŞLATILMADI.
   FAZ6C ve Faz 6 NOT COMPLETE kalır.
 
+FAZ6C — HOLM MULTIPLE-TESTING CORRECTION FOUNDATION: SOURCE
+VERIFICATION + CONTRACT + IMPLEMENTATION + REGRESSION SUITE + CLOSURE —
+TAMAMLANDI (tek combined delivery):
+  Holm formülü R stats::p.adjust belgesi ve p.adjust.R kaynak kodundan
+  doğrulandı (orijinal Holm 1979 makalesi okunmadı). Kontrat
+  §17.6.1–17.6.10'da kilitlendi: aile büyüklüğü = verilen hipotez
+  sayısı (n > m yok), red kuralı adjusted <= α (adım-azalan prosedüre
+  eşdeğer), context kullanmayan TAM aritmetik, eşitliklerde ve giriş
+  sırasında değişmezlik, giriş sırasında çıktı, 0 < α < 1, candidate_id
+  ile aynı kimlik kuralı. Implementasyon:
+  `src/crypto_quant_lab/validation/multiple_testing.py` (YENİ). Test:
+  `tests/test_validation_multiple_testing.py` (YENİ, 41 test, tümü PASS;
+  beklenen değerler elle türetildi). İlgili regression suite'ler (653
+  test) DEĞİŞMEDEN yeşil; tam suite 2285/2285 PASS (2244 + 41).
+  Ruff/format/`git diff --check` temiz. §28.N 18/18. p-değeri üretimi,
+  aile kapsamı ve sonuç seçim politikası AÇIK; multiple-testing başlığı,
+  FAZ6C ve Faz 6 NOT COMPLETE kalır.
+
 Sonraki (henüz başlanmadı):
   FAZ6C'nin kalanları: CPCV (17.2 — fold modeli ve label/outcome-
-  horizon purging önkoşulları hâlâ YOK), multiple-testing corrections
-  (17.6 — test istatistiği ve düzeltme ailesi yöntem kararı gerekir),
+  horizon purging önkoşulları hâlâ YOK), multiple-testing için geçerli
+  p-değeri üretimi + aile kapsamı + sonuç seçim politikası (17.6.10),
   parameter stability (17.7 — Candidate.parameters için parametre
   uzayı/komşuluk tanımı YOK). Deferred: efektif-N estimator'ı (DSR Ek
-  A.3; TrialReturnMatrix artık hizalı getiri girdisini sağlar), çok
-  pencereli DSR pooling, PBO'nun §3.2-3.4 yan istatistikleri. Candidate
-  selection/ranking, optimizer ve final holdout enforcement
+  A.3), çok pencereli DSR pooling, PBO'nun §3.2-3.4 yan istatistikleri.
+  Candidate selection/ranking, optimizer ve final holdout enforcement
   BAŞLATILMAZ. Ardından FAZ6D — Faz 6 Final Acceptance audit'i. Faz 6'nın
   tamamlanması için FAZ6C/FAZ6D'nin ikisi de gereklidir (bkz. Bölüm 22).
 ```
@@ -6997,9 +7222,9 @@ Aynı girdiler → aynı pencere sonuçları — mevcut `run_backtest_from_store
 - external LLM decision-making
 ```
 
-## 28. Acceptance Criteria — On Üç Ayrı Grup (LOCKED)
+## 28. Acceptance Criteria — On Dört Ayrı Grup (LOCKED)
 
-Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Annualized Metrics'in (Sharpe/Sortino/CAGR/Calmar) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.H'de kaydedilir (bkz. Bölüm 15.19–15.33, 23 — 30/30). Window-level purging/embargo'nun (Bölüm 17.1.1–17.1.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.I'de kaydedilir (bkz. Bölüm 17.1, 23 — 19/19). Trial-group / recorded-trial-count foundation'ının (Bölüm 20.1–20.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.J'de kaydedilir (bkz. Bölüm 20, 23 — 19/19). Deflated Sharpe'ın (Bölüm 17.4.1–17.4.17) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.K'de kaydedilir (bkz. Bölüm 17.4, 23 — 27/27). Trial return matrix foundation'ının (Bölüm 17.5.1–17.5.12) implementasyon/test acceptance checklist'i de, implementation/test exercised olan ayrı bir liste olarak 28.L'de kaydedilir (bkz. Bölüm 17.5, 23 — 22/22). PBO/CSCV'nin (Bölüm 17.5.13–17.5.24) implementasyon/test acceptance checklist'i de, implementation/test exercised olan ayrı bir liste olarak 28.M'de kaydedilir (bkz. Bölüm 17.5, 23 — 24/24). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G/28.H/28.I/28.J/28.K/28.L/28.M altındaki sayılar). §28.A/B/C/D/E/F/G/H/I/J/K/L/M'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
+Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Annualized Metrics'in (Sharpe/Sortino/CAGR/Calmar) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.H'de kaydedilir (bkz. Bölüm 15.19–15.33, 23 — 30/30). Window-level purging/embargo'nun (Bölüm 17.1.1–17.1.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.I'de kaydedilir (bkz. Bölüm 17.1, 23 — 19/19). Trial-group / recorded-trial-count foundation'ının (Bölüm 20.1–20.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.J'de kaydedilir (bkz. Bölüm 20, 23 — 19/19). Deflated Sharpe'ın (Bölüm 17.4.1–17.4.17) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.K'de kaydedilir (bkz. Bölüm 17.4, 23 — 27/27). Trial return matrix foundation'ının (Bölüm 17.5.1–17.5.12) implementasyon/test acceptance checklist'i de, implementation/test exercised olan ayrı bir liste olarak 28.L'de kaydedilir (bkz. Bölüm 17.5, 23 — 22/22). PBO/CSCV'nin (Bölüm 17.5.13–17.5.24) implementasyon/test acceptance checklist'i de, implementation/test exercised olan ayrı bir liste olarak 28.M'de kaydedilir (bkz. Bölüm 17.5, 23 — 24/24). Holm düzeltme temelinin (Bölüm 17.6.1–17.6.10) implementasyon/test acceptance checklist'i de, implementation/test exercised olan ayrı bir liste olarak 28.N'de kaydedilir (bkz. Bölüm 17.6, 23 — 18/18). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G/28.H/28.I/28.J/28.K/28.L/28.M/28.N altındaki sayılar). §28.A/B/C/D/E/F/G/H/I/J/K/L/M/N'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
 
 ### 28.A — LOCKED FOUNDATION ACCEPTANCE (Runner-Bağımsız)
 
@@ -7382,6 +7607,31 @@ Bu liste, Bölüm 17.5.13–17.5.24'te LOCKED olan PBO/CSCV kontratının `src/c
 
 **PBO / CSCV acceptance count: 24 / 24 implementation/test exercised.** Bu, aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: CPCV; fold modeli; label/outcome-horizon purging; performance degradation / probability of loss / stochastic dominance; PBO eşiği veya geçti/kaldı kararı; canlı strateji seçimi, emir veya risk kararı; bağımsızlık, tam araştırma geçmişi, aynı maliyet modeli veya holdout koruması kanıtı; multiple-testing; parameter stability; FAZ6C'nin veya Faz 6'nın tamamlanması.
 
+### 28.N — HOLM MULTIPLE-TESTING CORRECTION FOUNDATION ACCEPTANCE (18/18 IMPLEMENTATION/TEST EXERCISED)
+
+Bu liste, Bölüm 17.6.1–17.6.10'da LOCKED olan Holm düzeltme temelinin `src/crypto_quant_lab/validation/multiple_testing.py` tarafından karşılandığını kaydeder. Kontrat ve implementasyon AYNI combined delivery'de yapıldı; **18 kriterin hepsi implementation/test exercised'dır** — `tests/test_validation_multiple_testing.py`'de 41 test (tümü PASS); ilgili regression suite'ler (653 test) DEĞİŞMEDEN yeşil; tam suite 2285/2285 PASS (2244 önceki + 41 yeni). Test sayısı (41) ile kriter sayısı (18) ayrı sayımlardır.
+
+1. Public semboller tam olarak `HypothesisPValue`, `HolmAdjustedHypothesis`, `HolmCorrectionResult`, `apply_holm_correction`; imza (family_id, hypotheses pozisyonel; significance_level keyword-only, varsayılansız); alan sıraları; frozen/slotted (§17.6.3). **PASS** — `test_public_symbols_are_exactly_the_locked_api`, `test_signature_and_model_shapes_are_locked`.
+2. Package-root export YOK; modül yalnızca dataclasses/decimal import eder; TrialGroup/recorded_trial_count/DSR/PBO'ya bağlanmaz ve onlar tarafından import edilmez; mevcut dosyalar değişmez (§17.6.3, 17.6.6, 17.6.7). **PASS** — `test_not_exported_at_package_root`, `test_module_is_standalone_and_links_to_no_trial_group_dsr_or_pbo`; static `git diff --stat`: yalnızca iki yeni dosya + `VALIDATION_SPEC.md`.
+3. hypothesis_id kimlik kuralı exact mesajlarla (§17.6.2.6, 17.6.5). **PASS** — `test_invalid_hypothesis_ids` (4 varyant).
+4. p_value: yalnızca Decimal; NaN/sNaN/Infinity ve [0, 1] dışı exact mesajlarla reddedilir (§17.6.2.6, 17.6.5). **PASS** — `test_invalid_p_values` (9 varyant: float, int, bool, str, NaN, sNaN, Infinity, -0.001, 1.0001).
+5. family_id kimlik kuralı exact mesajlarla (§17.6.5 adım 1-2). **PASS** — `test_invalid_family_inputs_have_exact_messages`.
+6. hypotheses tuple, boş değil, elemanlar HypothesisPValue (global geçiş) (§17.6.5 adım 3-5). **PASS** — `test_invalid_family_inputs_have_exact_messages`, `test_validation_order`.
+7. Yinelenen hypothesis_id iki index'i tanımlayan exact mesajla reddedilir; sessizce çıkarılmaz (§17.6.5 adım 6). **PASS** — `test_invalid_family_inputs_have_exact_messages`, `test_validation_order`.
+8. significance_level Decimal ve sonlu, 0 < α < 1 (0, 1, negatif, >1, NaN, Infinity reddedilir) (§17.6.2.5, adım 7-8). **PASS** — `test_significance_level_must_be_strictly_between_zero_and_one` (6 varyant), `test_invalid_family_inputs_have_exact_messages` (float).
+9. Validation sırası 1-2 > 3-4 > 5 > 6 > 7-8 eşzamanlı ihlallerle kanıtlanır (§17.6.5). **PASS** — `test_validation_order`.
+10. Bilinen düzeltilmiş p-değerleri ve kararlar elle türetilmiş referanslarla eşleşir (§17.6.4, 17.6.8). **PASS** — `test_known_adjusted_p_values_and_decisions` (0.03/0.06/0.06/0.02).
+11. İlk reddedilmeyen hipotezden sonra, kendi p'si α'nın altında olsa bile hiçbir hipotez reddedilmez (§17.6.2.2). **PASS** — `test_no_rejection_after_the_first_non_rejected_hypothesis` (0.045 < α ama düzeltilmiş 0.08).
+12. Düzeltilmiş değerler 1 ile sınırlıdır ve ham p sırasına göre monotondur (§17.6.1). **PASS** — `test_adjusted_p_values_are_capped_at_one`, `test_adjusted_p_values_are_monotone_in_the_raw_p_values`.
+13. Kararlar adım-azalan Holm prosedürüyle birebir aynıdır (§17.6.2.2). **PASS** — `test_decisions_match_the_step_down_procedure` (m = 5, elle α/(m-i+1) karşılaştırması).
+14. Eşit p-değerleri eşit düzeltilmiş değer alır; giriş sırasının tüm permütasyonları hipotez başı sonucu değiştirmez (§17.6.2.4). **PASS** — `test_tied_p_values_receive_equal_adjusted_values`, `test_input_order_does_not_change_any_hypothesis_result` (5! = 120 permütasyon).
+15. Sonuç giriş sırasındadır; kimlikler, ham p nesneleri, family_id ve significance_level korunur (§17.6.3). **PASS** — `test_output_preserves_input_order_ids_raw_p_values_and_family`.
+16. Tek hipotez düzeltilmez; p = 0 ve p = 1; α'ya tam eşitlik RED, hemen üstü değil (§17.6.1, 17.6.2.2-3). **PASS** — `test_single_hypothesis_is_unadjusted`, `test_p_values_zero_and_one`, `test_equality_with_the_significance_level_is_a_rejection` (0.0125 x 4 = 0.05 red; 0.0500004 değil).
+17. Aritmetik tamdır (28 basamak ötesi), ambient Decimal context sonucu değiştirmez, -0 sıfıra normalize edilir (§17.6.2.3). **PASS** — `test_arithmetic_is_exact_beyond_28_digits`, `test_ambient_decimal_context_does_not_change_results` (prec=2, ROUND_DOWN, Inexact/Rounded/InvalidOperation trap'leri), `test_negative_zero_p_value_is_normalized_to_zero`.
+18. Determinizm, girdi değişmezliği ve sonuç modellerinin kendi alan doğrulaması (§17.6.3). **PASS** — `test_inputs_are_not_mutated_and_results_are_deterministic`, `test_result_models_validate_their_fields`.
+
+**Holm correction foundation acceptance count: 18 / 18 implementation/test exercised.** Bu, aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: getirilerden geçerli p-değeri üretimi; Sharpe/DSR/PBO'nun p-değerine dönüştürülmesi; test ailesinin araştırma geçmişine göre eksiksiz kapsamı; sonuç seçim/raporlama politikası; Hochberg/Hommel/BH/BY; multiple-testing başlığının, FAZ6C'nin veya Faz 6'nın tamamlanması.
+
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
 ROADMAP.md'deki bir sonraki faz **Faz 7 — İlk Funding/Basis araştırması**dır. Faz 7'nin güvenilir olabilmesi için, en azından Bölüm 22'deki FAZ6A (temporal split + rolling fixed-policy OOS evaluation + basic return/drawdown metrikleri) tamamlanmış olmalıdır — bu, Faz 7'nin IS'te seçilen bir funding/basis sinyalini gerçekten görülmemiş bir OOS penceresinde kontrol edebilmesi için minimum güven sınırıdır. Faz 6'nın daha ileri maddeleri (CPCV/PBO/DSR), Faz 7'nin **başlaması** için zorunlu değildir, ama FAZ6A'nın kendisi zorunludur. Bu doküman Faz 7'nin strateji tasarımını **yapmaz.**
@@ -7405,7 +7655,9 @@ ROADMAP.md'deki bir sonraki faz **Faz 7 — İlk Funding/Basis araştırması**d
   Deflated Sharpe exact kontratı LOCKED VE IMPLEMENTED + TESTED (§28.K —
   27/27); PBO önkoşulu trial return matrix LOCKED VE IMPLEMENTED +
   TESTED (§28.L — 22/22); PBO/CSCV LOCKED VE IMPLEMENTED + TESTED
-  (§28.M — 24/24); CPCV/multiple-testing/parameter-stability HÂLÂ
+  (§28.M — 24/24); Holm düzeltme temeli LOCKED VE IMPLEMENTED +
+  TESTED (§28.N — 18/18; p-değeri üretimi/aile kapsamı/seçim
+  politikası açık); CPCV/parameter-stability HÂLÂ
   spec-lock edilmemiştir) tamamlamaya devam EDEBİLİR (bu doküman bir
   sıralama zorunluluğu icat etmez).
 - CPCV/PBO/DSR'nin Faz 7'nin başlaması için zorunlu olmadığına dair
