@@ -7642,7 +7642,11 @@ ROADMAP.md'deki bir sonraki faz **Faz 7 — İlk Funding/Basis araştırması**d
 - Yukarıdaki minimum FAZ6A ön koşulu artık KARŞILANMIŞTIR (§22.3 —
   FAZ6A: COMPLETE).
 - Faz 7 HENÜZ BAŞLAMAMIŞTIR — bu doküman Faz 7'yi başlatmaz, tasarlamaz,
-  veya scope etmez.
+  veya scope etmez. (Tarihsel kayıt. Durum güncellemesi: kullanıcının
+  açık talimatıyla Faz 7 başlatıldı ve yalnızca ilk dikey dilimi
+  tamamlandı — kapsamı, API'si ve acceptance'ı FUNDING_RESEARCH_SPEC.md'de
+  (23/23). Bu doküman Faz 7'yi tasarlamaz; aşağıdaki önkoşul kuralı ve
+  FAZ6C/FAZ6D durumu DEĞİŞMEMİŞTİR.)
 - FAZ6A'nın (ve artık FAZ6B'nin) karşılanmış olması, kalan FAZ6C işinin
   atlandığı veya tamamlandığı anlamına GELMEZ — proje, Faz 7'ye
   başlamadan ÖNCE Faz 6'nın geri kalanını (FAZ6B artık COMPLETE'dir:

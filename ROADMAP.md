@@ -62,8 +62,17 @@ Bu doküman, Local Crypto Quant Research + Execution Platform projesinin fazlar�
     - Store-runner explicit `funding_required` fail-closed wiring
     - Real SQLite end-to-end golden + determinism regresyonu
     - 35/35 Faz 5B data acceptance criteria PASS
-- **Faz 6:** Validation / anti-overfitting
-- **Faz 7:** İlk Funding/Basis araştırması
+- **Faz 6:** Validation / anti-overfitting — **Kısmen tamamlandı** (ayrıntı: `VALIDATION_SPEC.md` §22.2)
+  - FAZ6A (temporal validation foundation): Tamamlandı
+  - FAZ6B (context-aware extensions, return-series, candidate/trial, annualized metrics): Tamamlandı
+  - FAZ6C (advanced overfitting controls): Tamamlanmadı — purging/embargo, trial-group, Deflated Sharpe, trial return matrix, PBO/CSCV ve Holm düzeltme temeli tamamlandı; CPCV, geçerli p-değeri üretimi / aile kapsamı / seçim politikası, parameter stability, efektif-N, çok pencereli DSR ve PBO yan istatistikleri açık
+  - FAZ6D (final acceptance audit): Başlamadı
+- **Faz 7:** İlk Funding/Basis araştırması — **Başladı; ilk dikey dilim tamamlandı** (ayrıntı: `FUNDING_RESEARCH_SPEC.md`)
+  - Karar anına kapılı settled-funding sinyal görünümü (`event_time + publication_lag <= as_of_time`)
+  - Deterministik funding-carry araştırma policy'si + no-trade kontrolü; Candidate parametreleriyle izlenebilir konfigürasyon
+  - Mevcut rolling değerlendirme + transaction cost + funding muhasebesi (tam bir kez) + Trial/metrik entegrasyonu
+  - 23/23 ilk dilim acceptance kriteri PASS
+  - Açık: USDⓈ-M perpetual kline ingestion, basis (senkron spot + perpetual görünümü), gerçek veri üzerinde çalıştırma, eşik araştırması
 - **Faz 8:** Risk Engine
 - **Faz 9:** Paper trading
 - **Faz 10:** Regime classifier
