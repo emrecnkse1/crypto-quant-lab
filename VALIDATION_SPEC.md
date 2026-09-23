@@ -3477,13 +3477,13 @@ Prerequisites: fold model + observation/outcome-horizon contract (17.1) + purge/
 
 **Non-annualized, per-observation Sharpe'ın kontratı Bölüm 15.9–15.18'de LOCKED'dır VE artık IMPLEMENTED + TESTED'dır** (`compute_stage2_metrics`, commit `e4cedf9`, bkz. Bölüm 23, 28.E — 29/29) — return-series prerequisite'i (Bölüm 16) bu kilitle karşılanmıştır. Annualized Sharpe'ın exact kontratı Bölüm 15.19–15.33'te **LOCKED**'dır VE artık bu combined delivery ile **IMPLEMENTED + TESTED**'dır (bkz. Bölüm 23, 28.H — 30/30) — non-annualized Stage-2 Sharpe'ı DOĞRUDAN reuse eder (annualization_factor ile çarparak), ikinci bir Sharpe tanımı İCAT ETMEZ. Sortino ve CAGR/Calmar'ın exact kontratları da AYNI şekilde artık Bölüm 15.24/15.25–15.26'da **LOCKED** VE **IMPLEMENTED + TESTED**'dır. Deflated Sharpe (17.4), PBO (17.5), multiple-testing corrections (17.6), ve parameter stability (17.7) bu implementasyondan **etkilenmez**, implement EDİLMEMİŞTİR, ve **LATER IN FAZ 6** (FAZ6C) olarak deferred kalır — hiçbiri bu delivery'de tamamlanmış olarak işaretlenmez; "Annualized Metrics" (Sharpe/Sortino/CAGR/Calmar) ile "Stage-3" (Deflated Sharpe/PBO/multiple-testing/parameter stability) İKİ AYRI GRUPTUR (bkz. Bölüm 15.20). Basit total-return/max-drawdown'dan **sonra**, ama foundation'ın (Bölüm 13) parçası değil.
 
-### 17.4 Deflated Sharpe — Exact Contract LOCKED (§17.4.1–17.4.15), IMPLEMENTATION PENDING (§28.K — 0/27)
+### 17.4 Deflated Sharpe — Exact Contract LOCKED (§17.4.1–17.4.17) VE IMPLEMENTED + TESTED (§28.K — 27/27)
 
 Prerequisites: tanımlı Sharpe istatistiği (17.3) + candidate/trial history (18) + (efektif) trial sayısı + gerekli dağılımsal girdiler. Bölüm 18'in candidate/trial foundation'ı artık IMPLEMENTED + TESTED'dır (28.G — 25/25), ama yalnızca TEK bir candidate'in TEK bir trial'ını value object olarak temsil eder — çoklu-trial history/registry/trial-count tracking bu foundation'ın DIŞINDADIR (§18.9, 18.13) ve henüz mevcut değildir. Standalone bir formül olarak, deneysel/trial framework'ünden **kopuk** implement edilmez.
 
 **Durum güncellemesi (FAZ6C — DSR bağımlılık çözümü, docs-only):** "candidate/trial history" ve "trial sayısı"nın **ham** kısmı için gereken en küçük foundation — tek bir karşılaştırılabilir deneme grubunu temsil eden `TrialGroup` ve `recorded_trial_count` (`src/crypto_quant_lab/validation/trial_group.py`) — Bölüm 20.1–20.13'te **LOCKED**'dır VE artık **IMPLEMENTED + TESTED**'dır (§20.14, §28.J — 19/19). Bu güncelleme yazıldığında Deflated Sharpe'ın KENDİSİ henüz spec-lock edilmemişti ve §20.12'deki maddeler açıktı (tarihsel); bu maddeler artık §17.4.2'de karara bağlanmış ve DSR exact kontratı §17.4.1–17.4.15'te LOCKED'dır (implementasyon yok, §28.K — 0/27). Kaydedilmiş sayı, verilen gruptaki kabul edilmiş Trial kayıtlarının tam sayısıdır — efektif/bağımsız deneme sayısı, benzersiz strateji sayısı veya gerçek araştırma deneme yüküne göre koşulsuz bir alt/üst sınır DEĞİLDİR (§20.7).
 
-**Durum güncellemesi (FAZ6C — Deflated Sharpe source-preflight + exact contract lock, docs-only):** Deflated Sharpe'ın exact kontratı aşağıdaki Bölüm 17.4.1–17.4.15'te **LOCKED**'dır — **HENÜZ İMPLEMENT EDİLMEMİŞTİR** (§28.K — 0/27). §20.12'deki on açık madde bu kontratla karara bağlanmıştır (§17.4.2); ikisi bilinçli olarak deferred kalır (efektif-N estimator'ı ve çok pencereli pooling — §17.4.14). Bu kilit, CPCV/PBO/multiple-testing/parameter stability'yi başlatmaz ve FAZ6C'yi tamamlamaz.
+**Durum güncellemesi (FAZ6C — Deflated Sharpe source-preflight + exact contract lock, docs-only):** Deflated Sharpe'ın exact kontratı aşağıdaki Bölüm 17.4.1–17.4.15'te **LOCKED**'dır — kilit zamanında (commit `65273d7`) henüz implement edilmemişti (§28.K — 0/27, tarihsel); kontrat §17.4.1a'daki kaynak/nümerik düzeltmelerle birlikte artık **IMPLEMENTED + TESTED**'dır (§17.4.17, §28.K — 27/27). §20.12'deki on açık madde bu kontratla karara bağlanmıştır (§17.4.2); ikisi bilinçli olarak deferred kalır (efektif-N estimator'ı ve çok pencereli pooling — §17.4.14). Bu kilit, CPCV/PBO/multiple-testing/parameter stability'yi başlatmaz ve FAZ6C'yi tamamlamaz.
 
 **17.4.1 Source-Preflight Bulguları ve Kaynaklar**
 
@@ -3572,6 +3572,70 @@ Repository kaynak bulguları (kod, DEĞİŞMEDEN):
     sabiti YOK (grep: skew/kurtos/NormalDist/erf( — eşleşme yok).
 ```
 
+**17.4.1a Kaynak ve Doğrulama Düzeltmeleri (implementation delivery ile eklendi — §17.4.1'in bazı ifadelerini AÇIKLIĞA KAVUŞTURUR; §17.4.1 tarihsel kayıt olarak korunur)**
+
+```
+1. Render ile doğrulama: Yazarların PDF'i (davidhbailey.com/dhbpapers/
+   deflated-sharpe.pdf; 22 sayfa; PDF CreationDate 2014-08-07) bu kez
+   sayfa sayfa RENDER edilerek (PyMuPDF, scratchpad; proje bağımlılığı
+   DEĞİL) okundu. Eq. (1) (basılı s. 7), Eq. (2) ve SR0 tanımı (s. 8),
+   sayısal örnek girdileri (s. 9) ve yerine koyma (s. 10) GÖRSEL olarak
+   doğrulandı; §17.4.1'deki "denklem gövdeleri metin olarak çıkarılamadı,
+   örnek girdileri hatırlanan değerlerdir" kaydı artık geçerli değildir:
+   s. 9 "N = 100, V[{SR_n}] = 1/2, T=1250, γ3 = -3 and γ4 = 10";
+   s. 10 SR0 = sqrt(1/(2*250)) * ((1-γ)Z^-1[1-1/100] + γZ^-1[1-e^-1/100])
+   ≈ 0.1132 (non-annualized, 250 gözlem/yıl) ve DSR ≈ Z[(2.5/sqrt(250)
+   - 0.1132) sqrt(1249) / sqrt(1 - (-3) 2.5/sqrt(250) + (10-1)/4
+   (2.5/sqrt(250))^2)] = 0.9004 < 0.95.
+2. Skewness işareti: Bu PDF sürümünde HEM s. 9 girdisi HEM s. 10
+   yerine koyması γ3 = -3'tür; s. 9'da +3 GÖZLENMEDİ. Başka bir sürümde
+   (örn. dergi baskısı) +3 yazıyor olabilir — bu tur DOĞRULANAMADI.
+   Her durumda 0.9004 sonucu γ3 = -3 ile üretilir (+3 ile 0.9004
+   ÜRETİLMEZ); örnek girdileri Eq. (2)'nin genel formülünün parçası
+   DEĞİLDİR, yalnızca bir yerine koyma örneğidir.
+3. Sayısal örneğin float kontrolü (standart float, yalnızca kontrol —
+   yüksek hassasiyet oracle'ı DEĞİL): N=100, γ3=-3, γ4=10: 0.900396834449;
+   N=46: 0.950501706876; N=88, γ3=0, γ4=3: 0.950490816676 (4 ondalıkta
+   0.9505, makalenin yazdığı değer). §17.4.1'in "N=88 -> 0.95049" ifadesi
+   doğrudur; kilit commit mesajındaki "0.9504/0.9505 at N=46" ifadesi
+   HATALIDIR (N=46 değeri 0.9505'tir; 0.95049 N=88'e aittir) — commit
+   geçmişi değiştirilmez, düzeltme burada kaydedilir.
+4. Ham kurtosis ile moment tahmincisi AYRI gerekçelendirilir:
+   (a) HAM kurtosis (normal = 3) — DOĞRUDAN kaynak kanıtı: s. 10
+       "Normal returns (γ3 = 0, γ4 = 3)" ve Eq. (2)'deki (γ4 - 1)/4.
+   (b) Ham getirilerden moment TAHMİNİNDE population payda (T) — makale
+       örneği hazır γ3/γ4 değerleri kullanır; bu, paydanın T olduğunu
+       KANITLAMAZ ve doğrudan kaynak kanıtı YOKTUR. Bu, projenin AÇIK
+       estimator tercihidir. Gerekçesi: population momentler örneklemin
+       deneysel dağılımının momentleridir; Pearson eşitsizliği
+       (γ4 >= γ3^2 + 1) onlar için TAM olarak geçerlidir ve bu,
+       1 - γ3 SR + (γ4-1)/4 SR^2 ikinci derece ifadesinin diskriminantını
+       <= 0 yapar -> payda terimi HER SR için >= 0 (§17.4.9).
+       Bias-corrected G1/G2 tahmincileri bu garantiyi VERMEZ.
+5. Doğruluk kanıtı: float referansıyla 2.2e-16 uyum (önceki preflight)
+   28 basamak doğruluğun kanıtı DEĞİLDİR. Doğrulama artık algoritmadan
+   bağımsız arbitrary-precision bir referansla yapılır (mpmath 1.3.0,
+   dps=120-130; ncdf erfc tabanlı, ters-CDF sqrt(2)*erfinv(2p-1);
+   araştırma ortamında mevcut, proje bağımlılığı DEĞİL) — sonuçlar
+   §17.4.8 ve §17.4.12'de.
+6. Newton iterasyon sayısı: örneklenmiş N'lerde gözlenen en fazla 75
+   iterasyon DENEYSEL bir bulgudur, [2, 10^30] domain'inin tamamı için
+   İSPAT DEĞİLDİR (§17.4.8'de ayrıştırıldı).
+7. N ve V aynı evreni temsil etmelidir: Eq. (1)'in türetimi, N
+   bağımsız denemenin SR'lerinin ORTAK bir dağılımdan (aynı "strateji
+   sınıfı") geldiğini ve V'nin o dağılımın varyansı olduğunu varsayar.
+   Gruptan tahmin edilen V ile keyfî büyüklükte bir araştırma programı
+   N'ini birleştirmek KOŞULSUZ geçerli DEĞİLDİR; yalnızca caller, grubun
+   V'sinin N'in kapsadığı ilgili deneme evrenini temsil ettiğini
+   varsaydığında anlamlıdır (§17.4.2 karar 2, düzeltildi).
+8. Caller'ın N'i bir VARSAYIMDIR: eksik geçmişi tamamlamaz; başarısız/
+   iptal edilmiş her çalıştırma OTOMATİK olarak bağımsız bir istatistiksel
+   deneme SAYILMAZ (§17.4.2 karar 3, düzeltildi).
+Bu düzeltmeler API'yi, algoritmayı, validation sırasını veya §28.K
+kriter sayısını (27) DEĞİŞTİRMEZ; §28.K kriter 18-20'nin doğrulama
+yöntemi daha güçlü bağımsız referanslarla yeniden ifade edilmiştir.
+```
+
 **17.4.2 On Açık Kararın Çözümü (LOCKED)**
 
 ```
@@ -3596,13 +3660,20 @@ Repository kaynak bulguları (kod, DEĞİŞMEDEN):
    (diğer gruplar, coin'ler, kaydedilmemiş denemeler dahil) caller
    tarafından belirlenir. Gruplar-arası tekrarların ayıklanması ve
    program-düzeyi sayım bu API'nin DIŞINDADIR (registry YOK).
-   Sınır: N'i geniş, V'yi dar kapsamdan almak, makalenin "aynı strateji
-   sınıfı" varsayımına bir yaklaşımdır; kaydedilir.
+   Sınır (düzeltildi, §17.4.1a madde 7): Eq. (1), N denemenin SR'lerinin
+   ortak bir dağılımdan geldiğini ve V'nin o dağılımın varyansı olduğunu
+   varsayar. Gruptan tahmin edilen V ile keyfî büyüklükte bir program
+   N'ini birleştirmek KOŞULSUZ geçerli DEĞİLDİR; caller, V'nin N'in
+   kapsadığı ilgili deneme/strateji evrenini temsil ettiğini ayrıca
+   gerekçelendirmelidir. API bunu doğrulayamaz.
 
 3. Başarısız / iptal / kaydedilmemiş denemeler
    KARAR: Hiçbir yeni failure nesnesi yok. Bu denemeler V'ye KATKI
    VERMEZ (gözlenmiş bir SR yok). Bağımsız deneme sayılıp sayılmayacakları
-   yalnızca caller'ın beyan ettiği N'e yansır. Sınır: metrik hesaplaması
+   yalnızca caller'ın beyan ettiği N'e yansır — ve bu bir varsayımdır:
+   başarısız/iptal edilmiş her çalıştırma otomatik olarak bağımsız bir
+   istatistiksel deneme SAYILMAZ; N eksik geçmişi tamamlamaz
+   (§17.4.1a madde 8). Sınır: metrik hesaplaması
    sırasında hata veren (örn. equity <= 0) bir deneme gruba giremez; bu
    V'yi aşağı yönlü yanlı kılabilir — mekanik tespit YOK.
 
@@ -3632,11 +3703,13 @@ Repository kaynak bulguları (kod, DEĞİŞMEDEN):
    KARAR: Seçilen denemenin compute_periodic_returns çıktısı üzerinden
    POPULATION moment tahmincileri (payda T): m_k = sum((r-mean)^k)/T,
    skewness = m3 / (m2 * sqrt(m2)), kurtosis = m4 / (m2 * m2) — HAM
-   kurtosis (normal = 3), excess DEĞİL (§17.4.1 yeniden üretimi).
-   Bias-corrected (G1/G2) tahminciler KULLANILMAZ. Sınır: SR'nin kendisi
-   n-1 paydalı sample stdev kullanır (Stage-2, DEĞİŞMEZ); moment
-   konvansiyonunun kaynak kod düzeyinde yazarlarla birebir aynı olduğu
-   DOĞRULANMADI (asimptotik olarak eşdeğer). m2 > 0 değilse ValueError.
+   kurtosis (normal = 3), excess DEĞİL. Bias-corrected (G1/G2)
+   tahminciler KULLANILMAZ. Gerekçe AYRIDIR (§17.4.1a madde 4): ham
+   kurtosis doğrudan kaynağa dayanır (s. 10, Eq. 2); population payda
+   ise doğrudan kaynağa DAYANMAYAN, projenin açık estimator tercihidir
+   (Pearson eşitsizliği ile payda teriminin >= 0 kalmasını garanti
+   eder). Sınır: SR'nin kendisi n-1 paydalı sample stdev kullanır
+   (Stage-2, DEĞİŞMEZ). m2 > 0 değilse ValueError.
 
 7. Normal CDF / ters-CDF
    Kanıt: Bölüm 15.16/27 float ve statistics modülünü yasaklar;
@@ -3674,6 +3747,7 @@ Repository kaynak bulguları (kod, DEĞİŞMEDEN):
 
 ```python
 # Modül: src/crypto_quant_lab/validation/deflated_sharpe.py (YENİ modül)
+
 
 def compute_deflated_sharpe_ratio(
     group: TrialGroup,
@@ -3826,7 +3900,15 @@ _normal_cdf(x):
     Durma: s + term == s (working precision'da) olduğunda; güvenlik
     sınırı 5000 terim -> aşılırsa ArithmeticError (alan içinde
     erişilemez; preflight'te |x| <= 15 için en fazla 368 terim).
-  - Hedef: [-15, 15] üzerinde mutlak hata <= 1e-60.
+  - Hedef (düzeltildi): AÇIK (-15, 15) aralığında mutlak hata <= 1e-60;
+    |x| >= 15 clamp bölgesinde mutlak hata <= Φ(-15) < 3.68e-51 (önceki
+    "[-15, 15] üzerinde <= 1e-60" ifadesi uç noktalarda YANLIŞTI).
+    mpmath ölçümü (x adımı 0.007, açık aralık): en büyük mutlak hata
+    6.6e-79. Göreli hata GARANTİ EDİLMEZ: alt kuyrukta Φ(x)'in kendisi
+    küçüldükçe büyür (ölçülen: x=-10'da 9.8e-57, -12'de 6.2e-48,
+    -14'te 2.0e-36, -14.9'da 1.5e-30; x <= -15'te sonuç exact 0).
+    Kuyruk kaybının kaynağı 1/2 + φ(x)S(x) toplamındaki iptaldir
+    (mutlak hata ~1e-79 korunur, göreli hata 1e-79/Φ(x) olur).
 _normal_quantile(p):
   - Alan: 1/2 <= p < 1 (DSR yalnızca 1-1/N ve 1-1/(N e), N >= 2
     değerlerini ister); alan dışı -> ValueError (private invariant).
@@ -3834,14 +3916,33 @@ _normal_quantile(p):
     Φ, (0, ∞) üzerinde konkav olduğundan x_0 = 0'dan başlayan iterasyon
     köke MONOTON olarak yaklaşır (aşma yok).
   - Durma: |adım| <= 1e-45. Güvenlik sınırı 200 iterasyon -> aşılırsa
-    ArithmeticError. Preflight: N in {2, 10, 100, 1e6, 1e12, 1e30} için
-    en fazla 75 iterasyon; kalan |Φ(x) - p| <= 5e-79.
+    ArithmeticError (fail-closed; yakınsamamış değer DÖNDÜRÜLMEZ).
+  - KESİN (tam aritmetikte): x_0 = 0'dan monoton, sınırlı -> köke
+    yakınsama. Durma ölçütünün domain içinde ULAŞILABİLİR olması: adım
+    gürültüsü ~ (Φ mutlak hatası)/φ(x) <= ~1e-78 / 4e-30 < 1e-45
+    (en uç kantil ~11.55).
+  - DENEYSEL (ispat DEĞİL): 592 N değeri (2..200 arası seçili
+    tamsayılar, 10^0.35'ten 10^30'a dekad başına 20 log noktası,
+    10^30-1 ve 10^30) x {1-1/N, 1-1/(N e)} için en fazla 75 iterasyon.
+    İterasyon sayısının tüm domain için 200'ün altında kaldığı
+    İSPATLANMAMIŞTIR; sınır aşılırsa ArithmeticError.
+  - x-hatası (mpmath erfinv referansına göre, aynı 592 x 2 ızgara):
+    en büyük |x - x_ref| = 6.3e-50. p'nin kendisi 80 basamakta
+    oluşturulur; 1 - p kuyruğunun göreli hatası ~1e-80/(1-p) olup x'e
+    ~Δp/φ(x) (<= ~3e-51) olarak yansır.
   - N <= 10**30 sınırının gerekçesi: bu aralıkta kantil < 11.6 kalır
     (Φ'nin clamp sınırı 15'in altında) ve 1 - 1/(N e), prec=80'de 1'e
     yuvarlanmaz.
-Global doğruluk hedefi: döndürülen DSR, §17.4.5 formülünün girdi
-istatistikleri üzerinden tam değerinden en fazla 1e-27 mutlak farklıdır
-(28 basamaklı çıkış yuvarlaması baskındır).
+Global doğruluk hedefi: döndürülen DSR, §17.4.5 formülünün aynı Decimal
+girdi istatistikleri üzerindeki tam değerinden en fazla 1e-27 mutlak
+farklıdır (28 basamaklı çıkış yuvarlaması baskındır). Kanıt DÜZEYİ:
+(i) test edilen durumlarda mpmath'e göre ölçülen en büyük hata 2.0e-29;
+(ii) hata yayılımı |ΔDSR| <= φ(z)|Δz| + ε_Φ + ε_yuvarlama, Δz ≈
+sqrt(T-1)/sqrt(variance_term) * sqrt(V) * Δq ile sınırlıdır — Δq ~1e-49
+olduğundan olağan girdilerde ihmal edilebilir; variance_term -> 0 veya
+astronomik T gibi KÖTÜ KOŞULLU girdiler için genel bir ispat
+VERİLMEZ. Göreli doğruluk yalnızca alt kuyrukta Φ(z) >> 1e-50 iken
+anlamlıdır.
 ```
 
 **17.4.9 Tanımsız Durumlar ve Minimum Veri Gereksinimleri (LOCKED)**
@@ -3858,8 +3959,14 @@ Mekanik minimumlar (ENFORCE EDİLİR):
 asimptotik bir yaklaşım kullanır; kanıtlanmamış bir eşik İCAT EDİLMEZ.
 Küçük T ve küçük N'de sonuç yaklaşık kalır (Ek A.2: N < 50'de beklenen
 maksimum hafifçe yüksek tahmin edilir -> DSR muhafazakâr yönde).
-Skewness/kurtosis ölçeği nedeniyle variance_term <= 0 olabilir (aşırı
-pozitif skewness + yüksek SR); bu durum ValueError'dır, clip EDİLMEZ.
+variance_term <= 0 durumu ValueError'dır, clip EDİLMEZ. Düzeltme
+(§17.4.1a madde 4): population momentler için Pearson eşitsizliği
+(γ4 >= γ3^2 + 1) ikinci derece ifadeyi HER SR için >= 0 yapar; bu
+nedenle gerçek bir örneklemden hesaplanan momentlerle <= 0 durumu
+yalnızca dejenere iki-noktalı dağılımlarda (eşitlik sınırında)
+yuvarlama yoluyla oluşabilir (sayısal aramada en küçük değer ~7.6e-8,
+pozitif). Dal savunma amaçlı korunur ve private yardımcı üzerinden,
+tutarsız istatistiklerle test edilir.
 ```
 
 **17.4.10 Purity ve Import Direction (LOCKED)**
@@ -3885,31 +3992,44 @@ Değişmeyecek:    tüm mevcut production/test dosyaları, __init__.py,
                  ROADMAP.md, pyproject.toml, AGENTS.md, CLAUDE.md
 ```
 
-**17.4.12 Doğrulama Yöntemi — Bağımsız Referanslar (LOCKED)**
+**17.4.12 Doğrulama Yöntemi — Bağımsız Referanslar (LOCKED; implementation delivery ile güçlendirildi)**
 
 ```
-Referans doğrulaması aynı algoritmanın ikinci bir kopyasına DAYANMAZ:
-1. Yayımlanmış sonuçlar (Bailey & López de Prado 2014 sayısal örneği),
-   _deflated_sharpe_from_statistics üzerinden: N=100 -> 0.9004 (4
-   ondalık); N=46 -> 0.9505 (4 ondalık); g3=0, g4=3: N=88 -> >= 0.95,
-   N=89 -> < 0.95.
-2. Bağımsız implementasyon: TEST dosyasında stdlib
-   statistics.NormalDist (float, farklı algoritma) ile _normal_cdf
-   [-15, 15] ızgarasında |fark| <= 1e-15; _normal_quantile için
-   p in {0.5, 0.9, 0.975, 0.99, 0.999, 1-1/(100e)} |fark| <= 1e-12.
-   (float yalnızca test oracle'ıdır; production'a GİRMEZ.)
-3. Literatürdeki yüksek hassasiyetli sabitler: Φ(1) =
-   0.8413447460685429485852325456320379 (>= 30 basamak eşleşme);
-   Φ^-1(0.975) = 1.959963984540054 (15 basamak).
-4. İç tutarlılık (tek başına yeterli SAYILMAZ): Φ(Φ^-1(p)) - p <= 1e-60;
-   Φ(-x) + Φ(x) = 1 (<= 1e-60); Φ monoton artan.
-5. Grup düzeyi: sentetik equity eğrilerinden kurulan bir TrialGroup için
-   compute_deflated_sharpe_ratio sonucu, TEST içinde float stdlib
-   (statistics.mean/pvariance/NormalDist) ile bağımsız hesaplanan DSR'ye
-   |fark| <= 1e-9.
-Private yardımcıların (§17.4.3) doğrudan test edilmesine YALNIZCA bu
-bağımsız-referans doğrulaması için izin verilir; davranış testlerinin
-geri kalanı public API üzerinden yapılır.
+Referans doğrulaması aynı algoritmanın ikinci bir kopyasına DAYANMAZ.
+Birincil referans: mpmath 1.3.0 (arbitrary precision, dps=130; CDF erfc
+tabanlı, ters-CDF sqrt(2)*erfinv(2p-1)) ile OFFLINE üretilmiş değerler,
+testte Decimal string olarak saklanır (CDF 90, kantil 70, DSR 40
+anlamlı basamak). mpmath proje/runtime bağımlılığı DEĞİLDİR; üretim
+betiği scratchpad'dedir ve testler mpmath İMPORT ETMEZ.
+1. Φ: 13 nokta (merkez, iki kuyruk, x=±14.5) mutlak hata <= 1e-75
+   (ölçülen en büyük 6.6e-79; hedef 1e-60). Alt kuyruk göreli hata:
+   x=-10'da <= 1e-50, x=-14.5'te <= 1e-28. Clamp: Φ(15)=Φ(15.000001)=1,
+   Φ(-15)=Φ(-40)=0, Φ(±14.999999) clamp DIŞINDA.
+2. Φ^-1: p in {0.975, 0.99} ve modülün N in {2, 100, 10^30} için
+   kurduğu exact p değerleri (1-1/N, 1-1/(N e)) — x-hatası <= 1e-47
+   (ölçülen en büyük 6.3e-50); p = 1/2 -> exact 0; alan dışı p
+   ValueError.
+3. DSR (istatistik düzeyi, private yardımcı): makale örneği N=100/46
+   (γ3=-3, γ4=10) ve N=88/89 (γ3=0, γ4=3) mpmath değerleri, mutlak
+   <= 1e-27; ayrıca makalenin basılı dört ondalıklı değerleri (0.9004,
+   0.9505, 0.9505) ve N=88/89 eşiği.
+4. DSR (grup düzeyi, public API): sentetik üç Trial'lık grup için, mevcut
+   Stage-2 Sharpe ve periodic-returns çıktıları girdi alınarak mpmath ile
+   hesaplanmış 12 referans (rf in {0, 0.0005}, seçilen in {alpha, gamma},
+   N in {2, 5, 50}), mutlak <= 1e-27.
+5. Tamamlayıcı (bağımsız ama düşük hassasiyetli): stdlib float
+   NormalDist ile Φ ızgarası |fark| <= 1e-15; grup DSR float referansı
+   |fark| <= 1e-9; moment konvansiyonu ayrımı (G1/G2 ve excess
+   varyantları > 1e-6 farklı).
+6. İç tutarlılık (tek başına yeterli SAYILMAZ): Φ(Φ^-1(p)) - p <= 1e-60,
+   Φ(x) + Φ(-x) - 1 <= 1e-75.
+7. Fail-closed: iterasyon/terim sınırı düşürülerek (monkeypatch)
+   ArithmeticError mesajları doğrulanır.
+Private yardımcıların (§17.4.3) doğrudan test edilmesine YALNIZCA
+bağımsız-referans doğrulaması, public API ile gerçek örneklemden
+ulaşılamayan variance_term <= 0 dalı (§17.4.9) ve fail-closed sınır
+testleri için izin verilir; davranış testlerinin geri kalanı public API
+üzerinden yapılır.
 ```
 
 **17.4.13 Gerçek Entegrasyon Senaryosu (LOCKED)**
@@ -3945,9 +4065,53 @@ exact mesajla reddedilir.
 **17.4.15 Durum**
 
 ```
-LOCKED — IMPLEMENTATION PENDING. §28.K — 0/27. Bu kilit, FAZ6C'nin
-veya Faz 6'nın tamamlandığı anlamına GELMEZ; Faz 7 önkoşulunu (§29)
-DEĞİŞTİRMEZ.
+Kilit zamanında: LOCKED — IMPLEMENTATION PENDING, §28.K — 0/27 (tarihsel).
+Şimdi: LOCKED VE IMPLEMENTED + TESTED, §28.K — 27/27 (§17.4.17). Bu,
+FAZ6C'nin veya Faz 6'nın tamamlandığı anlamına GELMEZ; Faz 7 önkoşulunu
+(§29) DEĞİŞTİRMEZ.
+```
+
+**17.4.16 Sınırlamalar (Implementation Sonrası, Açık Kayıt)**
+
+```
+- N caller-beyanlı bir varsayımdır; efektif-N estimator'ı YOK.
+- V tek grubun kayıtlı Trial'larından gelir; N ile aynı evreni temsil
+  ettiği doğrulanamaz.
+- Yalnızca tek pencereli Trial; çok pencereli pooling YOK (mevcut çok
+  pencereli Trial/TrialGroup/rolling desteği DEĞİŞMEDEN korunur).
+- Eq. (1) büyük-N yaklaşımıdır; küçük N'de hafif yüksek eşik
+  (muhafazakâr) verir.
+- İstatistiksel yeterlilik eşiği, güven eşiği veya "geçti/kaldı"
+  etiketi YOK; DSR bir işlem/risk kararı DEĞİLDİR ve kullanıcının
+  gelecekteki risk profiliyle BAĞLANTILI DEĞİLDİR.
+- Newton iterasyon üst sınırının tüm domain için ispatı YOK (fail-closed).
+```
+
+**17.4.17 Implementation Evidence (IMPLEMENTED + TESTED — combined delivery ile eklendi)**
+
+```
+Production: src/crypto_quant_lab/validation/deflated_sharpe.py (YENİ)
+  - compute_deflated_sharpe_ratio (tek public sembol; import'lar private
+    alias'larla), private _normal_pdf/_normal_cdf/_normal_quantile/
+    _deflated_sharpe_from_statistics, _dsr_context (prec=80) ve
+    _output_context (prec=28), 85 basamaklı _EULER_MASCHERONI ve _PI
+    (mpmath'e göre hata ~4e-86).
+  - §17.4.6'nın 15 adımı ve mesajları birebir; Stage-2 ve periodic
+    returns DEĞİŞMEDEN reuse; hiçbir mevcut dosya değişmedi.
+Test: tests/test_validation_deflated_sharpe.py (YENİ) — 109 test, tümü
+  PASS: API/imza/scope, 15 adımın mesajları ve ulaşılabilir eşzamanlı-
+  ihlal sıraları (1>2>3, 3>5, 4>5, 5>6, 6>7, 7>8, 8>9, 9>10, 10>11;
+  11/12/13 çiftleri gerçek örneklemle aynı anda ihlal edilemez: stdev>0
+  => m2>0, Pearson), N/V/moment/ölçek/rf
+  semantiği, bağımsız referanslar (§17.4.12), clamp/alan/fail-closed,
+  ambient-context bağımsızlığı, no-mutation/determinism, import yönü,
+  gerçek SQLite + run_rolling_backtest_from_store entegrasyonu (LONG/
+  SHORT/alternating policy, 25 değişken fiyatlı mum, tek pencere; iki
+  pencereli grup reddi).
+İlgili regression suite'ler (trial_group, candidate, metrics,
+annualized_metrics, rolling, windows, purging, backtest_models,
+backtest_results — 790 test) DEĞİŞMEDEN yeşil; tam suite 2154/2154 PASS
+(2045 önceki + 109 yeni).
 ```
 
 ### 17.5 PBO — LATER IN FAZ 6
@@ -5119,7 +5283,7 @@ implement ETMEZ.
 
 ### 20.12 Deflated Sharpe İçin Bağımlılık Durumu — Çözülen / Açık Kalan (LOCKED Kayıt)
 
-**Durum güncellemesi (DSR exact contract lock):** Aşağıdaki on madde, bu bölüm yazıldığı andaki durumu kaydeder (tarihsel olarak korunur). Maddelerin tamamı artık §17.4.2'de karara bağlanmıştır: 1 N = caller-beyanlı `independent_trial_count` (recorded_trial_count ile ikame YOK); 2 V/istatistikler tek TrialGroup'tan, N program kapsamında caller'dan; 3 başarısız/kaydedilmemiş denemeler V'ye girmez, yalnızca beyan edilen N'e yansır; 4 her Trial tek pencere, SR = Stage-2 Sharpe, T = getiri sayısı; 5 per-observation ölçek; 6 population moment skewness + HAM kurtosis; 7 Decimal-only Taylor serisi Φ + Newton Φ^-1; 8 Stage-2 Sharpe'ların sample varyansı (M-1), V > 0; 9 zorunlu `selected_candidate_id`, seçim YOK; 10 rol doğrulanamaz, holdout koruması YOK. Deferred kalanlar: efektif-N estimator'ı ve çok pencereli pooling (§17.4.14).
+**Durum güncellemesi (DSR exact contract lock):** Aşağıdaki on madde, bu bölüm yazıldığı andaki durumu kaydeder (tarihsel olarak korunur). Maddelerin tamamı artık §17.4.2'de karara bağlanmıştır: 1 N = caller-beyanlı `independent_trial_count` (recorded_trial_count ile ikame YOK); 2 V/istatistikler tek TrialGroup'tan, N program kapsamında caller'dan; 3 başarısız/kaydedilmemiş denemeler V'ye girmez, yalnızca beyan edilen N'e yansır; 4 her Trial tek pencere, SR = Stage-2 Sharpe, T = getiri sayısı; 5 per-observation ölçek; 6 population moment skewness + HAM kurtosis; 7 Decimal-only Taylor serisi Φ + Newton Φ^-1; 8 Stage-2 Sharpe'ların sample varyansı (M-1), V > 0; 9 zorunlu `selected_candidate_id`, seçim YOK; 10 rol doğrulanamaz, holdout koruması YOK. Deferred kalanlar: efektif-N estimator'ı ve çok pencereli pooling (§17.4.14). Karar 2, 3 ve 6'nın gerekçeleri implementation delivery'de §17.4.1a ile düzeltilmiştir; DSR artık IMPLEMENTED + TESTED'dır (§17.4.17, §28.K — 27/27).
 
 ```
 Bu kontratla ÇÖZÜLEN (kontrat düzeyinde; implementasyon HENÜZ YOK):
@@ -5415,14 +5579,19 @@ FAZ 6C — Advanced Overfitting Controls
         commit `1b666fd` — bu madde "kilitlenmiş, henüz implement
         edilmemiş" olarak kaydedilmişti, §28.J — 0/19.)
 
-    Kilitlenmiş, HENÜZ İMPLEMENT EDİLMEMİŞ bileşen:
-      - Deflated Sharpe exact kontratı (Bölüm 17.4.1–17.4.15) —
+      - Deflated Sharpe exact kontratı (Bölüm 17.4.1–17.4.17) — LOCKED
+        VE artık İMPLEMENT EDİLMİŞ + TEST EDİLMİŞTİR:
         `compute_deflated_sharpe_ratio`
         (`src/crypto_quant_lab/validation/deflated_sharpe.py`, YENİ
-        modül, henüz yok); §28.K — 0/27.
+        modül); kendi regression suite'i
+        `tests/test_validation_deflated_sharpe.py`'de (109 test, tümü
+        PASS); mpmath tabanlı bağımsız nümerik doğrulama (§17.4.12);
+        bkz. Bölüm 17.4.17, 23, 28.K — 27/27. Efektif-N estimator'ı ve
+        çok pencereli pooling deferred (§17.4.14). (Kilit zamanında —
+        commit `65273d7` — "kilitlenmiş, henüz implement edilmemiş",
+        §28.K — 0/27.)
 
     Kalan zorunlu bileşenler (HENÜZ PENDING):
-      - Deflated Sharpe implementasyonu + regression suite'i (§28.K).
       - CPCV (17.2), PBO (17.5), multiple-testing corrections (17.6),
         parameter stability (17.7) — hiçbiri henüz spec-lock
         edilmemiştir; bu doküman onları henüz TASARLAMAZ.
@@ -5466,7 +5635,7 @@ FAZ 6D — Faz 6 Final Acceptance
 |---|---|---|---|
 | FAZ6A | COMPLETE | temporal window/IS-OOS primitives (§28.A — 22/22), zero-context rolling OOS evaluation (§28.C — 12/12), Stage-1 metrics (§28.D — 18/18) | locked FAZ6A scope içinde yok |
 | FAZ6B | COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 (§8.3.16, §28.F — 22/22, LOCKED VE IMPLEMENTED + TESTED), candidate/trial foundation (§18, §28.G — 25/25, LOCKED VE IMPLEMENTED + TESTED), Annualized Metrics (§15.19–15.33, §28.H — 30/30, LOCKED VE IMPLEMENTED + TESTED) | locked FAZ6B scope içinde yok |
-| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + kaydedilmiş Trial sayısı exact kontratı + implementasyonu (§20.1–20.14, §28.J — 19/19, LOCKED VE IMPLEMENTED + TESTED); Deflated Sharpe exact kontratı (§17.4.1–17.4.15, LOCKED — implementasyon YOK, §28.K — 0/27) | Deflated Sharpe implementasyonu; CPCV, PBO, multiple-testing corrections, parameter stability |
+| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + kaydedilmiş Trial sayısı exact kontratı + implementasyonu (§20.1–20.14, §28.J — 19/19, LOCKED VE IMPLEMENTED + TESTED); Deflated Sharpe exact kontratı + implementasyonu (§17.4.1–17.4.17, §28.K — 27/27, LOCKED VE IMPLEMENTED + TESTED) | CPCV, PBO, multiple-testing corrections, parameter stability |
 | FAZ6D | NOT STARTED | yok | Faz 6 final acceptance audit'i |
 
 Bu tablo, §28.A/B/C/D'nin bağımsız acceptance sayımlarını **birleşik bir yüzdeye veya tek bir sayıya dönüştürmez** — her grup kendi bağımsız kanıtını korur; bu tablo yalnızca hangi grubun hangi alt-fazın kanıtı olduğunu özetler.
@@ -6125,14 +6294,49 @@ CONTRACT LOCK — TAMAMLANDI (docs-only):
   efektif-N estimator'ı ve çok pencereli pooling (§17.4.14). Docs-only;
   production kod ve test YOK. FAZ6C ve Faz 6 NOT COMPLETE kalır.
 
+FAZ6C — DEFLATED SHARPE SOURCE/NUMERIC VERIFICATION + IMPLEMENTATION +
+REGRESSION SUITE + DOCUMENTATION/ACCEPTANCE CLOSURE — TAMAMLANDI
+(tek combined delivery):
+  Kodlamadan önce kontratı doğruladı: yazarların PDF'i render edilerek
+  Eq. (1)/(2) ve sayısal örnek görsel olarak okundu; bu sürümde s. 9 ve
+  s. 10'un ikisi de γ3 = -3 gösterir (+3 GÖZLENMEDİ, başka sürüm
+  doğrulanamadı). §17.4.1a'da kaydedilen düzeltmeler: kaynak atfı,
+  ham kurtosis (kaynak kanıtlı) ile population moment paydası (projenin
+  açık tercihi; Pearson eşitsizliği gerekçesi) ayrımı, kilit commit
+  mesajındaki 0.9504 hatası, float 2.2e-16 uyumunun 28 basamak kanıtı
+  olmadığı, 75 iterasyonun deneysel olduğu, N ile V'nin aynı evreni
+  temsil etmesi gerektiği ve N'in bir varsayım olduğu. §17.4.8'de CDF
+  doğruluk hedefi düzeltildi (açık aralık <= 1e-60; clamp bölgesi
+  <= 3.68e-51). Bağımsız doğrulama mpmath 1.3.0 (dps 120-130) ile:
+  CDF açık aralık en büyük mutlak hata 6.6e-79; kantil x-hatası
+  (592 N x 2 olasılık) en büyük 6.3e-50; en fazla 75 Newton iterasyonu
+  (deneysel); DSR zinciri test edilen durumlarda en büyük 2.0e-29;
+  ambient context bağımsız. Implementasyon:
+  `src/crypto_quant_lab/validation/deflated_sharpe.py` (YENİ) — kilitli
+  API/15 adım/mesajlar birebir; API ve algoritma kilitli kontrattan
+  SAPMADI. Test: `tests/test_validation_deflated_sharpe.py` (YENİ,
+  109 test, tümü PASS; mpmath-üretimli Decimal referanslar testte
+  saklıdır, mpmath import EDİLMEZ). İlgili regression suite'ler
+  (790 test) DEĞİŞMEDEN yeşil; tam suite 2154/2154 PASS (2045 + 109).
+  Ruff check/format ve `git diff --check` temiz — önceki kilit
+  commit'inin §17.4.3 python kod bloğunda ruff'ın markdown
+  biçimlendirmesinin istediği tek boş satır eksikti; elle eklendi.
+  §28.K 0/27'den 27/27'ye kapatıldı (kriter 18-20'nin doğrulama yöntemi
+  mpmath referanslarıyla güçlendirildi, kriter sayısı DEĞİŞMEDİ).
+  Değiştirilen dosyalar: yalnızca `deflated_sharpe.py` (YENİ),
+  `test_validation_deflated_sharpe.py` (YENİ), `VALIDATION_SPEC.md`.
+  Efektif-N estimator'ı ve çok pencereli pooling deferred. FAZ6C ve
+  Faz 6 NOT COMPLETE kalır.
+
 Sonraki (henüz başlanmadı):
-  Bölüm 17.4.1–17.4.15'te LOCKED olan Deflated Sharpe kontratının,
-  yeniden tasarlanmadan, tek bir combined implementation delivery olarak
-  implement edilmesi (`src/crypto_quant_lab/validation/deflated_sharpe.py`
-  + `tests/test_validation_deflated_sharpe.py` + §28.K closure). CPCV,
-  PBO, multiple-testing corrections ve parameter stability hâlâ
-  spec-lock edilmemiştir. Candidate selection/ranking, optimizer ve
-  final holdout enforcement BAŞLATILMAZ. Ardından FAZ6D — Faz 6 Final
+  FAZ6C'nin kalan maddelerinden biri için ayrı bir source-preflight +
+  exact kontrat kilidi: CPCV (17.2 — "fold model" ve label/outcome-
+  horizon önkoşulları hâlâ yok), PBO (17.5 — deterministic performance
+  matrix gerekli), multiple-testing corrections (17.6) veya parameter
+  stability (17.7); hangisinin sırada olduğu henüz seçilmemiştir.
+  Efektif-N estimator'ı ve çok pencereli DSR pooling ayrı, deferred
+  kontratlardır. Candidate selection/ranking, optimizer ve final
+  holdout enforcement BAŞLATILMAZ. Ardından FAZ6D — Faz 6 Final
   Acceptance audit'i. Faz 6'nın tamamlanması için FAZ6C/FAZ6D'nin ikisi
   de gereklidir (bkz. Bölüm 22).
 ```
@@ -6219,7 +6423,7 @@ Aynı girdiler → aynı pencere sonuçları — mevcut `run_backtest_from_store
 
 ## 28. Acceptance Criteria — On Bir Ayrı Grup (LOCKED)
 
-Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Annualized Metrics'in (Sharpe/Sortino/CAGR/Calmar) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.H'de kaydedilir (bkz. Bölüm 15.19–15.33, 23 — 30/30). Window-level purging/embargo'nun (Bölüm 17.1.1–17.1.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.I'de kaydedilir (bkz. Bölüm 17.1, 23 — 19/19). Trial-group / recorded-trial-count foundation'ının (Bölüm 20.1–20.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.J'de kaydedilir (bkz. Bölüm 20, 23 — 19/19). Deflated Sharpe'ın (Bölüm 17.4.1–17.4.15) implementasyon/test acceptance checklist'i, HENÜZ implementation/test exercised OLMAYAN ayrı bir liste olarak 28.K'de kaydedilir (bkz. Bölüm 17.4, 23 — 0/27). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G/28.H/28.I/28.J/28.K altındaki sayılar). §28.A/B/C/D/E/F/G/H/I/J/K'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
+Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Annualized Metrics'in (Sharpe/Sortino/CAGR/Calmar) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.H'de kaydedilir (bkz. Bölüm 15.19–15.33, 23 — 30/30). Window-level purging/embargo'nun (Bölüm 17.1.1–17.1.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.I'de kaydedilir (bkz. Bölüm 17.1, 23 — 19/19). Trial-group / recorded-trial-count foundation'ının (Bölüm 20.1–20.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.J'de kaydedilir (bkz. Bölüm 20, 23 — 19/19). Deflated Sharpe'ın (Bölüm 17.4.1–17.4.17) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.K'de kaydedilir (bkz. Bölüm 17.4, 23 — 27/27). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G/28.H/28.I/28.J/28.K altındaki sayılar). §28.A/B/C/D/E/F/G/H/I/J/K'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
 
 ### 28.A — LOCKED FOUNDATION ACCEPTANCE (Runner-Bağımsız)
 
@@ -6508,39 +6712,39 @@ Bu liste, Bölüm 20.1–20.13'te LOCKED olan trial-group / recorded-trial-count
 
 **Trial-group / recorded-trial-count acceptance count: 19 / 19 implementation/test exercised.** (Kilit zamanındaki tarihsel sayım: 0 / 19, commit `1b666fd`.) Bu grubun 19/19 olması, aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: Deflated Sharpe; efektif/bağımsız trial sayısı; gruplar-arası veya tüm-araştırma-programı deneme sayımı; başarısız/iptal deneme kaydı; PBO; CPCV; multiple-testing correction; parameter stability; candidate selection/ranking; optimizer/search; final holdout protection; persistence; FAZ6C'nin veya Faz 6'nın tamamlanması.
 
-### 28.K — DEFLATED SHARPE ACCEPTANCE (0/27 IMPLEMENTATION/TEST EXERCISED)
+### 28.K — DEFLATED SHARPE ACCEPTANCE (27/27 IMPLEMENTATION/TEST EXERCISED)
 
-Bu liste, Bölüm 17.4.1–17.4.15'te LOCKED olan Deflated Sharpe exact kontratının gelecekteki implementasyonu için acceptance kriterlerini kaydeder. **Bu 27 kriterin HİÇBİRİ henüz implementation/test exercised DEĞİLDİR** — `src/crypto_quant_lab/validation/deflated_sharpe.py` ve `tests/test_validation_deflated_sharpe.py` henüz mevcut değildir.
+Bu liste, Bölüm 17.4.1–17.4.17'de LOCKED olan Deflated Sharpe exact kontratının `src/crypto_quant_lab/validation/deflated_sharpe.py` tarafından karşılandığını kaydeder. **Bu 27 kriterin hepsi artık implementation/test exercised'dır** — `tests/test_validation_deflated_sharpe.py`'de 109 test (tümü PASS), ilgili regression suite'ler (790 test) DEĞİŞMEDEN yeşil; tam suite 2154/2154 PASS (2045 önceki + 109 yeni). Grup kontrat kilidiyle (commit `65273d7`) 0/27 olarak eklenmişti. Kriter 18-20'nin metni, doğrulama yöntemi mpmath referanslarıyla güçlendirildiği için (§17.4.1a, §17.4.12) yeniden ifade edildi; kriter sayısı 27 kaldı. Test sayısı (109) ile kriter sayısı (27) ayrı sayımlardır.
 
-1. `compute_deflated_sharpe_ratio(group, *, selected_candidate_id, independent_trial_count, risk_free_per_period=Decimal(0)) -> Decimal` kilitli modül yolunda, kilitli imzayla mevcuttur; modülün public sembol kümesi TAM OLARAK `{compute_deflated_sharpe_ratio}`'dir (§17.4.3). **PENDING**
-2. Package-root export YOK; hiçbir mevcut production/test dosyası ve `validation/__init__.py` değişmez (§17.4.3, 17.4.11 — static `git diff` + tam regression suite). **PENDING**
-3. Adım 1-5 tip/aralık doğrulamaları exact tür ve mesajlarla, kilitli sırayla uygulanır; `bool` N reddedilir; N=2 ve N=10**30 kabul, N=1 ve N=10**30+1 reddedilir (§17.4.6). **PENDING**
-4. Tek-Trial grup exact mesajlı ValueError ile reddedilir (adım 6). **PENDING**
-5. Grupta olmayan `selected_candidate_id` exact mesajlı ValueError ile reddedilir; DSR hiçbir seçim yapmaz — seçilen denemenin en yüksek SR'ye sahip OLMADIĞI durumda da hesaplanır (§17.4.2 karar 9, adım 7). **PENDING**
-6. Birden fazla pencereli herhangi bir Trial, global geçişle exact mesajlı ValueError ile reddedilir (adım 8). **PENDING**
-7. Eşit olmayan equity-gözlem sayısı exact mesajlı ValueError ile reddedilir (adım 9). **PENDING**
-8. Stage-2 alt katman hataları (örn. sıfır stdev, tek gözlem) DEĞİŞMEDEN propagate edilir (adım 10). **PENDING**
-9. V = 0 (tüm Sharpe'lar eşit) exact mesajlı ValueError ile reddedilir (adım 11). **PENDING**
-10. variance_term <= 0 durumu exact mesajlı ValueError ile reddedilir, clip EDİLMEZ (adım 13, §17.4.9). **PENDING**
-11. Eşzamanlı ihlallerde kilitli sıra (adım 1→15) davranışsal testlerle kanıtlanır (§17.4.6). **PENDING**
-12. `recorded_trial_count` hiçbir koşulda N yerine kullanılmaz: aynı grup farklı N ile farklı DSR verir; N > M ve N < M ikisi de kabul edilir (§17.4.2 karar 1). **PENDING**
-13. V, seçilen dahil tüm Trial'ların Stage-2 Sharpe'larının sample varyansıdır (payda M-1) — bağımsız float referansıyla doğrulanır (§17.4.2 karar 8, §17.4.5). **PENDING**
-14. Skewness/kurtosis population moment tahmincileridir ve kurtosis HAMDIR (normal=3); simetrik/sabit-olmayan bilinen bir örneklemde beklenen değerler bağımsız hesapla doğrulanır (§17.4.2 karar 6). **PENDING**
-15. Hesap per-observation ölçektedir; annualized metrik veya timeframe girdisi kullanılmaz (§17.4.2 karar 5). **PENDING**
-16. `risk_free_per_period`, gruptaki TÜM Trial'ların Stage-2 Sharpe'ına aynı şekilde uygulanır (§17.4.4). **PENDING**
-17. Makalenin sayısal örneği `_deflated_sharpe_from_statistics` ile yeniden üretilir: N=100 → 0.9004, N=46 → 0.9505 (4 ondalık); normal getirilerde N=88 → ≥ 0.95, N=89 → < 0.95 (§17.4.12 madde 1). **PENDING**
-18. `_normal_cdf`, [-15, 15] ızgarasında `statistics.NormalDist` ile |fark| ≤ 1e-15; Φ(1) literatür değeriyle ≥ 30 basamak eşleşir; |x| ≥ 15 clamp davranışı exact 0/1'dir (§17.4.8, 17.4.12). **PENDING**
-19. `_normal_quantile`, kilitli p kümesinde `statistics.NormalDist.inv_cdf` ile |fark| ≤ 1e-12; Φ^-1(0.975) 15 basamak eşleşir; p=1/2 → exact 0; alan dışı p ValueError (§17.4.8). **PENDING**
-20. İç tutarlılık: Φ(Φ^-1(p)) - p ≤ 1e-60 ve Φ(-x) + Φ(x) = 1 (≤ 1e-60); N ∈ {2, 10, 100, 1e6, 1e12, 1e30} için Newton 200 iterasyon sınırına ulaşmadan yakınsar (§17.4.8). **PENDING**
-21. Euler-Mascheroni ve π sabitleri en az 50 doğru basamak taşır; e context içinde hesaplanır (§17.4.7). **PENDING**
-22. Sonuç [0, 1] içindedir, 28 anlamlı basamağa tek kez yuvarlanır; caller'ın ambient Decimal context'i (prec/rounding/traps) sonucu değiştirmez (§17.4.7). **PENDING**
-23. Aynı grup ve parametrelerle N arttıkça DSR artmaz (monoton azalmayan eşik) (§17.4.13). **PENDING**
-24. Girdi mutasyonu YOK; tekrarlı çağrı aynı sonucu verir; float/statistics/math/random/time import'u production modülünde YOKTUR (§17.4.10). **PENDING**
-25. Import direction: `deflated_sharpe.py` yalnızca `metrics` (iki public fonksiyon), `trial_group` ve `decimal` import eder; hiçbir mevcut modül onu import etmez (§17.4.10). **PENDING**
-26. Grup düzeyi sonuç, sentetik bir TrialGroup için bağımsız float referansıyla |fark| ≤ 1e-9 uyumludur (§17.4.12 madde 5). **PENDING**
-27. Gerçek SQLite + `run_rolling_backtest_from_store` entegrasyon senaryosu (§17.4.13) geçer: ≥ 3 candidate, tek pencere, [0, 1] sonuç, float referansıyla uyum, iki pencereli Trial reddi. **PENDING**
+1. `compute_deflated_sharpe_ratio(group, *, selected_candidate_id, independent_trial_count, risk_free_per_period=Decimal(0)) -> Decimal` kilitli modül yolunda, kilitli imzayla mevcuttur; modülün public sembol kümesi TAM OLARAK `{compute_deflated_sharpe_ratio}`'dir (§17.4.3). **PASS** — `test_public_symbol_set_is_exactly_the_locked_api`, `test_signature_is_locked`.
+2. Package-root export YOK; hiçbir mevcut production/test dosyası ve `validation/__init__.py` değişmez (§17.4.3, 17.4.11 — static `git diff` + tam regression suite). **PASS** — `test_not_exported_at_package_root`; static kanıt: `git status`/`git diff --stat` yalnızca iki yeni dosyayı ve `VALIDATION_SPEC.md`'yi gösterir; 790 ilgili + 2154 tam suite testi DEĞİŞMEDEN yeşil.
+3. Adım 1-5 tip/aralık doğrulamaları exact tür ve mesajlarla, kilitli sırayla uygulanır; `bool` N reddedilir; N=2 ve N=10**30 kabul, N=1 ve N=10**30+1 reddedilir (§17.4.6). **PASS** — `test_step1_group_type`, `test_step2_selected_candidate_id_type`, `test_step3_independent_trial_count_type` (5 varyant, `bool` dahil), `test_step4_independent_trial_count_range` (1, 0, -5, 10**30+1), `test_step4_independent_trial_count_bounds_are_accepted` (2, 10**30), `test_step5_risk_free_type_and_finiteness`.
+4. Tek-Trial grup exact mesajlı ValueError ile reddedilir (adım 6). **PASS** — `test_step6_single_trial_group_is_rejected_before_selected_lookup`.
+5. Grupta olmayan `selected_candidate_id` exact mesajlı ValueError ile reddedilir; DSR hiçbir seçim yapmaz — seçilen denemenin en yüksek SR'ye sahip OLMADIĞI durumda da hesaplanır (§17.4.2 karar 9, adım 7). **PASS** — `test_step7_selected_not_in_group_is_rejected_before_window_check`, `test_selected_trial_need_not_have_the_highest_sharpe`.
+6. Birden fazla pencereli herhangi bir Trial, global geçişle exact mesajlı ValueError ile reddedilir (adım 8). **PASS** — `test_step8_multi_window_trial_is_rejected`, `test_step8_multi_window_wins_over_step9_unequal_lengths`, entegrasyon testindeki iki pencereli grup reddi.
+7. Eşit olmayan equity-gözlem sayısı exact mesajlı ValueError ile reddedilir (adım 9). **PASS** — `test_step9_unequal_equity_observation_counts_are_rejected_before_stage2`.
+8. Stage-2 alt katman hataları (örn. sıfır stdev, tek gözlem) DEĞİŞMEDEN propagate edilir (adım 10). **PASS** — `test_step10_stage2_errors_propagate_unchanged` (sıfır stdev), `test_step10_single_observation_stage2_error_propagates_unchanged` — beklenen mesaj `compute_stage2_metrics`'in kendi hatasından alınır.
+9. V = 0 (tüm Sharpe'lar eşit) exact mesajlı ValueError ile reddedilir (adım 11). **PASS** — `test_step11_zero_trial_sharpe_variance_is_rejected` (mesajdaki değer deterministik `0E-56`).
+10. variance_term <= 0 durumu exact mesajlı ValueError ile reddedilir, clip EDİLMEZ (adım 13, §17.4.9). **PASS** — `test_step13_nonpositive_variance_term_is_rejected_not_clipped` (private yardımcı, tutarsız istatistik — Pearson nedeniyle gerçek örneklemden ulaşılamaz, §17.4.9), `test_real_sample_variance_term_stays_positive_near_two_point_extreme`.
+11. Eşzamanlı ihlallerde kilitli sıra (adım 1→15) davranışsal testlerle kanıtlanır (§17.4.6). **PASS** — Adım testleri eşzamanlı ihlallerle kurulmuştur: 1>2>3, 3>5, 4>5, 5>6, 6>7, 7>8, 8>9, 9>10, 10>11 (`test_step10_wins_over_step11_zero_variance` dahil); 11/12/13 gerçek örneklemle aynı anda ihlal edilemez (stdev>0 ⇒ m2>0; Pearson) — §17.4.17.
+12. `recorded_trial_count` hiçbir koşulda N yerine kullanılmaz: aynı grup farklı N ile farklı DSR verir; N > M ve N < M ikisi de kabul edilir (§17.4.2 karar 1). **PASS** — `test_recorded_trial_count_is_never_used_as_n` (M=3; N=2, 3, 100 üç farklı, kesin azalan sonuç).
+13. V, seçilen dahil tüm Trial'ların Stage-2 Sharpe'larının sample varyansıdır (payda M-1) — bağımsız float referansıyla doğrulanır (§17.4.2 karar 8, §17.4.5). **PASS** — `test_group_result_matches_independent_high_precision_reference` (12 mpmath referansı, M-1 paydalı V ile, ≤ 1e-27), `test_group_result_matches_independent_float_reference` (`statistics.variance`, 9 durum, ≤ 1e-9).
+14. Skewness/kurtosis population moment tahmincileridir ve kurtosis HAMDIR (normal=3); simetrik/sabit-olmayan bilinen bir örneklemde beklenen değerler bağımsız hesapla doğrulanır (§17.4.2 karar 6). **PASS** — `test_moment_convention_is_population_moments_with_raw_kurtosis` (population+ham ≤ 1e-9; G1/G2 ve excess varyantları > 1e-6 farklı).
+15. Hesap per-observation ölçektedir; annualized metrik veya timeframe girdisi kullanılmaz (§17.4.2 karar 5). **PASS** — `test_scale_is_per_observation_and_independent_of_timestamp_spacing` (saatlik ve günlük aralık aynı sonuç); imzada timeframe/periods_per_year yok.
+16. `risk_free_per_period`, gruptaki TÜM Trial'ların Stage-2 Sharpe'ına aynı şekilde uygulanır (§17.4.4). **PASS** — `test_risk_free_rate_is_applied_to_every_trial_sharpe`, rf=0.0005 mpmath referansları (6 durum).
+17. Makalenin sayısal örneği `_deflated_sharpe_from_statistics` ile yeniden üretilir: N=100 → 0.9004, N=46 → 0.9505 (4 ondalık); normal getirilerde N=88 → ≥ 0.95, N=89 → < 0.95 (§17.4.12 madde 1). **PASS** — `test_paper_example_matches_high_precision_reference` (4 durum, ≤ 1e-27), `test_paper_example_published_four_decimal_values`, `test_paper_example_normal_returns_threshold_is_n_88`.
+18. `_normal_cdf`, mpmath (dps=130) referanslarına göre 13 noktada (merkez, iki kuyruk, ±14.5) mutlak hata ≤ 1e-75; alt kuyruk göreli hata x=-10'da ≤ 1e-50, x=-14.5'te ≤ 1e-28; tamamlayıcı float `NormalDist` ızgarasıyla |fark| ≤ 1e-15; Φ(1) 90 basamaklı referansla eşleşir; |x| ≥ 15 clamp exact 0/1 (§17.4.8, 17.4.12). **PASS** — `test_normal_cdf_matches_independent_reference` (13), `test_normal_cdf_lower_tail_relative_error` (2), `test_normal_cdf_agrees_with_float_reference_on_grid`, `test_normal_cdf_clamp_boundaries`.
+19. `_normal_quantile`, mpmath `erfinv` referanslarına göre p ∈ {0.975, 0.99} ve modülün N ∈ {2, 100, 10^30} için kurduğu exact p değerlerinde x-hatası ≤ 1e-47; p = 1/2 → exact 0; alan dışı p exact mesajlı ValueError (§17.4.8, 17.4.12). **PASS** — `test_normal_quantile_matches_independent_reference` (6), `test_normal_quantile_half_is_exact_zero_and_domain_is_enforced`.
+20. İç tutarlılık (tamamlayıcı, tek başına kanıt değil): Φ(Φ^-1(p)) - p ≤ 1e-60 ve Φ(-x) + Φ(x) = 1 (≤ 1e-75); N ∈ {2, 10, 100, 1e6, 1e12, 1e30} için Newton 200 iterasyon sınırına ulaşmadan yakınsar (deneysel, ispat değil); iterasyon ve seri-terim sınırı aşımı exact mesajlı ArithmeticError ile fail-closed (§17.4.8). **PASS** — `test_normal_quantile_roundtrip_consistency_is_supplementary_only`, `test_normal_cdf_symmetry_identity`, `test_newton_converges_within_limit_for_sampled_n` (6), `test_newton_non_convergence_fails_closed`, `test_cdf_series_non_convergence_fails_closed`.
+21. Euler-Mascheroni ve π sabitleri en az 50 doğru basamak taşır; e context içinde hesaplanır (§17.4.7). **PASS** — `test_constants_match_published_leading_digits` (50 basamak; ayrıca offline mpmath karşılaştırması: hata ~4e-86).
+22. Sonuç [0, 1] içindedir, 28 anlamlı basamağa tek kez yuvarlanır; caller'ın ambient Decimal context'i (prec/rounding/traps) sonucu değiştirmez (§17.4.7). **PASS** — `test_result_is_probability_rounded_to_28_significant_digits`, `test_ambient_decimal_context_does_not_change_result` (prec=3, ROUND_DOWN, Inexact/Rounded/DivisionByZero trap'leri).
+23. Aynı grup ve parametrelerle N arttıkça DSR artmaz (monoton azalmayan eşik) (§17.4.13). **PASS** — `test_dsr_does_not_increase_as_n_grows` (8 N değeri), entegrasyon testinde N=3/10/100.
+24. Girdi mutasyonu YOK; tekrarlı çağrı aynı sonucu verir; float/statistics/math/random/time import'u production modülünde YOKTUR (§17.4.10). **PASS** — `test_no_mutation_and_deterministic_repeated_calls`, `test_import_direction_is_locked` (float(/math/statistics/random/time yokluğu).
+25. Import direction: `deflated_sharpe.py` yalnızca `metrics` (iki public fonksiyon), `trial_group` ve `decimal` import eder; hiçbir mevcut modül onu import etmez (§17.4.10). **PASS** — `test_import_direction_is_locked` (import modül kümesi tam olarak {decimal, validation.metrics, validation.trial_group}; metrics private helper'ı yok), `test_no_existing_module_imports_deflated_sharpe` (8 modül).
+26. Grup düzeyi sonuç, sentetik bir TrialGroup için bağımsız float referansıyla |fark| ≤ 1e-9 uyumludur (§17.4.12 madde 5). **PASS** — `test_group_result_matches_independent_float_reference` (≤ 1e-9); daha güçlü olarak mpmath referansları ≤ 1e-27.
+27. Gerçek SQLite + `run_rolling_backtest_from_store` entegrasyon senaryosu (§17.4.13) geçer: ≥ 3 candidate, tek pencere, [0, 1] sonuç, float referansıyla uyum, iki pencereli Trial reddi. **PASS** — `test_real_sqlite_rolling_integration` (gerçek `SQLiteHistoricalCandleStore` tmp_path'te, 25 değişken fiyatlı mum, LONG/SHORT/alternating, tek 24 saatlik pencere; [0, 1] sonuç, float referansıyla ≤ 1e-9, N arttıkça DSR artmıyor; iki pencereli grup exact mesajla reddedilir).
 
-**Deflated Sharpe acceptance count: 0 / 27 implementation/test exercised.** Bu grubun ileride 27/27 olması da aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: efektif-N estimator'ı; çok pencereli pooling; candidate selection; final holdout protection; PBO; CPCV; multiple-testing correction; parameter stability; bir yatırım/işlem kararı; FAZ6C'nin veya Faz 6'nın tamamlanması.
+**Deflated Sharpe acceptance count: 27 / 27 implementation/test exercised.** (Kilit zamanındaki tarihsel sayım: 0 / 27, commit `65273d7`.) Bu grubun 27/27 olması, aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: efektif-N estimator'ı; çok pencereli pooling; candidate selection; final holdout protection; PBO; CPCV; multiple-testing correction; parameter stability; bir yatırım/işlem kararı; FAZ6C'nin veya Faz 6'nın tamamlanması.
 
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
@@ -6562,8 +6766,8 @@ ROADMAP.md'deki bir sonraki faz **Faz 7 — İlk Funding/Basis araştırması**d
   advanced overfitting controls — purging/embargo foundation'ı artık
   LOCKED VE IMPLEMENTED + TESTED'dır (§28.I — 19/19); trial-group
   foundation'ı LOCKED VE IMPLEMENTED + TESTED'dır (§28.J — 19/19);
-  Deflated Sharpe exact kontratı LOCKED, implementasyonu YOK (§28.K —
-  0/27); CPCV/PBO/multiple-testing/parameter-stability HÂLÂ
+  Deflated Sharpe exact kontratı LOCKED VE IMPLEMENTED + TESTED (§28.K —
+  27/27); CPCV/PBO/multiple-testing/parameter-stability HÂLÂ
   spec-lock edilmemiştir) tamamlamaya devam EDEBİLİR (bu doküman bir
   sıralama zorunluluğu icat etmez).
 - CPCV/PBO/DSR'nin Faz 7'nin başlaması için zorunlu olmadığına dair
