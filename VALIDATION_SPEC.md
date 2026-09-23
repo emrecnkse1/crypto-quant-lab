@@ -3481,13 +3481,15 @@ Prerequisites: fold model + observation/outcome-horizon contract (17.1) + purge/
 
 Prerequisites: tanımlı Sharpe istatistiği (17.3) + candidate/trial history (18) + (efektif) trial sayısı + gerekli dağılımsal girdiler. Bölüm 18'in candidate/trial foundation'ı artık IMPLEMENTED + TESTED'dır (28.G — 25/25), ama yalnızca TEK bir candidate'in TEK bir trial'ını value object olarak temsil eder — çoklu-trial history/registry/trial-count tracking bu foundation'ın DIŞINDADIR (§18.9, 18.13) ve henüz mevcut değildir. Standalone bir formül olarak, deneysel/trial framework'ünden **kopuk** implement edilmez.
 
+**Durum güncellemesi (FAZ6C — DSR bağımlılık çözümü, docs-only):** "candidate/trial history" ve "trial sayısı"nın **ham** kısmı için gereken en küçük foundation — tek bir karşılaştırılabilir deneme grubunu temsil eden `TrialGroup` ve `recorded_trial_count` (`src/crypto_quant_lab/validation/trial_group.py`) — Bölüm 20.1–20.13'te **LOCKED**'dır ama **HENÜZ İMPLEMENT EDİLMEMİŞTİR** (§28.J — 0/19). Deflated Sharpe'ın KENDİSİ hâlâ **spec-lock EDİLMEMİŞTİR**; efektif trial sayısı, N'in kapsamı, başarısız denemeler, çok-pencereli trial Sharpe tanımı, skewness/kurtosis, Decimal normal-CDF kaynağı ve seçilmiş denemenin belirtilmesi hâlâ açık bağımlılıklardır (§20.12). Ham kaydedilmiş sayı efektif/bağımsız deneme sayısı DEĞİLDİR (§20.7).
+
 ### 17.5 PBO — LATER IN FAZ 6
 
 Prerequisites: birden fazla candidate/trial (18) + birden fazla partition + deterministic performance matrix + explicit selection rule. Bölüm 18 artık tek bir candidate'in tek bir trial'ını implement eder (28.G — 25/25); çoklu-candidate/trial karşılaştırma/aggregation ve deterministic performance matrix HENÜZ MEVCUT DEĞİLDİR (§18.9, 18.13) — bu nedenle PBO ilk primitive olarak **anlamlı şekilde implement edilemez** (foundation pre-flight'in kendi bulgusuyla tutarlı).
 
 ### 17.6 Multiple-Testing Corrections — LATER IN FAZ 6
 
-Prerequisites: trial-count tracking (18) — candidate/trial foundation'ına bağımlı. Bölüm 18'in kendisi artık IMPLEMENTED + TESTED'dır (28.G), ama trial-count tracking (kaç candidate/trial değerlendirildiğinin kaydı, Bölüm 20) bu foundation'ın kapsamı DIŞINDADIR ve henüz mevcut değildir.
+Prerequisites: trial-count tracking (18) — candidate/trial foundation'ına bağımlı. Bölüm 18'in kendisi artık IMPLEMENTED + TESTED'dır (28.G), ama trial-count tracking (kaç candidate/trial değerlendirildiğinin kaydı, Bölüm 20) bu foundation'ın kapsamı DIŞINDADIR ve henüz mevcut değildir. **Durum güncellemesi:** tek-grup kapsamlı, ham trial-count kaydının exact kontratı Bölüm 20.1–20.13'te LOCKED'dır (HENÜZ İMPLEMENT EDİLMEMİŞTİR, §28.J — 0/19); multiple-testing correction'ın kendisi, gruplar-arası sayım ve efektif sayı hâlâ spec-lock edilmemiştir.
 
 ### 17.7 Parameter Stability — LATER IN FAZ 6
 
@@ -4207,6 +4209,492 @@ Bölüm 18'in candidate/trial foundation'ı (`Candidate`, `Trial`) artık IMPLEM
 - hangi OOS evaluation, dondurulmuş seçime aittir
 ```
 
+**Durum güncellemesi (FAZ6C — Deflated Sharpe bağımlılık çözümü, docs-only):** Yukarıdaki dört kayıt maddesinden YALNIZCA ilki ("kaç candidate/trial değerlendirildi") ve üçüncüsünün mekanik olarak doğrulanabilen kısmı ("hangi data partition kullanıldı" — yalnızca `Trial`'ın taşıdığı provenance + evaluation pencereleri düzeyinde), aşağıdaki Bölüm 20.1–20.13'te, **tek bir karşılaştırılabilir deneme grubu** kapsamında, exact bir foundation kontratı olarak **LOCKED**'dır — **HENÜZ İMPLEMENT EDİLMEMİŞTİR** (bkz. §28.J — 0/19). "Hangi metrik bir candidate'i seçti" ve "hangi OOS evaluation dondurulmuş seçime aittir" maddeleri (selection rule, selection/test role, final holdout) bu kontratın **DIŞINDA** kalır ve hâlâ yalnızca prensiptir. Bu bölüm başlığındaki "İmplementasyon Yok" ifadesi bu nedenle hâlâ doğrudur.
+
+### 20.1 Source-Preflight Bulguları (FAZ6C — DSR Bağımlılık Çözümü)
+
+```
+- §17.4 (Deflated Sharpe — LATER IN FAZ 6), exact prerequisite metni:
+  "tanımlı Sharpe istatistiği (17.3) + candidate/trial history (18) +
+  (efektif) trial sayısı + gerekli dağılımsal girdiler" — ve: "çoklu-
+  trial history/registry/trial-count tracking bu foundation'ın
+  DIŞINDADIR (§18.9, 18.13) ve henüz mevcut değildir. Standalone bir
+  formül olarak, deneysel/trial framework'ünden **kopuk** implement
+  edilmez." Ön-rapor hükmü (çoklu trial geçmişi + efektif trial sayısı
+  gerekli; framework'ten kopuk formül yasak) bu metinle BİREBİR
+  doğrulanmıştır.
+- §17.6 (Multiple-Testing Corrections): "Prerequisites: trial-count
+  tracking (18)" — trial-count tracking "henüz mevcut değildir".
+- §17.5 (PBO): birden fazla candidate/trial + deterministic performance
+  matrix gerektirir; bunlar HENÜZ MEVCUT DEĞİLDİR.
+- §18.6: candidate_id için "Global benzersizlik ENFORCE EDİLMEZ ...
+  Birden fazla candidate arası benzersizlik, ileride bir orchestration/
+  registry kontratının işidir."
+- §18.3 (Trial reddedilen seçenek 7-8) + §18.4: Trial YALNIZCA fully-
+  successful evaluation için var olur; failure bir Trial DEĞİL, bir
+  raise'dir. Başarısız/iptal edilmiş/sonuçsuz bir deneme mevcut modelde
+  TEMSİL EDİLEMEZ.
+- §18.7: Trial hiçbir selection/test role alanı taşımaz (self-declared
+  bir alanın "false safety claim" yaratacağı gerekçesiyle);
+  cost_model/funding_model/funding_store/candle store Trial'da
+  SAKLANMAZ; Trial/candidate consistency ve results'un gerçekten aynı
+  partition'dan geldiği MEKANİK OLARAK DOĞRULANAMAZ (trust boundary).
+- §18.9: "Multi-candidate selection'a güvenle geçmeden ÖNCE, gelecekteki
+  bir kontrat şunları AÇIKÇA eklemelidir: ... (b) trial-count tracking
+  (Bölüm 20) ..." — VE bu foundation "cross-window performance
+  aggregation" SAĞLAMAZ.
+- candidate.py (kaynak, DEĞİŞMEDEN): `Candidate(candidate_id,
+  parameters)`, `Trial(candidate, results, exchange, market_type, symbol,
+  timeframe, as_of_time, config)` — ikisi de frozen/slotted; eşitlik/hash
+  frozen-dataclass default'u (§18.10'da hashability ampirik olarak
+  doğrulanmış; tests/test_validation_candidate.py hash eşitlik testleri
+  içerir). Kimlik doğrulama helper'ları (`_require_str_type`,
+  `_require_canonical_content`, `_require_canonical_identifier`) `_`
+  prefix'li PRIVATE'tır.
+- metrics.py / annualized_metrics.py (kaynak, DEĞİŞMEDEN): Sharpe, TEK
+  bir BacktestResult (tek pencere) üzerinden tanımlıdır —
+  compute_stage2_metrics (per-observation, arithmetic mean, sample stdev
+  n-1) ve compute_annualized_sharpe_ratio (Stage-2 Sharpe x
+  sqrt(periods_per_year)). Bir Trial'ın ÇOK pencereli results'u için tek
+  bir "trial Sharpe"ı tanımlayan hiçbir cross-window aggregation YOKTUR.
+  Skewness/kurtosis (üçüncü/dördüncü moment) fonksiyonu YOKTUR.
+- Bölüm 27: NumPy/pandas ve "statistics modülü (float-conversion ile)"
+  (Bölüm 15.16) kullanımı yasaktır; pyproject.toml hiçbir runtime
+  dependency taşımaz. Normal dağılım CDF/ters-CDF'i için Decimal-exclusive
+  bir kaynak repository'de YOKTUR.
+- Repository-wide grep (src/ ve tests/): "registry", "experiment",
+  "trial_count", "n_trials", "deflat", "skew", "kurtos", "NormalDist",
+  "erf(" — HİÇBİR eşleşme yok. Trial koleksiyonu/sayımı tamamen
+  greenfield'dır; duplicate risk taşıyan mevcut bir modül YOKTUR.
+```
+
+**Sonuç:** Deflated Sharpe'ın §17.4'teki bağımlılıklarından **"candidate/trial history" ve "trial sayısı"nın ham (raw) kısmı**, mevcut `Trial` değer nesnesi DEĞİŞTİRİLMEDEN, onun ÜZERİNE inşa edilen tek bir immutable koleksiyon value object'i + tek bir sayım fonksiyonuyla dürüstçe kilitlenebilir. **Efektif trial sayısı, trial-başı Sharpe'ın çok-pencereli tanımı, yüksek momentler, normal CDF kaynağı ve sayımın kapsamı (tek grup mu / tüm araştırma programı mı)** mevcut kaynaklarla ÇÖZÜLEMEZ — bunlar açık bağımlılık olarak kaydedilir (§20.12) ve bu kontratta TASARLANMAZ.
+
+### 20.2 Yedi Kavramın Kesin Ayrımı (LOCKED)
+
+```
+1. Tekil Trial değer nesnesi
+   -> MEVCUT (Bölüm 18, candidate.py, IMPLEMENTED + TESTED). DEĞİŞMEZ.
+2. Araştırmada denenen aday/denemelerin kayıt altına alınması (tüm
+   denemeler: başarılı + başarısız + iptal + kaydedilmemiş)
+   -> Bu kontrat SAĞLAMAZ. Yalnızca BAŞARILI ve caller tarafından
+      AÇIKÇA verilen Trial'lar kaydedilebilir (Trial'ın kendi sınırı,
+      §18.3/18.4). Başarısız/iptal denemelerin kaydı DEFERRED (§20.12).
+3. Tamamlanan sonuçların karşılaştırılabilir koleksiyonu
+   -> BU KONTRAT: TrialGroup (§20.4) — aynı provenance + aynı ordered
+      evaluation pencereleri üzerinde değerlendirilmiş, candidate_id'leri
+      benzersiz, en az bir Trial içeren immutable koleksiyon.
+4. Ham deneme sayısı
+   -> BU KONTRAT: recorded_trial_count(group) (§20.4, §20.7) — YALNIZCA
+      o TrialGroup'a kaydedilmiş Trial sayısı. "Tüm denemelerin sayısı"
+      DEĞİLDİR.
+5. Bağımlılığı/korelasyonu hesaba katan efektif deneme sayısı
+   -> Bu kontrat SAĞLAMAZ ve TASARLAMAZ. Hiçbir estimator (clustering,
+      korelasyon matrisi, eigenvalue vb.) seçilmez. Ham sayı efektif
+      sayı olarak KULLANILAMAZ/ADLANDIRILAMAZ (§20.7).
+6. Kalıcı kayıt deposu (persistence/DB/serialization)
+   -> Bu kontrat SAĞLAMAZ. Repository kanıtı bir kalıcı store
+      gerekliliği GÖSTERMEZ (§18.13, Bölüm 27); in-memory immutable
+      value object yeterlidir.
+7. Optimizer ve candidate selection
+   -> Bu kontrat SAĞLAMAZ (§18.9, 18.13, Bölüm 27). TrialGroup hiçbir
+      ranking/score/winner/selection alanı veya fonksiyonu taşımaz.
+```
+
+Bu yedi kavram **tek bir "registry" adı altında BİRLEŞTİRİLMEZ**. Bu kontrat YALNIZCA (3) ve (4)'ü kilitler; "registry" terimi bu kontratın hiçbir public sembolünde KULLANILMAZ (§18.3'ün "hidden global registry" reddiyle karışmaması için).
+
+### 20.3 Seçilen En Küçük Foundation ve Reddedilen Alternatifler (LOCKED)
+
+**SEÇİLDİ:** yeni, dedicated `src/crypto_quant_lab/validation/trial_group.py` modülünde (a) frozen/slotted `TrialGroup(group_id, trials)` value object'i ve (b) tek bir bare-`int` dönen `recorded_trial_count(group)` fonksiyonu. `Candidate`/`Trial` DEĞİŞMEZ; hiçbir mevcut modül değişmez.
+
+```
+Reddedilenler:
+a. Yeni obje YOK, yalnızca `len(tuple[Trial, ...])` — REDDEDİLDİ:
+   karşılaştırılabilirlik ve duplicate-kimlik kontrolü olmadan ham
+   tuple, farklı partition'lardan Trial'ları sessizce karıştırır; sayım
+   semantiği isimsiz kalır ve gelecekteki bir DSR implementasyonu
+   örtük bir "n_trials" icat etmeye zorlanır (§17.4'ün "framework'ten
+   kopuk formül" yasağına en yakın risk).
+b. Mutable registry/ledger (add()/append(), global/module-level
+   registry) — REDDEDİLDİ: §18.3 "hidden global registry" reddi; repo'nun
+   frozen/slotted value-object convention'ı.
+c. Kalıcı store (SQLite tablo/şema, JSON serialization) — REDDEDİLDİ:
+   repository kanıtı gerektirmiyor; §18.13 persistence/database schema'yı
+   açıkça dışlar.
+d. Başarısız/iptal denemeleri temsil eden yeni bir obje/alan
+   (TrialAttempt, status, failure_reason) — REDDEDİLDİ bu foundation'da:
+   §18.3 seçenek 7'nin (failure = raise) doğrudan tersine çevrilmesi
+   olurdu ve yeni bir failure taksonomisi icat ederdi. DSR'nin N'ine
+   başarısız denemelerin dahil edilip edilmeyeceği bir kullanıcı/
+   kontrat kararıdır (§20.12).
+e. Self-declared tamlık bayrağı veya caller-beyanlı
+   `declared_total_attempts: int` — REDDEDİLDİ: §18.7'nin role alanı
+   gerekçesiyle AYNI: hiçbir şeyi mekanik olarak enforce etmez, gerçekte
+   var olmayan bir tamlık garantisi izlenimi yaratır.
+f. Efektif trial-count estimator — BU TURDA TASARLANMAZ (açık bağımlılık).
+g. Heterojen grup (farklı symbol/timeframe/as_of_time/config/pencere) —
+   REDDEDİLDİ: farklı örneklemler üzerindeki Sharpe tahminleri aynı
+   deneme ailesinin karşılaştırılabilir gözlemleri değildir; gruplar-
+   arası sayım birleştirme açık bağımlılıktır (§20.12).
+h. Duplicate candidate'in sessizce dedupe edilmesi — REDDEDİLDİ: repo
+   geneli "reject, don't repair" prensibi (§18.8).
+i. candidate_id'ye göre canonical sıralama zorunluluğu — REDDEDİLDİ:
+   Trial.results / rolling / purging "input order preserved" precedent'i;
+   sıra hiçbir ranking anlamı taşımaz.
+j. Candidate/Trial'a yeni alan (trial_id, experiment_id, role, status) —
+   REDDEDİLDİ: Bölüm 18 LOCKED + IMPLEMENTED'dır; bu kontrat onu
+   değiştirmez.
+k. candidate.py içine eklemek — REDDEDİLDİ: tek-kavram-per-modül
+   convention'ı; candidate.py'nin kilitli implementasyonu DEĞİŞMEZ.
+l. Grubun paylaşılan provenance/pencerelerini ayrı alan olarak saklamak —
+   REDDEDİLDİ: trials[0]'dan kurtarılabilir; §18.7'nin "yalnızca
+   kurtarılamayan veri ayrıca saklanır" ilkesi.
+```
+
+### 20.4 Exact Public API (LOCKED)
+
+```python
+# Modül: src/crypto_quant_lab/validation/trial_group.py (YENİ modül)
+
+from dataclasses import dataclass
+
+from crypto_quant_lab.validation.candidate import Trial
+
+
+@dataclass(frozen=True, slots=True)
+class TrialGroup:
+    group_id: str
+    trials: tuple[Trial, ...]
+
+
+def recorded_trial_count(group: TrialGroup) -> int: ...
+```
+
+```
+- Field sırası (group_id, trials) TAM OLARAK kilitlidir.
+- Frozen, slotted; equality/hash frozen-dataclass default'ları, TÜM
+  field'lar üzerinden (custom __eq__/__hash__/__order__ YOK). Equality
+  trials SIRASINA duyarlıdır (aynı Trial'lar farklı sırada -> EŞİT
+  DEĞİL); bu yalnızca value-semantics'tir, bir ranking anlamı TAŞIMAZ.
+- recorded_trial_count: tek pozisyonel parametre; bare `int` döner
+  (bool DEĞİL, yeni value object DEĞİL).
+- Modülün public sembolleri YALNIZCA TrialGroup ve
+  recorded_trial_count'tur. effective_trial_count, deflated_sharpe,
+  select/rank/score/best/winner, add/append/register, save/load
+  sembolleri TANIMLANMAZ.
+- Package-root export YOK — validation/__init__.py DEĞİŞMEZ.
+- Candidate, Trial, ParameterValue, WindowResult, TemporalWindow,
+  BacktestConfig, BacktestResult ve tüm mevcut fonksiyon imzaları
+  DEĞİŞMEZ; hiçbirine alan EKLENMEZ.
+```
+
+### 20.5 Kimlik, Tekrar Çalıştırma ve Duplicate Davranışı (LOCKED)
+
+**`group_id`:** `candidate_id` ile AYNI kural (§18.6): `str` olmalı (değilse TypeError); boş/yalnızca-whitespace (ValueError); baştaki/sondaki whitespace padding (ValueError, sessizce strip EDİLMEZ); case-sensitive; Unicode normalization YOK; uzunluk sınırı YOK. `group_id`, gruplar-arası benzersizliği ENFORCE ETMEZ (global registry YOK) — iki farklı TrialGroup aynı `group_id`'yi taşıyabilir; bu, caller disiplinidir.
+
+**Grup-içi deneme kimliği:** bir TrialGroup içinde bir denemenin kimliği, `trial.candidate.candidate_id`'dir.
+
+```
+- Aynı candidate_id'ye sahip ikinci bir Trial -> ValueError (§20.8
+  stage 6), ilk görüldüğü index'i ve duplicate index'i tanımlar.
+- Bu kural, HER İKİ durumu da AYNI şekilde reddeder:
+  (i)  deterministik bir TEKRAR ÇALIŞTIRMA (aynı Candidate, aynı
+       provenance, aynı pencereler -> Bölüm 25 determinism'i gereği
+       eşit Trial): yeni bilgi TAŞIMAZ; iki kez saymak ham sayıyı
+       şişirir.
+  (ii) ÇAKIŞAN bir kayıt (aynı candidate_id, farklı parameters veya
+       farklı results — örn. Trial'da saklanmayan farklı bir cost/
+       funding model veya farklı veri): aynı kimlik altında iki farklı
+       kanıt, auditability'yi bozar.
+- Sessiz dedupe, "ilkini tut"/"sonuncuyu tut" politikası YOKTUR —
+  hangisinin gruba ait olduğuna caller karar verir.
+- AYNI parameters'a sahip ama FARKLI candidate_id'li iki Trial LEGAL'dir
+  ve REDDEDİLMEZ — §18.6'ya göre candidate_id kimliğin parçasıdır ve
+  parameters, candidate -> policy eşlemesinin tamamını kanıtlamaz
+  (policy builder caller kodudur, §18.2). Bunun sonucu (aynı
+  konfigürasyonun farklı ID'lerle iki kez kaydedilip ham sayının
+  şişmesi) mekanik olarak tespit EDİLMEZ; açık bir trust boundary'dir.
+- Aynı Trial'ın İKİ FARKLI TrialGroup'ta bulunması tespit EDİLMEZ (her
+  grup diğerlerinden habersizdir); gruplar-arası sayım birleştirme
+  (açık bağımlılık, §20.12) bunu çözmek zorundadır.
+```
+
+### 20.6 Karşılaştırılabilir Deney Grubu Sınırları (LOCKED)
+
+Bir TrialGroup'un TÜM Trial'ları, `trials[0]` referans alınarak, aşağıdaki mekanik olarak doğrulanabilir alanlarda EŞİT olmalıdır (Python `==`, frozen-dataclass/stdlib equality):
+
+```
+1. exchange
+2. market_type
+3. symbol
+4. timeframe
+5. as_of_time      (aware datetime `==` -> ANLIK/instant eşitliği; aynı
+                    anı gösteren farklı tzinfo'lu değerler EŞİT sayılır —
+                    Trial'ın kendi dataclass eşitliğiyle tutarlı; hiçbir
+                    UTC dönüşümü/normalizasyonu YAPILMAZ)
+6. config          (BacktestConfig `==`; Decimal değer eşitliği)
+7. ordered evaluation pencere dizisi:
+   tuple(r.window for r in trial.results) — uzunluk, SIRA ve her
+   TemporalWindow EŞİT olmalı (duplicate/overlapping pencereler Trial'da
+   legal olduğundan, dizinin kendisi karşılaştırılır; set/sorted
+   karşılaştırması YAPILMAZ).
+```
+
+```
+Mekanik olarak DOĞRULANAMAYAN (trust boundary, açıkça kaydedilir):
+- cost_model / funding_model / funding_required / funding_store / candle
+  store'un aynı olduğu (Trial bunları saklamaz, §18.7)
+- context-aware evaluation'da context_start'ların aynı olduğu (hiçbir
+  result modelinde saklanmaz, §8.3.16)
+- candidate -> policy builder eşlemesinin ve kod sürümünün aynı olduğu
+- pencerelerin IS mi OOS mu olduğu (role alanı YOK, §18.7)
+Bu nedenle "karşılaştırılabilir grup" = "yalnızca mekanik olarak
+kontrol edilebilen provenance + pencere eşitliği". Farklı maliyet/
+funding varsayımlarıyla üretilmiş Trial'ları aynı gruba koymamak caller
+disiplinidir.
+```
+
+Gelecekteki araştırma boyutlarına etkisi (bilgi amaçlı, yeni alan YETKİSİ DEĞİLDİR): farklı coin/veri evreni, timeframe, as_of_time veya config -> **farklı TrialGroup'lar**; aynı partition üzerindeki farklı strateji parametresi / feature-signal kombinasyonu -> aynı grupta **farklı candidate_id'ler**; piyasa rejimi alt-dönemleri -> farklı pencere dizileri -> farklı gruplar; farklı maliyet varsayımı -> Trial'da temsil edilmez (yukarıdaki trust boundary) — eksiklik olarak kaydedilir. Tüm bu gruplar arasındaki toplam deneme yükü bu kontratla ÖLÇÜLMEZ (§20.7, §20.12).
+
+### 20.7 Recorded Trial Count Semantiği — Ne Sayar, Neyi Kanıtlamaz (LOCKED)
+
+```
+recorded_trial_count(group) == len(group.trials)
+```
+
+```
+SAYAR:
+- Yalnızca bu TrialGroup'a caller tarafından AÇIKÇA verilmiş, başarılı,
+  candidate_id'si benzersiz Trial'ları. Ağırlıklandırma, dedupe,
+  korelasyon düzeltmesi YOK.
+
+KANITLAMAZ (her biri açıkça):
+- Araştırmada denenen TÜM denemelerin sayısını. Başarısız (raise
+  edilmiş), iptal edilmiş, sonuçsuz veya caller'ın kaydetmediği
+  denemeler bu sayıda YOKTUR -> sayı, bu grubun partition'ındaki gerçek
+  deneme yükü için yalnızca bir ALT SINIRDIR (lower bound) ve tamlık
+  kanıtı DEĞİLDİR. Eksik geçmiş "tam" SAYILMAZ; tamlık iddiası taşıyan
+  hiçbir alan/fonksiyon yoktur.
+- Diğer TrialGroup'lardaki (farklı coin/timeframe/as_of_time/config/
+  pencere) denemeleri.
+- Denemelerin bağımsızlığını. recorded_trial_count, EFEKTİF/BAĞIMSIZ
+  deneme sayısı DEĞİLDİR ve gelecekteki hiçbir kontratta, ayrı ve
+  açıkça kilitlenmiş bir karar olmadan, efektif sayı yerine
+  KULLANILAMAZ. Korelasyonlu Trial'lar (örn. komşu parametreler) ham
+  sayıda tam ağırlıkla yer alır.
+- Yalnızca kazanan denemelerin kaydedilmediğini: caller yalnızca iyi
+  sonuçları gruba koyarsa sayı düşük kalır ve gelecekteki bir DSR
+  düzeltmesi fazla iyimser olur. Bu mekanik olarak tespit EDİLEMEZ —
+  Bölüm 19 research-process riskidir.
+- Trial'ların IS üzerinde seçildiğini, OOS'un seçim/tuning girdisi
+  olarak kullanılmadığını, veya bir final holdout'un korunduğunu. Bu
+  foundation hiçbir selection/test role'ü, hiçbir final holdout
+  korumasını SAĞLAMAZ ve OOS/holdout sonuçlarının seçim girdisi olarak
+  kullanılmasını hiçbir şekilde MEŞRULAŞTIRMAZ (§18 zorunlu prensibi,
+  §18.7, §18.9, Bölüm 19 DEĞİŞMEDEN geçerlidir).
+```
+
+### 20.8 Validation / Fail-Fast Sırası ve Exact Mesajlar (LOCKED)
+
+**`TrialGroup.__post_init__`** — her adım yalnızca önceki adım TÜM girişler için hatasız tamamlandıktan SONRA çalışır; çok-elemanlı adımlar `trials` üzerinden AYRI, GLOBAL geçişlerdir (Candidate'in düzeltilmiş global fail-fast precedent'i, §18.8/18.14):
+
+```
+1. group_id str olmalı; değilse
+   TypeError(f"group_id must be a str, got {type(group_id).__name__}")
+2. group_id içeriği:
+   boş/yalnızca-whitespace -> ValueError("group_id must not be empty or whitespace-only")
+   padding                 -> ValueError("group_id must not have leading/trailing whitespace padding")
+3. trials tuple olmalı; değilse
+   TypeError(f"trials must be a tuple, got {type(trials).__name__}")
+4. trials boş olmamalı; değilse
+   ValueError("trials must not be empty")
+5. GLOBAL geçiş, index artan: her eleman Trial olmalı; değilse
+   TypeError(f"trials[{index}] must be a Trial, got {type(trial).__name__}")
+6. GLOBAL geçiş, index artan: candidate_id benzersizliği; ilk tekrarda
+   ValueError(f"trials[{index}].candidate.candidate_id {candidate_id!r} "
+              f"duplicates trials[{first_index}].candidate.candidate_id")
+   (first_index = aynı candidate_id'nin ilk görüldüğü index)
+7-12. Provenance homojenliği — alan başına AYRI GLOBAL geçiş, şu SABİT
+   sırayla: 7 exchange, 8 market_type, 9 symbol, 10 timeframe,
+   11 as_of_time, 12 config. Her geçiş index 1'den artan sırayla
+   trials[index].<alan> != trials[0].<alan> ilk uyuşmazlıkta:
+   ValueError(f"trials[{index}].{field_name} ({value!r}) does not match "
+              f"trials[0].{field_name} ({reference!r})")
+13. GLOBAL geçiş, index 1'den artan: evaluation pencere dizisi
+   tuple(r.window for r in trials[index].results) !=
+   tuple(r.window for r in trials[0].results) ise
+   ValueError(f"trials[{index}] evaluation windows do not match "
+              f"trials[0] evaluation windows")
+```
+
+Tek-elemanlı bir `trials` (len == 1) adım 6-13'ü trivial olarak geçer ve LEGAL'dir (`recorded_trial_count == 1`).
+
+**`recorded_trial_count(group)`:**
+
+```
+1. group bir TrialGroup olmalı; değilse
+   TypeError(f"group must be a TrialGroup, got {type(group).__name__}")
+2. len(group.trials) döndürülür (int).
+```
+
+```
+Hiçbir adım sessizce: group_id'yi strip/case-fold ETMEZ; trials'ı
+SIRALAMAZ, DEDUPE ETMEZ, FİLTRELEMEZ; uyumsuz bir Trial'ı atlayıp
+kısmi bir grup DÖNDÜRMEZ; Trial/Candidate'in kendi iç invariant'larını
+TEKRAR doğrulamaz (lower-layer trust, §18.7).
+Private kimlik kuralı (adım 1-2) trial_group.py içinde, candidate.py
+ile AYNI semantik ve AYNI mesaj kalıbıyla YEREL olarak yeniden
+tanımlanır — candidate.py'nin `_` prefix'li helper'ları cross-module
+İMPORT EDİLMEZ (annualized_metrics.py'nin private Decimal context'i
+yeniden tanımlama precedent'i, §15.28/15.29).
+```
+
+### 20.9 Purity, Immutability, UTC/Decimal ve Import Direction (LOCKED)
+
+```
+- Construction girdileri MUTATE ETMEZ; trials tuple'ı ve Trial
+  elemanları KOPYALANMAZ (`is` kimliği korunur).
+- Eşit girdilerden tekrar construction eşit ve eşit-hash değer üretir.
+- Wall-clock, randomness, I/O, store query, backtest/replay çağrısı YOK.
+- Metrik HESAPLAMAZ (Stage-1/Stage-2/annualized fonksiyonlarını
+  çağırmaz/import etmez); Sharpe/score/rank üretmez.
+- Decimal aritmetiği YOK, float YOK, private Decimal context GEREKMEZ
+  (yalnızca equality karşılaştırması ve len()).
+- UTC: yeni bir zaman kuralı YOK; as_of_time ve pencere sınırları zaten
+  Trial/TemporalWindow tarafından genuine-aware olarak doğrulanmıştır;
+  karşılaştırma instant-eşitliğidir (§20.6), dönüşüm YAPILMAZ.
+- Hidden global registry / module-level mutable state YOK.
+```
+
+**Import direction (LOCKED):**
+
+```
+crypto_quant_lab.validation.trial_group  (YENİ modül)
+  imports:
+    crypto_quant_lab.validation.candidate  (Trial — PUBLIC tip)
+    dataclasses (stdlib)
+
+candidate.py, rolling.py, windows.py, metrics.py, annualized_metrics.py,
+purging.py <- trial_group.py'yi İMPORT ETMEZ.
+
+Sonuç: trial_group.py -> candidate.py (tek yönlü); döngü YOK.
+trial_group.py rolling runner'larını, metrics'i, purging'i, optimizer/
+search kodunu İMPORT ETMEZ.
+```
+
+### 20.10 Gelecekteki İmplementasyon İçin Dosya Kapsamı (Planlama Bilgisi — Şimdi Değiştirilmez)
+
+```
+Yeni production dosyası: src/crypto_quant_lab/validation/trial_group.py
+  (TrialGroup, recorded_trial_count).
+Yeni test dosyası: tests/test_validation_trial_group.py (tek-modül-per-
+  test-dosyası convention'ı).
+Değiştirilecek mevcut production/test dosyası: YOK (candidate.py,
+  rolling.py, windows.py, metrics.py, annualized_metrics.py, purging.py,
+  backtest/models.py, validation/__init__.py DOKUNULMAZ).
+Documentation (combined closure için): VALIDATION_SPEC.md.
+Açıkça YASAK: ROADMAP.md, pyproject.toml, AGENTS.md, CLAUDE.md, herhangi
+  bir __init__.py, herhangi bir başka production/test/spec dosyası.
+```
+
+### 20.11 Test Kontratı (Gelecekteki Mikro-Adım İçin Minimum Davranışsal Matris)
+
+```
+- API: modül yolunda iki sembol; public sembol kümesi TAM OLARAK
+  {TrialGroup, recorded_trial_count}; TrialGroup frozen/slotted, field
+  sırası (group_id, trials); package-root export YOK.
+- group_id: yanlış tip TypeError; boş/whitespace/padding ValueError
+  (exact mesaj); case-sensitive, normalizasyon YOK.
+- trials: non-tuple TypeError; boş ValueError; yanlış-tipli eleman
+  index 0 VE sonraki index (exact mesaj); global geçiş kanıtı (sonraki
+  index'te tip hatası, önceki index'lerde duplicate/provenance hatası
+  varken bile adım 5 kazanır).
+- Duplicate: aynı candidate_id (eşit Trial tekrarı VE farklı parameters/
+  results ile çakışan kayıt) ValueError, iki index'i de içeren exact
+  mesaj; dedupe YOK; aynı parameters + farklı candidate_id KABUL.
+- Provenance: 6 alanın her biri için index 1 ve sonraki index
+  uyuşmazlığı exact mesajla; alan-başı global geçiş sırası kanıtı
+  (ör. index 2'de exchange uyuşmazlığı, index 1'deki symbol
+  uyuşmazlığından ÖNCE raise edilir); farklı tzinfo'lu aynı-an
+  as_of_time KABUL.
+- Pencere dizisi: farklı uzunluk, farklı sıra, farklı pencere ->
+  ValueError; birebir aynı dizi (duplicate/overlapping pencereler dahil)
+  KABUL.
+- Stage sırası: her adımın kendinden sonraki adımları ezdiğini gösteren
+  eşzamanlı-ihlal testleri (1->2->...->13).
+- Tek-Trial grup legal, recorded_trial_count == 1; N Trial -> N;
+  dönüş tipi tam olarak int (bool değil).
+- recorded_trial_count: TrialGroup olmayan girdi (tuple, list, Trial,
+  None) TypeError exact mesaj.
+- Value semantics: equality/hash, sıra-duyarlı equality, deterministik
+  tekrar construction, trials tuple'ı ve elemanlarının `is` kimliğiyle
+  korunması (no copy/mutation).
+- Absence: TrialGroup'ta role/score/rank/winner/selected/effective/
+  status/failed/complete/holdout alanı YOK; modülde effective count/
+  DSR/selection/persistence sembolü YOK.
+- Static/import: trial_group.py yalnızca candidate.Trial + stdlib
+  import eder; hiçbir validation modülü trial_group.py'yi import etmez;
+  candidate.py private helper import'u YOK; float/Decimal aritmetiği YOK.
+- Entegrasyon: gerçek run_rolling_backtest_from_store çıktısından AYNI
+  pencerelerle üretilmiş iki farklı-candidate Trial bir TrialGroup
+  oluşturur (count 2); farklı pencere dizili üçüncü bir Trial reddedilir.
+Testler wall clock/randomness/network/external service/float expected
+value KULLANMAZ; production algoritmasını oracle olarak yeniden
+implement ETMEZ.
+```
+
+### 20.12 Deflated Sharpe İçin Bağımlılık Durumu — Çözülen / Açık Kalan (LOCKED Kayıt)
+
+```
+Bu kontratla ÇÖZÜLEN (kontrat düzeyinde; implementasyon HENÜZ YOK):
+- Tek bir karşılaştırılabilir partition için "candidate/trial history"
+  temsili (TrialGroup).
+- O grup için isimlendirilmiş, ham, kaydedilmiş deneme sayısı
+  (recorded_trial_count) — efektif sayıdan açıkça ayrılmış.
+
+HÂLÂ AÇIK (DSR kontratı kilitlenmeden önce ayrı karar/kontrat gerekir;
+bu kontrat hiçbirini seçmez):
+1. N semantiği: DSR'de ham sayı mı, efektif sayı mı kullanılacağı; efektif
+   ise hangi estimator (kullanıcı kararı).
+2. N kapsamı: yalnızca tek TrialGroup mu, yoksa aynı araştırma
+   programındaki birden fazla grup (coin/timeframe/as_of_time/config)
+   mu; gruplar-arası birleştirme ve aynı Trial'ın çift sayılmasının
+   önlenmesi.
+3. Başarısız/iptal/kaydedilmemiş denemelerin N'e dahil edilip
+   edilmeyeceği ve nasıl temsil edileceği (Trial bunları temsil edemez).
+4. Çok pencereli bir Trial için TEK "trial Sharpe"ının tanımı (cross-
+   window aggregation, §18.9'da hâlâ dışarıda) ve buna karşılık gelen
+   örneklem uzunluğu T.
+5. Per-observation vs. annualized Sharpe ölçeğinin DSR'de hangisi
+   olacağı (15.9–15.33 ikisini de sağlar).
+6. Seçilen denemenin getiri serisinin skewness/kurtosis'i — repository'de
+   yok; Decimal kontratı gerekir.
+7. Normal dağılım CDF / ters-CDF kaynağı — Bölüm 27 ve 15.16 float
+   dönüşümlü statistics modülünü yasaklar; Decimal-exclusive bir
+   yaklaşım veya açık bir float-sınırı kararı gerekir.
+8. Trial'lar arası Sharpe varyansı (en az 2 Trial) — hangi ölçekte ve
+   hangi varyans konvansiyonuyla.
+9. "Seçilmiş" denemenin nasıl belirtildiği — selection rule bu kontratın
+   ve DSR'nin DIŞINDADIR; DSR seçilmiş denemeyi explicit girdi olarak
+   almalıdır, seçimi kendisi yapmamalıdır.
+10. IS/OOS/final-holdout ayrımı — hâlâ research-process disiplini
+   (Bölüm 19); DSR bunu mekanik olarak sağlamaz.
+```
+
+### 20.13 Explicit Exclusions (Bu Kontrat Kapsamında DEĞİL, İmplement EDİLMEZ)
+
+```
+Deflated Sharpe formülü, efektif trial-count estimator, PBO, CPCV,
+multiple-testing correction, parameter stability, candidate selection/
+ranking/scoring, optimizer/grid/random/Bayesian search, selection/test
+role, final holdout protection/enforcement, cross-window veya cross-
+group aggregation, başarısız/iptal deneme kaydı, persistence/database/
+serialization, global registry, online learning, reporting/CLI/UI,
+paper/live trading, Candidate/Trial değişikliği.
+```
+
+Bu maddeler **deferred boundary'ler** olarak kaydedilir — implement edilmiş özellikler DEĞİL. Bu kontratın LOCKED olması, Deflated Sharpe'ın spec-lock edildiği, FAZ6C'nin veya Faz 6'nın tamamlandığı anlamına GELMEZ (bkz. Bölüm 22, 22.2, 28.J).
+
 ## 21. Backward Compatibility (LOCKED)
 
 ```
@@ -4355,7 +4843,20 @@ FAZ 6C — Advanced Overfitting Controls
         `tests/test_validation_purging.py`'de (62 test, tümü PASS);
         bkz. Bölüm 23, 28.I — 19/19.
 
+    Kilitlenmiş, HENÜZ İMPLEMENT EDİLMEMİŞ prerequisite foundation:
+      - Karşılaştırılabilir deneme grubu + ham kaydedilmiş deneme sayısı
+        (Bölüm 20.1–20.13) — `TrialGroup`, `recorded_trial_count`
+        (`src/crypto_quant_lab/validation/trial_group.py`, YENİ modül,
+        henüz yok). Deflated Sharpe (17.4) ve multiple-testing
+        corrections'ın (17.6) "trial history / trial-count" önkoşulunun
+        YALNIZCA tek-grup, ham-sayım kısmını karşılar; FAZ6C listesine
+        yeni bir madde EKLEMEZ, 17.4/17.6'nın alt-foundation'ıdır
+        (purging/embargo foundation'ının 17.1'e ait olması gibi).
+        §28.J — 0/19.
+
     Kalan zorunlu bileşenler (HENÜZ PENDING):
+      - Yukarıdaki trial-group foundation'ının implementasyonu + test
+        suite'i (§28.J).
       - CPCV (17.2), Deflated Sharpe (17.4), PBO (17.5), multiple-testing
         corrections (17.6), parameter stability (17.7) — hiçbiri henüz
         spec-lock edilmemiştir; bu doküman onları henüz TASARLAMAZ.
@@ -4399,7 +4900,7 @@ FAZ 6D — Faz 6 Final Acceptance
 |---|---|---|---|
 | FAZ6A | COMPLETE | temporal window/IS-OOS primitives (§28.A — 22/22), zero-context rolling OOS evaluation (§28.C — 12/12), Stage-1 metrics (§28.D — 18/18) | locked FAZ6A scope içinde yok |
 | FAZ6B | COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 (§8.3.16, §28.F — 22/22, LOCKED VE IMPLEMENTED + TESTED), candidate/trial foundation (§18, §28.G — 25/25, LOCKED VE IMPLEMENTED + TESTED), Annualized Metrics (§15.19–15.33, §28.H — 30/30, LOCKED VE IMPLEMENTED + TESTED) | locked FAZ6B scope içinde yok |
-| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED) | CPCV, Deflated Sharpe, PBO, multiple-testing corrections, parameter stability |
+| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + ham kaydedilmiş deneme sayısı exact kontratı (§20.1–20.13, LOCKED — implementasyon YOK, §28.J — 0/19) | trial-group implementasyonu; CPCV, Deflated Sharpe, PBO, multiple-testing corrections, parameter stability |
 | FAZ6D | NOT STARTED | yok | Faz 6 final acceptance audit'i |
 
 Bu tablo, §28.A/B/C/D'nin bağımsız acceptance sayımlarını **birleşik bir yüzdeye veya tek bir sayıya dönüştürmez** — her grup kendi bağımsız kanıtını korur; bu tablo yalnızca hangi grubun hangi alt-fazın kanıtı olduğunu özetler.
@@ -4961,19 +5462,56 @@ FAZ6C — PURGING/EMBARGO FOUNDATION COMBINED DELIVERY — TAMAMLANDI:
   delivery'de BAŞLATILMADI — bunlar ayrı, henüz spec-lock edilmemiş
   gelecekteki adımlardır.
 
+FAZ6C — DEFLATED SHARPE BAĞIMLILIK ÇÖZÜMÜ + TRIAL-GROUP / RECORDED
+TRIAL COUNT SOURCE PREFLIGHT + EXACT CONTRACT LOCK — TAMAMLANDI
+(docs-only):
+  Kullanıcı, FAZ6C'nin kalan maddelerinden Deflated Sharpe'ı (17.4)
+  sıradaki hedef olarak seçti. Source-preflight, §17.4'ün exact
+  prerequisite metnini ("candidate/trial history (18) + (efektif) trial
+  sayısı + gerekli dağılımsal girdiler"; "trial framework'ünden kopuk
+  implement edilmez") doğruladı ve DSR'nin KENDİSİNİN henüz
+  kilitlenemeyeceğini tespit etti: çoklu-trial koleksiyonu ve trial
+  sayımı repository'de yoktur (grep: registry/experiment/trial_count/
+  n_trials/deflat — eşleşme yok). Yedi kavramı (tekil Trial, tüm
+  denemelerin kaydı, karşılaştırılabilir sonuç koleksiyonu, ham sayı,
+  efektif sayı, kalıcı store, optimizer/selection) ayrıştırdı ve
+  YALNIZCA en küçük gerekli foundation'ı — tek bir karşılaştırılabilir
+  deneme grubu (`TrialGroup(group_id, trials)`) ve onun ham kaydedilmiş
+  deneme sayısı (`recorded_trial_count`) — Bölüm 20.1–20.13'te LOCKED
+  olarak kaydetti: yeni `src/crypto_quant_lab/validation/trial_group.py`
+  modülü (henüz yok), candidate_id-tabanlı grup-içi kimlik (tekrar
+  çalıştırma ve çakışan kayıt ikisi de reddedilir, dedupe YOK),
+  provenance + ordered evaluation-pencere homojenliği, exact 13 adımlı
+  global fail-fast sırası ve mesajlar, purity/import-direction
+  (trial_group.py -> candidate.py, tek yönlü). Ham sayının efektif/
+  bağımsız sayı olmadığını, başarısız/iptal/kaydedilmemiş denemeleri ve
+  diğer grupları kapsamadığını (alt sınır, tamlık kanıtı değil) ve hiçbir
+  final holdout koruması sağlamadığını açıkça kilitledi. DSR için açık
+  kalan 10 bağımlılığı §20.12'de kaydetti. §28.J acceptance grubunu,
+  kontrattan türetilen 19 kriterle 0/19 olarak ekledi; §28 giriş
+  paragrafını dokuzdan ona güncelledi; §17.4, §17.6, §20, §22 ve §22.2
+  durum metinlerini buna göre güncelledi. Docs-only; production kod,
+  `trial_group.py` implementasyonu veya yeni test içermedi.
+  Candidate/Trial DEĞİŞMEDİ. Deflated Sharpe, efektif trial-count
+  estimator, PBO, CPCV, multiple-testing correction, candidate selection,
+  optimizer, persistence ve final holdout enforcement BAŞLATILMADI.
+  FAZ6C ve Faz 6 NOT COMPLETE kalır.
+
 Sonraki (henüz başlanmadı):
-  FAZ6C'nin kalan maddelerinden biri için ayrı bir source-preflight +
-  exact kontrat kilidi (Annualized Metrics/Candidate-Trial/purging-
-  embargo'nun izlediği AYNI iki-aşamalı precedent — önce preflight +
-  kontrat lock, sonra ayrı bir combined implementation delivery):
-  CPCV (Bölüm 17.2 — "fold model" prerequisite'i hâlâ tasarlanmamıştır),
-  Deflated Sharpe (17.4), PBO (17.5), multiple-testing corrections
-  (17.6), veya parameter stability (17.7) — hangisinin sırada olduğu bu
-  doküman tarafından henüz seçilmemiştir; bu adım o seçimi de
-  BAŞLATMAZ. Candidate selection/ranking, optimizer/grid/random/Bayesian
-  search, ve final holdout enforcement bu adımda da BAŞLATILMAZ. Ardından
-  FAZ6D — Faz 6 Final Acceptance audit'i. Faz 6'nın tamamlanması için
-  FAZ6C/FAZ6D'nin ikisi de gereklidir (bkz. Bölüm 22).
+  Bölüm 20.1–20.13'te LOCKED olan trial-group / recorded-trial-count
+  kontratının, yeniden tasarlanmadan, tek bir combined implementation
+  delivery olarak implement edilmesi (`src/crypto_quant_lab/validation/
+  trial_group.py` + `tests/test_validation_trial_group.py` + §28.J
+  closure) — önceki iki-aşamalı precedent'in ikinci aşaması. Bundan
+  SONRA, Deflated Sharpe'ın kendi source-preflight + exact kontrat kilidi
+  ancak §20.12'deki açık kararlar (özellikle N semantiği/kapsamı, çok
+  pencereli trial Sharpe tanımı, yüksek momentler ve Decimal normal-CDF
+  kaynağı) çözüldükten sonra yapılabilir. CPCV, PBO, multiple-testing
+  corrections ve parameter stability hâlâ spec-lock edilmemiştir.
+  Candidate selection/ranking, optimizer/grid/random/Bayesian search ve
+  final holdout enforcement BAŞLATILMAZ. Ardından FAZ6D — Faz 6 Final
+  Acceptance audit'i. Faz 6'nın tamamlanması için FAZ6C/FAZ6D'nin ikisi
+  de gereklidir (bkz. Bölüm 22).
 ```
 
 **MS3 scope (TAMAMLANDI — pre-flight'in kendisi, Bölüm 8.3'te kilitlendi):**
@@ -5056,9 +5594,9 @@ Aynı girdiler → aynı pencere sonuçları — mevcut `run_backtest_from_store
 - external LLM decision-making
 ```
 
-## 28. Acceptance Criteria — Dokuz Ayrı Grup (LOCKED)
+## 28. Acceptance Criteria — On Ayrı Grup (LOCKED)
 
-Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Annualized Metrics'in (Sharpe/Sortino/CAGR/Calmar) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.H'de kaydedilir (bkz. Bölüm 15.19–15.33, 23 — 30/30). Window-level purging/embargo'nun (Bölüm 17.1.1–17.1.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.I'de kaydedilir (bkz. Bölüm 17.1, 23 — 19/19). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G/28.H/28.I altındaki sayılar). §28.A/B/C/D/E/F/G/H/I'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
+Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Annualized Metrics'in (Sharpe/Sortino/CAGR/Calmar) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.H'de kaydedilir (bkz. Bölüm 15.19–15.33, 23 — 30/30). Window-level purging/embargo'nun (Bölüm 17.1.1–17.1.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.I'de kaydedilir (bkz. Bölüm 17.1, 23 — 19/19). Trial-group / recorded-trial-count foundation'ının (Bölüm 20.1–20.13) implementasyon/test acceptance checklist'i, HENÜZ implementation/test exercised OLMAYAN ayrı bir liste olarak 28.J'de kaydedilir (bkz. Bölüm 20, 23 — 0/19). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G/28.H/28.I/28.J altındaki sayılar). §28.A/B/C/D/E/F/G/H/I/J'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
 
 ### 28.A — LOCKED FOUNDATION ACCEPTANCE (Runner-Bağımsız)
 
@@ -5320,6 +5858,32 @@ Bu liste, Bölüm 17.1.1–17.1.13'te LOCKED olan window-level purging/embargo e
 19. `purge_in_sample_windows`, doğrudan inşa edilmiş `TemporalWindow` instance'ları İLE bir `TemporalSplit`'in kendi `in_sample`/`out_of_sample` field'larından türetilen pencereler ÜZERİNDE aynı şekilde çalışır — `TemporalSplit`'e hiçbir coupling/reimplementasyon YAPILMAZ (Bölüm 17.1.1, 17.1.9). **PASS** — `test_purging_module_does_not_import_temporal_split`, `test_purge_works_identically_on_temporal_split_derived_windows`.
 
 **Purging/embargo acceptance count: 19 / 19 implementation/test exercised.** Bu, aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: label/outcome-horizon'a bağlı klasik purging; CPCV; Deflated Sharpe; PBO; multiple-testing correction; parameter stability; candidate selection/ranking; optimizer/grid/random/Bayesian search; final holdout protection; FAZ6C'nin tamamlanması; Faz 6'nın tamamlanması. Bu grup, yalnızca Bölüm 17.1.1–17.1.13'te LOCKED olan window-level purging/embargo foundation kontratının kendisinin implement edilmiş + test edilmiş olduğu anlamına gelir — FAZ6C hâlâ NOT COMPLETE'dir (bkz. Bölüm 22, 22.2), çünkü CPCV/Deflated Sharpe/PBO/multiple-testing corrections/parameter stability hiçbiri henüz spec-lock edilmemiştir.
+
+### 28.J — TRIAL-GROUP / RECORDED TRIAL COUNT ACCEPTANCE (0/19 IMPLEMENTATION/TEST EXERCISED)
+
+Bu liste, Bölüm 20.1–20.13'te LOCKED olan trial-group / recorded-trial-count exact kontratının gelecekteki implementasyonu için acceptance kriterlerini kaydeder. **Bu 19 kriterin HİÇBİRİ henüz implementation/test exercised DEĞİLDİR** — `src/crypto_quant_lab/validation/trial_group.py` ve `tests/test_validation_trial_group.py` henüz mevcut değildir.
+
+1. `TrialGroup` (`group_id: str`, `trials: tuple[Trial, ...]`) ve `recorded_trial_count(group: TrialGroup) -> int`, kilitli modül yolunda (`src/crypto_quant_lab/validation/trial_group.py`) mevcuttur; `TrialGroup` frozen/slotted ve field sırası kilitlidir; modülün public sembolleri TAM OLARAK bu ikisidir (Bölüm 20.4). **PENDING**
+2. `validation/__init__.py` DEĞİŞMEZ ve iki sembol package-root'ta export EDİLMEZ; `Candidate`/`Trial`/`WindowResult`/`TemporalWindow`/`BacktestConfig`'e hiçbir alan eklenmez; `candidate.py`/`rolling.py`/`windows.py`/`metrics.py`/`annualized_metrics.py`/`purging.py`/`backtest/models.py` DEĞİŞMEZ (Bölüm 20.4, 20.10 — static `git diff` + tam regression suite). **PENDING**
+3. `group_id` `str` değilse exact mesajlı TypeError (Bölüm 20.8 adım 1). **PENDING**
+4. `group_id` boş/yalnızca-whitespace veya padded ise exact mesajlı ValueError; case-sensitive, strip/normalizasyon YOK (Bölüm 20.5, 20.8 adım 2). **PENDING**
+5. `trials` tuple değilse TypeError, boşsa ValueError — exact mesajlarla (Bölüm 20.8 adım 3-4). **PENDING**
+6. `trials`'ın her elemanı `Trial` olmalıdır; index-specific exact mesajlı TypeError, global geçiş olarak (Bölüm 20.8 adım 5). **PENDING**
+7. Aynı `candidate_id`'li ikinci Trial — eşit tekrar çalıştırma VE çakışan kayıt — iki index'i tanımlayan exact mesajlı ValueError ile reddedilir; dedupe YOK (Bölüm 20.5, 20.8 adım 6). **PENDING**
+8. Aynı `parameters`'a sahip ama farklı `candidate_id`'li Trial'lar KABUL edilir (Bölüm 20.5). **PENDING**
+9. `exchange`/`market_type`/`symbol`/`timeframe`/`as_of_time`/`config`, `trials[0]`'a karşı alan-başı ayrı global geçişlerle, kilitli sırayla ve exact mesajla doğrulanır; aynı anı gösteren farklı tzinfo'lu `as_of_time` KABUL edilir (Bölüm 20.6, 20.8 adım 7-12). **PENDING**
+10. Ordered evaluation pencere dizisi (`tuple(r.window for r in trial.results)`) `trials[0]` ile uzunluk/sıra/değer olarak eşit olmalıdır; aksi exact mesajlı ValueError; duplicate/overlapping pencereli birebir aynı dizi KABUL (Bölüm 20.6, 20.8 adım 13). **PENDING**
+11. 13 adımın global fail-fast sırası, eşzamanlı-ihlal testleriyle birebir kanıtlanır (Bölüm 20.8). **PENDING**
+12. Girdi sırası korunur (sort/dedupe/filter YOK); equality sıraya duyarlıdır; tek-Trial grup legal'dir (Bölüm 20.4, 20.8). **PENDING**
+13. Equality/hash frozen-dataclass default'udur; grup hashable'dır; eşit girdilerden tekrar construction eşit ve eşit-hash değer üretir (Bölüm 20.4, 20.9). **PENDING**
+14. Construction `trials` tuple'ını ve Trial elemanlarını kopyalamaz/mutate etmez (`is` kimliği) (Bölüm 20.9). **PENDING**
+15. `recorded_trial_count`, `TrialGroup` olmayan girdide exact mesajlı TypeError verir ve tam olarak `len(group.trials)` değerini `int` olarak döndürür (bool değil; ağırlıklandırma/dedupe/korelasyon düzeltmesi YOK) (Bölüm 20.7, 20.8). **PENDING**
+16. `TrialGroup` hiçbir role/score/rank/winner/selected/effective/status/failed/complete/holdout alanı taşımaz; modülde effective count/DSR/selection/persistence/registry sembolü YOKTUR (absence kanıtı) (Bölüm 20.2, 20.3, 20.4, 20.7). **PENDING**
+17. `trial_group.py` yalnızca `candidate.Trial` ve stdlib `dataclasses` import eder; `candidate.py`'nin private helper'larını import ETMEZ; hiçbir validation modülü `trial_group.py`'yi import ETMEZ (Bölüm 20.8, 20.9). **PENDING**
+18. Wall-clock/randomness/I/O/metrik hesaplama/Decimal aritmetiği/float kullanımı YOKTUR (Bölüm 20.9). **PENDING**
+19. Gerçek `run_rolling_backtest_from_store` çıktısından aynı pencerelerle üretilmiş iki farklı-candidate Trial bir `TrialGroup` oluşturur (`recorded_trial_count == 2`); farklı pencere dizili bir Trial reddedilir (Bölüm 20.11). **PENDING**
+
+**Trial-group / recorded-trial-count acceptance count: 0 / 19 implementation/test exercised.** Bu grubun ileride 19/19 olması da aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: Deflated Sharpe; efektif/bağımsız trial sayısı; gruplar-arası veya tüm-araştırma-programı deneme sayımı; başarısız/iptal deneme kaydı; PBO; CPCV; multiple-testing correction; parameter stability; candidate selection/ranking; optimizer/search; final holdout protection; persistence; FAZ6C'nin veya Faz 6'nın tamamlanması.
 
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
