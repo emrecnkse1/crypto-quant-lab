@@ -1,6 +1,6 @@
 # FUNDING_RESEARCH_SPEC
 
-Bu doküman, Faz 7 — İlk Funding/Basis araştırmasının **ilk çalıştırılabilir, leakage-safe dikey dilimini** (§1–§9) ve **ikinci dikey dilimini** — USDⓈ-M perpetual kline ingestion, mekanik market provenance'ı, gerçek veri smoke run'ı (§10–§14) — tanımlar ve kapatır. Faz 7'nin tamamı bu dilimlerle TAMAMLANMIŞ SAYILMAZ.
+Bu doküman, Faz 7 — İlk Funding/Basis araştırmasının **ilk çalıştırılabilir, leakage-safe dikey dilimini** (§1–§9) ve **ikinci dikey dilimini** — USDⓈ-M perpetual kline ingestion, mekanik market provenance'ı, gerçek veri smoke run'ı (§10–§14) — ve **üçüncü dikey dilimini** — USDⓈ-M index-price ingestion, zaman güvenli close basis, resmî basis çapraz kontrolü (§15–§16) — tanımlar ve kapatır. Faz 7'nin tamamı bu dilimlerle TAMAMLANMIŞ SAYILMAZ.
 
 ## 1. Başlangıç Koşulu ve Kapsam
 
@@ -176,7 +176,9 @@ Mevcut motor dosyaları (policy.py, replay.py, store_runner.py,
    olmadan) yapan ikinci bir zaman kapılı görünüm; spot ve perpetual
    market kimliklerinin karışmasını engelleyen partition kuralları.
 3. Basis tanımı (işaret ve oran formülü: (perp - spot) / spot vb.) için
-   kaynak ve proje kararı.
+   kaynak ve proje kararı. [Üçüncü dilimde: index-price ingestion ve
+   yerel close basis tanımı KARŞILANDI (§15); iki bacaklı basis/carry
+   için gerekenler §15.8'de, hâlâ eksik.]
 Bunlar yokken basis ÜRETİLMEZ ve TAHMİN EDİLMEZ.
 ```
 
@@ -432,6 +434,8 @@ Exact basis işareti, oran formülü ve temporal availability sözleşmesi
 kilitlenmedi; bu görevde formül SEÇİLMEDİ. Basis PENDING.
 ```
 
+[Üçüncü dilimde kaynakla doğrulanıp uygulandı — bkz. §15.2–§15.4.]
+
 ## 13. Acceptance — Faz 7 İkinci Dilim (24/24 IMPLEMENTATION/TEST EXERCISED)
 
 Kanıt: `tests/test_usdm_perpetual_klines.py` (47 test, tümü PASS); spot ingestion/storage, funding/replay/store/rolling/research regression'ları (461 test) DEĞİŞMEDEN yeşil; tam suite 2367/2367 PASS (2320 önceki + 47 yeni); gerçek veri smoke run'ı §11.
@@ -465,4 +469,322 @@ Kanıt: `tests/test_usdm_perpetual_klines.py` (47 test, tümü PASS); spot inges
 
 ## 14. Sıradaki Somut İş
 
-Basis kaynak + formül + temporal availability sözleşmesinin kilitlenmesi (docs/contract): `/futures/data/basis` ve `/fapi/v1/indexPriceKlines` resmî dokümanından alan semantiği, işaret, oran formülü, index/spot seçimi ve availability kuralının kaynakla sabitlenmesi. Implementasyon, eşik araştırması ve çoklu-sembol/uzun dönem çalıştırma bu işin kapsamında DEĞİLDİR.
+[Üçüncü dilimde tamamlandı — güncel sıradaki iş §16.] Basis kaynak + formül + temporal availability sözleşmesinin kilitlenmesi (docs/contract): `/futures/data/basis` ve `/fapi/v1/indexPriceKlines` resmî dokümanından alan semantiği, işaret, oran formülü, index/spot seçimi ve availability kuralının kaynakla sabitlenmesi. Implementasyon, eşik araştırması ve çoklu-sembol/uzun dönem çalıştırma bu işin kapsamında DEĞİLDİR.
+
+## 15. Üçüncü Dilim — USDⓈ-M Index-Price Ingestion ve Zaman Güvenli Close Basis
+
+**Durum:** tamamlandı (Faz 7 üçüncü dikey dilim). Bu dilim **basis veri temelidir**: basis bir araştırma feature'ı / betimsel kanıt olarak üretilir; basis işlemi, hedge, iki bacaklı carry veya PnL YOKTUR (§15.8). Faz 7 bütünü TAMAMLANMADI; FAZ6C NOT COMPLETE, FAZ6D NOT STARTED — değişmedi.
+
+### 15.1 Kavram Ayrımı (karıştırılmaz)
+
+```
+funding signal              : settled funding oranı (/fapi/v1/fundingRate), §4
+contract-trade price        : perpetual işlem fiyatı klines (/fapi/v1/klines),
+                              price_kind=contract_trade, §10
+index price                 : USDⓈ-M index fiyatı klines (/fapi/v1/indexPriceKlines),
+                              price_kind=index_price; İŞLEM GÖREMEZ
+derived close basis         : bu projenin yerel tanımı (§15.4), resmî formül DEĞİL
+resmî Binance basis yanıtı  : /futures/data/basis kayıtları; yalnızca son 30 gün,
+                              kısa dönem çapraz kontrol, kehanet (oracle) DEĞİL
+trade edilebilir spot price : Binance Spot /api/v3/klines (market_type=spot);
+                              index yerine SESSİZCE kullanılmaz
+directional perpetual hipotezi : §3 funding-carry — tek bacaklı perpetual pozisyon
+gerçek iki bacaklı basis/carry : spot + perpetual; bu motorda YOK (§15.8)
+```
+
+### 15.2 Resmî Kaynak Preflight (erişim: 2026-09-23 ~22:20–22:35 UTC)
+
+```
+Kaynaklar: developers.binance.com USDⓈ-M Futures REST sayfaları (JS ile
+render edilir; sayfa özetleri alınabildi, bazı satır-içi yorumlar tutarsız
+okundu), resmî binance-futures-connector-python (um_futures/market.py)
+docstring'leri, canlı public yanıtlar (API key yok).
+
+GET /fapi/v1/klines (contract-trade)
+  parametreler: symbol, interval, startTime, endTime, limit
+  limit: varsayılan 500, doküman max 1500 (connector docstring "max 1000")
+  "Klines are uniquely identified by their open time."
+  yanıt: 12 alan (§10.4); [0] open time = interval BAŞLANGICI.
+GET /fapi/v1/indexPriceKlines (index price)
+  parametreler: pair (symbol DEĞİL — canlı: symbol ile -1102 "Mandatory
+  parameter 'pair'"), interval, startTime, endTime, limit
+  limit: varsayılan 500, doküman max 1500 (connector "max 1000");
+  sayfa boyutu 1000 kullanılır. Ağırlık [1,100)=1, [100,500)=2,
+  [500,1000]=5, >1000=10. Zaman verilmezse en son mumlar döner.
+  yanıt: 12 alan — [0] open time (interval başlangıcı), [1..4] OHLC
+  (string), [5] ignore "0", [6] close time (= open + süre − 1 ms),
+  [7] ignore, [8] int sayaç (doküman 1m örneğinde 60, canlı 1h'de 3600 —
+  alt index örnek sayısı; yorumlanmaz), [9..11] ignore. Hacim YOK.
+  Canlı: startTime/endTime açılış zamanına göre DAHİL.
+GET /futures/data/basis (resmî basis)
+  parametreler: pair, contractType {PERPETUAL, CURRENT_QUARTER,
+  NEXT_QUARTER}, period {5m,15m,30m,1h,2h,4h,6h,12h,1d}, limit (varsayılan
+  30, max 500), startTime, endTime
+  "Only the data of the latest 30 days is available."
+  yanıt alanları: indexPrice, contractType, basisRate, futuresPrice,
+  annualizedBasisRate, basis, pair, timestamp
+  Doküman basis / basisRate için FORMÜL VERMEZ.
+  Canlı gözlemler (doğrulanmış API alanı ile yerel çıkarımı ayırarak):
+    - PERPETUAL için annualizedBasisRate = "" (yıllıklandırma üretilmez,
+      uydurulmaz).
+    - basisRate 4 ondalıkla gösterilir.
+    - basis == futuresPrice − indexPrice TAM eşit (168/168, §15.9).
+    - basisRate ≈ basis / indexPrice, 4 ondalığa yuvarlanmış
+      (|artık| ≤ 0.00005, 168/168) — resmî tanım değil, cebirsel gözlem.
+    - timestamp T'deki kayıt, T'de BAŞLAYAN mumun AÇILIŞ fiyatlarına eşit
+      (futuresPrice == contract open(T), indexPrice == index open(T):
+      önce 7 probe kaydında, sonra smoke'ta 168/168). Yani kayıt T anındaki
+      bir anlık görüntüdür (snapshot), periyot kapanışı değildir.
+    - endTime DAHİL; en yeni kaydın yayın gecikmesi belgelenmemiştir
+      (22:24 UTC'de son kayıt 21:00, kısa süre sonra 22:00 göründü) —
+      bu yüzden resmî kayıtlar karar/feature girdisi olarak KULLANILMAZ.
+Çelişki/sınırlar: limit (1500 vs 1000) — 1000 kullanılır ve 1500'e kadar
+izin verilir; index yanıt alan yorumları sayfadan tutarlı okunamadı —
+yalnızca tip/konum doğrulanır, fiyat dışı alanlar yorumlanmaz.
+```
+
+### 15.3 Provenance / Storage Kararı
+
+```
+Index-price canonical dataset:
+  binance_usdm_index_price_dataset(pair, timeframe) ->
+  CandleDataset(exchange="binance", market_type="usdm_perpetual",
+                symbol=<pair>, timeframe, price_kind="index_price",
+                source="binance:GET https://fapi.binance.com/fapi/v1/indexPriceKlines")
+Namespace, pair'in contract-trade namespace'i ile AYNIDIR (index, o pair'in
+USDⓈ-M futures index'idir; market_type'a sahte değer konmadı). Bir namespace
+tek provenance taşıdığından (§10.2) contract-trade ve index-price aynı
+fiziksel store'da BULUNAMAZ: index-price AYRI bir SQLiteHistoricalCandleStore
+dosyasına yazılır. Aynı store'a yazma denemesi mekanik olarak
+DataConflictError verir ve hiçbir şey yazılmaz. Şema/migration değişikliği
+YOK; eski spot/perpetual verinin anlamı değişmez; provenance'ı bilinmeyen
+satırlar yeniden etiketlenmez. Basis yükleyicisi iki AYRI store ister (aynı
+nesne -> ValueError) ve her birinin tam olarak beklenen dataset'i
+kaydettiğini ve istenen aralığı kapsadığını doğrular.
+Değerlendirilip reddedilen: market_type'ı "usdm_index" gibi bir değerle
+farklılaştırmak (sahte market kimliği) ve mum anahtarına price_kind eklemek
+(kilitli şema migration'ı, §10.2).
+```
+
+### 15.4 Close Basis — Kesin Yerel Tanım (derived local definition)
+
+```
+Aynı pair/timeframe için open_time'ı TAM eşleşen bir contract-trade mumu C
+ve bir index-price mumu I için ([open_time, close_time) aralığı):
+  close_basis      = C.close − I.close          (Decimal, tam — prec 100,
+                                                  Inexact trap'li özel context)
+  close_basis_rate = close_basis / I.close      (34 anlamlı basamak,
+                                                  ROUND_HALF_EVEN, özel context)
+  işaret: > 0 premium (contract > index), < 0 discount, 0 sıfır basis
+  close_time   = open_time + süre
+  available_at = max(C availability, I availability), her biri
+                 feature_availability_time = open_time + süre
+Kurallar: yalnızca tam zaman eşleşmesi; forward-fill, nearest-neighbour,
+interpolation, resampling YOK; bir tarafta mum yoksa gözlem YOK ve slot
+contract_only / index_only / both_missing olarak raporlanır; I.close <= 0
+veya sonlu değilse ValueError; sembol/timeframe/price_kind uyuşmazlığı
+ValueError; interval başlangıcı yayın zamanı olarak kullanılmaz. Sonuçlar
+process-global decimal context'inden bağımsızdır (test edildi). Yıllıklandırma
+YAPILMAZ (PERPETUAL için resmî alan da boş).
+Bu tanım Binance'in basisRate'i ile aynı İDDİA EDİLMEZ: resmî kayıt T
+anındaki snapshot'tır; close basis [T−d, T) aralığının kapanışıdır.
+```
+
+### 15.5 Exact API
+
+```
+# market_data/binance_usdm.py (ek)
+USDM_INDEX_PRICE_KLINES_PATH = "/fapi/v1/indexPriceKlines"
+build_usdm_index_price_klines_url(pair, timeframe, *, start_time_ms, end_time_ms, limit) -> str
+parse_binance_usdm_index_price_kline(raw, pair, timeframe) -> BinanceHistoricalKline
+fetch_binance_usdm_index_price_klines(pair, timeframe, *, start_time_ms, end_time_ms,
+                                      limit=1000, timeout=10.0) -> list[BinanceHistoricalKline]
+fetch_usdm_json_list(url, *, limit, timeout) -> list[object]   # ortak tek-sayfa GET
+
+# storage/datasets.py (ek)
+BINANCE_USDM_INDEX_PRICE_KLINES_SOURCE
+binance_usdm_index_price_dataset(pair, timeframe) -> CandleDataset
+coverage_contains(intervals, start_time, end_time) -> bool
+
+# data_quality/usdm_ingestion.py (ek; contract-trade yolu davranışça aynı)
+ingest_binance_usdm_index_price_klines(store, *, pair, timeframe, requested_start,
+    requested_end, as_of_time, fetch_page=None, max_attempts=3, page_limit=1000)
+    -> UsdmKlineIngestionResult
+
+# market_data/binance_usdm_basis.py (yeni)
+BinanceOfficialBasisRecord(pair, contract_type, period, timestamp, futures_price,
+    index_price, basis, basis_rate, annualized_basis_rate: Decimal | None)
+parse_binance_official_basis_record(raw, *, pair, contract_type, period)
+build_official_basis_url(pair, contract_type, period, *, start_time_ms, end_time_ms, limit)
+fetch_binance_official_basis(pair, contract_type, period, *, start_time, end_time,
+    as_of_time, limit=500, timeout=10.0, fetch_rows=None) -> tuple[record, ...]
+    # [start, end) yarı açık; start < as_of − 30 gün, end > as_of, hizasız aralık,
+    # limit'i aşan aralık -> ValueError (sessiz kırpma yok, sayfalama yok)
+check_official_basis_consistency(record) -> OfficialBasisConsistency(
+    basis_residual, basis_rate_residual, is_consistent)
+OFFICIAL_BASIS_RATE_DISPLAY_TOLERANCE = Decimal("0.00005")
+
+# research/basis.py (yeni)
+CloseBasisObservation(exchange, symbol, timeframe, open_time, close_time, available_at,
+    contract_close, index_close, close_basis, close_basis_rate,
+    contract_dataset, index_dataset)            # kurulumda yeniden doğrulanır
+compute_close_basis_observation(contract, index, *, contract_dataset, index_dataset)
+pair_close_basis(contract_records, index_records, *, contract_dataset, index_dataset,
+    start_time, end_time) -> CloseBasisPairing(observations, contract_only_open_times,
+    index_only_open_times, both_missing_open_times)     # girdi sırası önemsiz
+CloseBasisHistory(*, coverage_start, coverage_end, pairing)
+    .visible_at(as_of) / .latest_at(as_of)     # available_at <= as_of; as_of
+    kapsam [start, end] dışındaysa ValueError; değiştirilemez; duplicate ve
+    karışık provenance reddedilir
+load_close_basis_history(contract_store, index_store, *, symbol, timeframe,
+    start_time, end_time) -> CloseBasisHistory
+compare_with_official_basis(observations, records, *, rate_tolerance)
+    -> OfficialBasisComparison(rate_tolerance, comparable_count,
+       official_only_timestamps, observation_only_close_times,
+       max/mean_abs_basis_difference, max/mean_abs_rate_difference,
+       exceeding_timestamps)
+    # eşleştirme: resmî timestamp T <-> close_time == T olan gözlem
+Mevcut motor/backtest modülleri DEĞİŞMEDİ; basis katmanı backtest'i import etmez.
+```
+
+### 15.6 Resmî Basis Endpoint'inin Rolü
+
+Yalnızca sınırlı, yakın dönem çapraz kontrol: (1) resmî kaydın kendi alanlarıyla cebirsel tutarlılığı, (2) timestamp/period semantiği, (3) derived close basis ile ölçülen fark. Uzun geçmişin kalıcı kaynağı DEĞİLDİR (30 gün), karar anında girdi DEĞİLDİR (yayın gecikmesi belgelenmemiş), kusursuz referans DEĞİLDİR. Semantik fark (snapshot vs. kapanış) nedeniyle tam eşitlik beklenmez; tolerans önceden sabitlenir ve sonuçtan sonra değiştirilmez.
+
+### 15.7 Lookahead ve Hassasiyet Önlemleri
+
+```
+- available_at = interval kapanışı; kapanıştan 1 µs önce görünmez, tam
+  kapanışta görünür (sınır dahil); interval başlangıcında görünmez.
+- as_of bir UTC anı olarak karşılaştırılır (+03:00 aware girdi aynı sonuç).
+- Kapsam dışı as_of -> hata (bilinmeyen, yok sayılmaz).
+- Bir tarafı eksik slot hiçbir as_of'ta görünmez; önceki gözlem ileri
+  taşınmaz.
+- Pencere sonrasındaki veri önceki görünürlüğü değiştirmez (test edildi).
+- Gözlemler kurulumda yeniden hesaplanarak doğrulanır (sahte gözlem reddi).
+- Decimal: yalnızca özel Context nesneleri; ortam context'i prec=3 /
+  ROUND_DOWN iken sonuç aynı (test edildi).
+```
+
+### 15.8 Çok Bacaklı Kapasite Denetimi ve Kapsam Sınırı
+
+```
+Kod kanıtı: backtest motoru TEK enstrüman, TEK pozisyonludur —
+  backtest/replay.py: tüm mumların aynı sembolü paylaşması zorunlu
+  ("all candles must share the same symbol"); funding olayları da aynı
+  sembole bağlı.
+  backtest/accounting.py: AccountState tek position_quantity + tek
+  average_entry_price; equity = cash + position_quantity * mark_price.
+  backtest/models.py: PositionTarget LONG/SHORT/FLAT tek hedef.
+Sonuç: mevcut motor iki bacaklı basis/carry'yi TEMSİL EDEMEZ. Bu dilimde
+basis-eşik trading policy'si, hedge, "basis arbitrage", "market-neutral
+carry" veya PnL ÜRETİLMEDİ; index price trade edilebilir bacak olarak
+modellenmedi. Basis yalnızca araştırma feature'ı / betimsel kanıttır.
+Gerçek basis/carry araştırması için gerekenler (hiçbiri mevcut değil):
+  - trade edilebilir spot bacağı (spot fiyat serisi + spot execution)
+  - perpetual bacağı
+  - iki ayrı fill akışı
+  - bacak başına komisyon / spread / slippage
+  - funding nakit akışı (yalnız perpetual bacağında)
+  - borrow/financing ve erişilebilirlik varsayımları (spot short için)
+  - hedge oranı
+  - senkron execution varsayımı
+  - liquidation / margin modeli
+  - partial-fill ve legging riski
+  - portföy seviyesinde equity / drawdown
+```
+
+### 15.9 Gerçek Kamu Verisi Smoke Validation (betimsel)
+
+```
+Komut (repo kökünden; betik/çıktılar repo DIŞINDA, commit edilmez):
+  .venv/Scripts/python.exe <scratchpad>/smoke3/run_basis_smoke.py <scratchpad>/smoke3/out
+Önceden kaydedilen konfigürasyon (smoke_config.json, 2026-09-23T22:33:00Z):
+  config SHA-256 66c9643489ee8984753f6ee81ffd3735637e89507b54ad660a87a7e69e3d5d4d
+  script SHA-256 6a2fb9e26547aabd132e038b8b7df5a3a418304023454fddc17ac856c442b620
+  BTCUSDT, 1h (timeframe = period), PERPETUAL
+  pencere kuralı: end = çalıştırma saatinin UTC gece yarısı, start = end − 7 gün
+    -> [2026-09-16T00:00Z, 2026-09-23T00:00Z) (kural farklı sonuç verirse abort)
+  sayfa limitleri: contract 1000, index 1000, resmî basis 500
+  saat: script başında tek wall-clock UTC okuması (as_of)
+  formül: §15.4; ayrı contract.db / index.db store'ları
+  resmî cebirsel kontrol: basis artığı tam 0; |basisRate − basis/indexPrice| <= 0.00005
+  karşılaştırma: T <-> close_time T; rate toleransı 0.0001 (1 bp);
+    beklenen yapısal eşleşmeme: pencere başındaki resmî kayıt ve pencere
+    sonunda kapanan gözlem — birer tane
+  betimsel: resmî fiyatların T'deki mum AÇILIŞLARINA tam eşitliği sayılır
+Not: 7 kayıtlık bir canlı probe (preflight) konfigürasyondan önce yapıldı ve
+snapshot/açılış eşitliği orada ilk kez gözlendi; tolerans ve pencere smoke
+sonucundan ÖNCE sabitlendi ve sonra değiştirilmedi.
+Çalıştırma: 2026-09-23T22:33:34Z, public endpoint'ler, API key yok.
+Ham sonuçlar:
+  contract mumları 168, index mumları 168; her ikisinde leading/internal/
+    trailing boşluk 0/0/0; effective_end 2026-09-23T00:00Z
+  eşleşen gözlem 168; contract_only 0, index_only 0, both_missing 0
+  close_basis min −64.48630435, max 21.47739130,
+    ortalama −32.79697670803571428571428571428571
+  close_basis_rate min −0.0007556204866843568417337703913317498,
+    max 0.0002770421126444617447671976136631324,
+    ortalama −0.0004063050729842611646614204780665633
+  premium 3, discount 165, sıfır 0
+  resmî kayıt 168 (2026-09-16T00:00Z … 2026-09-22T23:00Z);
+    annualizedBasisRate dolu kayıt 0
+  cebirsel tutarlılık 168/168; sıfırdan farklı basis artığı 0;
+    en büyük |rate artığı| 0.0000498570111333745819323176775791208 (<= 0.00005)
+  karşılaştırma: karşılaştırılabilir 167; resmî-only 1 (2026-09-16T00:00Z),
+    gözlem-only 1 (close 2026-09-23T00:00Z) — önceden beklenen yapısal fark
+    max |basis farkı| 19.27065217, ortalama 1.118701444850299401197604790419162
+    max |rate farkı| 0.0002387788371603713897608277703212235,
+    ortalama 0.00001384156357173724746267484621979918
+    tolerans 0.0001 AŞIMI: 4 zaman damgası — 2026-09-16T11:00Z,
+    2026-09-17T16:00Z, 2026-09-21T13:00Z, 2026-09-22T01:00Z
+  snapshot/açılış eşitliği: 168/168
+Uyuşmazlık açıklaması (sonuç sonrası, yalnız teşhis; tolerans DEĞİŞMEDİ):
+  4 aşımın hepsinde fark index tarafından gelir — index mumunun kapanışı ile
+  bir sonraki index mumunun açılışı ayrışır (ör. 11:00Z: index close(10:00)
+  75942.92434783 vs open(11:00) 75960.95804348; contract close/open farkı
+  ≤ 0.1). Resmî kayıt T açılış snapshot'ı olduğundan, close basis ile resmî
+  basis arasındaki fark bu "index kapanış→açılış sıçraması"nı içerir.
+  Bu bir semantik farktır; close basis tanımı veya tolerans buna göre
+  yumuşatılmadı. 1 bp önceden seçilmiş toleransla 167 noktanın 4'ü aşar.
+Yorum sınırı: veri zinciri (iki ayrı provenance'lı ingestion, tam eşleşme,
+zaman kapısı, resmî kayıt denetimi) gerçek veride çalıştı. Kârlılık,
+arbitraj fırsatı, işlem sinyali veya hipotez kanıtı İDDİA EDİLMEZ; PnL/Sharpe
+üretilmedi.
+```
+
+### 15.10 Acceptance — Faz 7 Üçüncü Dilim (25/25 IMPLEMENTATION/TEST EXERCISED)
+
+Kanıt: `tests/test_usdm_index_basis.py` (72 test, tümü PASS); `tests/test_usdm_perpetual_klines.py` (47) ve diğer storage/market-data/research testleri DEĞİŞMEDEN yeşil; tam suite 2439/2439 PASS (2367 önceki + 72 yeni); gerçek veri smoke §15.9.
+
+1. Index URL `pair` parametresi ve exact path. **PASS** — `test_index_url_uses_pair_parameter_and_exact_path`.
+2. limit 1..1500, boş pair, ters aralık reddi. **PASS** — `test_index_limit_and_range_bounds_are_enforced`, `test_index_invalid_pair_and_range_are_rejected`.
+3. Geçerli index satırı float'sız, tam Decimal; hacim 0 sözleşmesi. **PASS** — `test_valid_index_row_parses_exact_decimals_and_zero_volume`.
+4. Bozuk alan sayısı/tip/NaN/<=0 fiyat/sayaç/ignore/zaman reddi; OHLC. **PASS** — `test_malformed_index_rows_are_rejected` (14 durum), `test_index_ohlc_invariants_are_enforced`.
+5. Tek sayfa fetch, limit aşımı ve API hata nesnesi fail-closed. **PASS** — `test_fetch_index_page_decodes_and_fails_closed`.
+6. Sayfalama, yarı açık aralık, kapanmamış kuyruk dışlama, exact coverage ve provenance. **PASS** — `test_index_ingestion_paginates_half_open_and_excludes_unclosed_tail`.
+7. Canonical index dataset kimliği. **PASS** — `test_index_dataset_identity_is_canonical`.
+8. Duplicate/sırasız satır ve ortada API hatası: mum, provenance, coverage yazılmaz. **PASS** — `test_index_duplicate_or_unordered_rows_write_nothing`, `test_index_mid_pagination_api_error_rolls_back_everything`.
+9. Contract-trade ve index-price aynı store'u paylaşamaz. **PASS** — `test_contract_and_index_can_never_share_one_store`.
+10. İdempotent tekrar; değişmiş değer conflict; eski satırlar yeniden etiketlenmez. **PASS** — `test_index_reingestion_is_idempotent_and_changed_value_conflicts`, `test_legacy_rows_in_index_namespace_are_never_relabeled`.
+11. Coverage birleşimi exact. **PASS** — `test_coverage_contains_is_exact`.
+12. Premium/discount/sıfır, exact Decimal formül. **PASS** — `test_close_basis_premium_discount_zero_exact`.
+13. 34 basamak, bağımsız Fraction ile doğrulanmış değer, ortam context'inden bağımsızlık. **PASS** — `test_close_basis_rate_precision_is_fixed_and_context_independent`.
+14. Sıfır/negatif index reddi. **PASS** — `test_zero_or_negative_index_close_is_rejected`.
+15. Sembol/timeframe/price_kind uyuşmazlığı ve hizasız interval reddi. **PASS** — `test_mismatched_symbol_timeframe_and_price_kind_are_rejected`, `test_misaligned_intervals_are_rejected`.
+16. Sahte gözlem reddi. **PASS** — `test_forged_observation_is_rejected`.
+17. Boşluklar raporlanır, doldurulmaz; girdi sırası sonucu değiştirmez; duplicate/aralık dışı reddi. **PASS** — `test_pairing_reports_gaps_and_never_fills`, `test_pairing_rejects_duplicates_out_of_range_and_misaligned_range`.
+18. Kapanıştan önce görünmez, tam kapanışta görünür, interval başlangıcı yayın zamanı değil, gelecek dışlanır. **PASS** — `test_observation_is_invisible_before_close_and_visible_exactly_at_it`.
+19. UTC anı karşılaştırması; kapsam dışı as_of hata. **PASS** — `test_as_of_is_compared_as_a_utc_instant`, `test_as_of_outside_coverage_is_an_error_not_an_empty_answer`.
+20. Eksik mum hiç görünmez, ileri taşınmaz; sonraki veri önceki görünürlüğü değiştirmez. **PASS** — `test_missing_candle_on_either_side_never_becomes_visible`, `test_later_data_does_not_change_earlier_visibility`.
+21. History değiştirilemez; duplicate ve karışık provenance reddi; yükleyici ayrı, kayıtlı, kapsanmış store ister. **PASS** — `test_history_is_immutable_and_rejects_duplicates_and_mixed_provenance`, `test_loader_enforces_separate_registered_and_covered_stores`.
+22. Basis katmanı trading/muhasebe'ye bağımlı değil. **PASS** — `test_basis_layer_has_no_trading_or_accounting_dependency`.
+23. Resmî kayıt birebir ayrıştırma; bozuk kayıt reddi; URL/parametre sözleşmesi. **PASS** — `test_official_record_parses_verbatim`, `test_malformed_official_records_are_rejected`, `test_official_url_and_parameter_contract`.
+24. Resmî fetch yarı açık/sıralı; 30 gün penceresi ve saat sözleşmesi; API hatası fail-closed. **PASS** — `test_official_fetch_is_half_open_and_ordered`, `test_official_fetch_enforces_the_30_day_window_and_clock`, `test_official_fetch_api_error_is_fail_closed`.
+25. Cebirsel tutarlılık (dahil sınır) ve close_time↔snapshot eşleştirmeli karşılaştırma metrikleri. **PASS** — `test_official_record_algebraic_consistency`, `test_official_rate_tolerance_boundary_is_inclusive`, `test_comparison_matches_close_time_to_snapshot_timestamp_and_measures_differences`, `test_comparison_rejects_mismatches_and_bad_tolerance`.
+
+**Faz 7 üçüncü dilim acceptance: 25 / 25.** Bu; iki bacaklı basis/carry araştırmasının, spot bacağının, eşik araştırmasının, kârlılığın veya Faz 7'nin tamamlandığı anlamına GELMEZ.
+
+## 16. Sıradaki Somut İş
+
+Çok bacaklı (trade edilebilir Binance Spot bacağı + USDⓈ-M perpetual bacağı) muhasebe/execution sözleşmesinin yazılması: iki fill akışı, bacak başına maliyet, yalnız perpetual bacağında funding, hedge oranı, senkron execution/legging varsayımı, margin/liquidation sınırı ve portföy equity'si — mevcut tek bacaklı motor kontratını bozmadan. Bu yapılmadan gerçek basis/carry hipotezi sınanamaz.

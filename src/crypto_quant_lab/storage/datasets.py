@@ -1,4 +1,4 @@
-"""Candle dataset provenance and coverage value types (FUNDING_RESEARCH_SPEC.md Bölüm 10).
+"""Candle dataset provenance and coverage value types (FUNDING_RESEARCH_SPEC.md Bölüm 10, 15).
 
 A candle namespace is `(exchange, market_type, symbol, timeframe)` — the prefix
 of the canonical candle key. `CandleDataset` binds exactly one immutable
@@ -8,6 +8,7 @@ share a namespace unnoticed. `CandleCoverageInterval` records a half-open range
 that a source was authoritatively and completely paginated over.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -24,6 +25,9 @@ INDEX_PRICE = "index_price"
 CONTINUOUS_CONTRACT = "continuous_contract"
 
 BINANCE_USDM_KLINES_SOURCE = "binance:GET https://fapi.binance.com/fapi/v1/klines"
+BINANCE_USDM_INDEX_PRICE_KLINES_SOURCE = (
+    "binance:GET https://fapi.binance.com/fapi/v1/indexPriceKlines"
+)
 
 
 def _require_identifier(value: object, field_name: str) -> None:
@@ -85,3 +89,43 @@ def binance_usdm_perpetual_contract_trade_dataset(symbol: str, timeframe: str) -
         price_kind=CONTRACT_TRADE,
         source=BINANCE_USDM_KLINES_SOURCE,
     )
+
+
+def binance_usdm_index_price_dataset(pair: str, timeframe: str) -> CandleDataset:
+    """The canonical identity of Binance USDⓈ-M index-price klines for `pair`.
+
+    The namespace is `("binance", "usdm_perpetual", pair, timeframe)` — the
+    same namespace as the pair's perpetual contract-trade klines, because the
+    index is the USDⓈ-M futures index of that pair, not a separate market.
+    `price_kind`/`source` differ, and a namespace holds exactly one
+    provenance, so contract-trade and index-price candles can never share one
+    physical store: index-price candles live in their own store (FUNDING_RESEARCH_SPEC.md
+    Bölüm 15.3); writing both into one store fails with DataConflictError.
+    """
+    return CandleDataset(
+        exchange=BINANCE,
+        market_type=USDM_PERPETUAL,
+        symbol=pair,
+        timeframe=timeframe,
+        price_kind=INDEX_PRICE,
+        source=BINANCE_USDM_INDEX_PRICE_KLINES_SOURCE,
+    )
+
+
+def coverage_contains(
+    intervals: Sequence[CandleCoverageInterval], start_time: datetime, end_time: datetime
+) -> bool:
+    """Whether the union of `intervals` contains the whole `[start_time, end_time)`."""
+    cursor = datetime_to_epoch_us(start_time)
+    end_us = datetime_to_epoch_us(end_time)
+    ordered = sorted(
+        (datetime_to_epoch_us(item.start_time), datetime_to_epoch_us(item.end_time))
+        for item in intervals
+    )
+    for interval_start, interval_end in ordered:
+        if cursor >= end_us:
+            break
+        if interval_start > cursor:
+            return False
+        cursor = max(cursor, interval_end)
+    return cursor >= end_us

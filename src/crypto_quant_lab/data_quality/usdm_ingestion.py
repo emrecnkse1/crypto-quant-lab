@@ -1,11 +1,12 @@
-"""Binance USDⓈ-M perpetual contract-trade kline ingestion (FUNDING_RESEARCH_SPEC.md Bölüm 10).
+"""Binance USDⓈ-M contract-trade and index-price kline ingestion (FUNDING_RESEARCH_SPEC.md Bölüm 10, 15).
 
 Reuses the spot ingestion precedent unchanged: `calculate_effective_end`
 (incomplete tail excluded), bounded `ConnectionError` retry, deterministic
 pagination over the half-open `[requested_start, effective_end)` range with
 transport widening + exact range filter, and mandatory finalized-candle
-validation. Differences are only the source (`/fapi/v1/klines`), the strict
-12-field parser, and the write path: candles, the dataset provenance and the
+validation. Differences are only the source (`/fapi/v1/klines` or
+`/fapi/v1/indexPriceKlines`), the strict endpoint-specific 12-field parser,
+and the write path: candles, the dataset provenance and the
 authoritative coverage interval are committed in ONE atomic
 `write_ingestion_batch` call — any failure (network exhaustion, HTTP/API error,
 malformed/unordered/duplicate/out-of-range/unaligned/non-finalized data,
@@ -21,11 +22,15 @@ from crypto_quant_lab.data_quality.finalization import is_binance_historical_kli
 from crypto_quant_lab.data_quality.pagination import FetchPage, paginate_historical_klines
 from crypto_quant_lab.data_quality.retry import with_connection_retry
 from crypto_quant_lab.data_quality.time import calculate_effective_end, is_grid_aligned
-from crypto_quant_lab.market_data.binance_usdm import fetch_binance_usdm_klines
+from crypto_quant_lab.market_data.binance_usdm import (
+    fetch_binance_usdm_index_price_klines,
+    fetch_binance_usdm_klines,
+)
 from crypto_quant_lab.market_data.timeframes import candle_duration
 from crypto_quant_lab.storage.base import HistoricalCandle
 from crypto_quant_lab.storage.datasets import (
     CandleDataset,
+    binance_usdm_index_price_dataset,
     binance_usdm_perpetual_contract_trade_dataset,
 )
 from crypto_quant_lab.storage.sqlite_codec import datetime_to_epoch_us
@@ -75,17 +80,68 @@ def ingest_binance_usdm_perpetual_klines(
     `fetch_page`, when supplied, replaces the HTTP adapter as the raw (pre-retry)
     page fetcher — used by tests; it receives `start_time_ms`/`end_time_ms`.
     """
+    return _ingest(
+        store,
+        dataset=binance_usdm_perpetual_contract_trade_dataset(symbol, timeframe),
+        requested_start=requested_start,
+        requested_end=requested_end,
+        as_of_time=as_of_time,
+        fetch_page=fetch_page
+        or partial(fetch_binance_usdm_klines, symbol, timeframe, limit=page_limit),
+        max_attempts=max_attempts,
+    )
+
+
+def ingest_binance_usdm_index_price_klines(
+    store: object,
+    *,
+    pair: str,
+    timeframe: str,
+    requested_start: datetime,
+    requested_end: datetime,
+    as_of_time: datetime,
+    fetch_page: FetchPage | None = None,
+    max_attempts: int = 3,
+    page_limit: int = _DEFAULT_PAGE_LIMIT,
+) -> UsdmKlineIngestionResult:
+    """Ingest finalized USDⓈ-M index-price klines of `pair`, atomically with provenance.
+
+    Same guarantees as `ingest_binance_usdm_perpetual_klines`. `store` must be
+    a store dedicated to index-price data: its namespace equals the pair's
+    contract-trade namespace, so a store already holding contract-trade
+    provenance rejects the batch (DataConflictError) and nothing is written.
+    """
+    return _ingest(
+        store,
+        dataset=binance_usdm_index_price_dataset(pair, timeframe),
+        requested_start=requested_start,
+        requested_end=requested_end,
+        as_of_time=as_of_time,
+        fetch_page=fetch_page
+        or partial(fetch_binance_usdm_index_price_klines, pair, timeframe, limit=page_limit),
+        max_attempts=max_attempts,
+    )
+
+
+def _ingest(
+    store: object,
+    *,
+    dataset: CandleDataset,
+    requested_start: datetime,
+    requested_end: datetime,
+    as_of_time: datetime,
+    fetch_page: FetchPage,
+    max_attempts: int,
+) -> UsdmKlineIngestionResult:
     write_ingestion_batch = getattr(store, "write_ingestion_batch", None)
     if not callable(write_ingestion_batch):
         raise TypeError("store must provide write_ingestion_batch for provenance-bound ingestion")
-    dataset = binance_usdm_perpetual_contract_trade_dataset(symbol, timeframe)
+    symbol = dataset.symbol
+    timeframe = dataset.timeframe
     effective_end = calculate_effective_end(requested_start, requested_end, as_of_time, timeframe)
 
-    raw_fetch_page = fetch_page
-    if raw_fetch_page is None:
-        raw_fetch_page = partial(fetch_binance_usdm_klines, symbol, timeframe, limit=page_limit)
     envelopes = paginate_historical_klines(
-        with_connection_retry(raw_fetch_page, max_attempts=max_attempts),
+        with_connection_retry(fetch_page, max_attempts=max_attempts),
         requested_start=requested_start,
         effective_end=effective_end,
         timeframe=timeframe,
