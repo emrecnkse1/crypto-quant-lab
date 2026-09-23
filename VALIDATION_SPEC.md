@@ -3477,11 +3477,478 @@ Prerequisites: fold model + observation/outcome-horizon contract (17.1) + purge/
 
 **Non-annualized, per-observation Sharpe'ın kontratı Bölüm 15.9–15.18'de LOCKED'dır VE artık IMPLEMENTED + TESTED'dır** (`compute_stage2_metrics`, commit `e4cedf9`, bkz. Bölüm 23, 28.E — 29/29) — return-series prerequisite'i (Bölüm 16) bu kilitle karşılanmıştır. Annualized Sharpe'ın exact kontratı Bölüm 15.19–15.33'te **LOCKED**'dır VE artık bu combined delivery ile **IMPLEMENTED + TESTED**'dır (bkz. Bölüm 23, 28.H — 30/30) — non-annualized Stage-2 Sharpe'ı DOĞRUDAN reuse eder (annualization_factor ile çarparak), ikinci bir Sharpe tanımı İCAT ETMEZ. Sortino ve CAGR/Calmar'ın exact kontratları da AYNI şekilde artık Bölüm 15.24/15.25–15.26'da **LOCKED** VE **IMPLEMENTED + TESTED**'dır. Deflated Sharpe (17.4), PBO (17.5), multiple-testing corrections (17.6), ve parameter stability (17.7) bu implementasyondan **etkilenmez**, implement EDİLMEMİŞTİR, ve **LATER IN FAZ 6** (FAZ6C) olarak deferred kalır — hiçbiri bu delivery'de tamamlanmış olarak işaretlenmez; "Annualized Metrics" (Sharpe/Sortino/CAGR/Calmar) ile "Stage-3" (Deflated Sharpe/PBO/multiple-testing/parameter stability) İKİ AYRI GRUPTUR (bkz. Bölüm 15.20). Basit total-return/max-drawdown'dan **sonra**, ama foundation'ın (Bölüm 13) parçası değil.
 
-### 17.4 Deflated Sharpe — LATER IN FAZ 6
+### 17.4 Deflated Sharpe — Exact Contract LOCKED (§17.4.1–17.4.15), IMPLEMENTATION PENDING (§28.K — 0/27)
 
 Prerequisites: tanımlı Sharpe istatistiği (17.3) + candidate/trial history (18) + (efektif) trial sayısı + gerekli dağılımsal girdiler. Bölüm 18'in candidate/trial foundation'ı artık IMPLEMENTED + TESTED'dır (28.G — 25/25), ama yalnızca TEK bir candidate'in TEK bir trial'ını value object olarak temsil eder — çoklu-trial history/registry/trial-count tracking bu foundation'ın DIŞINDADIR (§18.9, 18.13) ve henüz mevcut değildir. Standalone bir formül olarak, deneysel/trial framework'ünden **kopuk** implement edilmez.
 
-**Durum güncellemesi (FAZ6C — DSR bağımlılık çözümü, docs-only):** "candidate/trial history" ve "trial sayısı"nın **ham** kısmı için gereken en küçük foundation — tek bir karşılaştırılabilir deneme grubunu temsil eden `TrialGroup` ve `recorded_trial_count` (`src/crypto_quant_lab/validation/trial_group.py`) — Bölüm 20.1–20.13'te **LOCKED**'dır VE artık **IMPLEMENTED + TESTED**'dır (§20.14, §28.J — 19/19). Deflated Sharpe'ın KENDİSİ hâlâ **spec-lock EDİLMEMİŞTİR**; efektif trial sayısı, N'in kapsamı, başarısız denemeler, çok-pencereli trial Sharpe tanımı, skewness/kurtosis, Decimal normal-CDF kaynağı ve seçilmiş denemenin belirtilmesi hâlâ açık bağımlılıklardır (§20.12). Kaydedilmiş sayı, verilen gruptaki kabul edilmiş Trial kayıtlarının tam sayısıdır — efektif/bağımsız deneme sayısı, benzersiz strateji sayısı veya gerçek araştırma deneme yüküne göre koşulsuz bir alt/üst sınır DEĞİLDİR (§20.7).
+**Durum güncellemesi (FAZ6C — DSR bağımlılık çözümü, docs-only):** "candidate/trial history" ve "trial sayısı"nın **ham** kısmı için gereken en küçük foundation — tek bir karşılaştırılabilir deneme grubunu temsil eden `TrialGroup` ve `recorded_trial_count` (`src/crypto_quant_lab/validation/trial_group.py`) — Bölüm 20.1–20.13'te **LOCKED**'dır VE artık **IMPLEMENTED + TESTED**'dır (§20.14, §28.J — 19/19). Bu güncelleme yazıldığında Deflated Sharpe'ın KENDİSİ henüz spec-lock edilmemişti ve §20.12'deki maddeler açıktı (tarihsel); bu maddeler artık §17.4.2'de karara bağlanmış ve DSR exact kontratı §17.4.1–17.4.15'te LOCKED'dır (implementasyon yok, §28.K — 0/27). Kaydedilmiş sayı, verilen gruptaki kabul edilmiş Trial kayıtlarının tam sayısıdır — efektif/bağımsız deneme sayısı, benzersiz strateji sayısı veya gerçek araştırma deneme yüküne göre koşulsuz bir alt/üst sınır DEĞİLDİR (§20.7).
+
+**Durum güncellemesi (FAZ6C — Deflated Sharpe source-preflight + exact contract lock, docs-only):** Deflated Sharpe'ın exact kontratı aşağıdaki Bölüm 17.4.1–17.4.15'te **LOCKED**'dır — **HENÜZ İMPLEMENT EDİLMEMİŞTİR** (§28.K — 0/27). §20.12'deki on açık madde bu kontratla karara bağlanmıştır (§17.4.2); ikisi bilinçli olarak deferred kalır (efektif-N estimator'ı ve çok pencereli pooling — §17.4.14). Bu kilit, CPCV/PBO/multiple-testing/parameter stability'yi başlatmaz ve FAZ6C'yi tamamlamaz.
+
+**17.4.1 Source-Preflight Bulguları ve Kaynaklar**
+
+```
+Birincil kaynak (bu preflight'te ERİŞİLDİ):
+  Bailey, D. H. ve López de Prado, M. (2014). "The Deflated Sharpe
+  Ratio: Correcting for Selection Bias, Backtest Overfitting and
+  Non-Normality." Journal of Portfolio Management 40(5), 94-107.
+  SSRN 2460551. Yazarların PDF'i (davidhbailey.com/dhbpapers/
+  deflated-sharpe.pdf, 22 sayfa) indirildi; metin akışları stdlib ile
+  çıkarıldı. Denklem gövdeleri PDF'te gömülü font/görsel olduğundan
+  METİN OLARAK çıkarılamadı — aşağıdaki formül biçimi, metin + yazarların
+  kod listesi + makalenin sayısal sonuçlarının bağımsız olarak yeniden
+  üretilmesiyle doğrulanmıştır (aşağıda).
+
+Metin olarak doğrulanan hükümler:
+  - Eq. (1) / Ek A.1 Eq. (5)-(6): N BAĞIMSIZ deneme sonrası beklenen
+    maksimum Sharpe, Euler-Mascheroni sabiti (~0.5772) ve standart
+    normal ters-CDF ile yaklaşıklanır; yaklaşıklık "large N" içindir.
+    Yazarların Snippet 1 kodu (metin olarak okunabilir):
+      maxZ = (1-emc)*norm.ppf(1-1./numTrials) + emc*norm.ppf(1-1./(numTrials*e))
+      return mu + sigma*maxZ
+  - Eq. (2): DSR, eşiği çoklu denemeye göre ayarlanmış bir PSR'dir;
+    girdiler: seçilen stratejinin tahmini SR'si, örneklem uzunluğu T,
+    getirilerin skewness'i ve kurtosis'i, denenmiş SR'lerin varyansı ve
+    "N is the number of independent trials". Z standart normal CDF'dir.
+  - Ek A.3: "the N used ... corresponds to the number of independent
+    trials"; M bağımlı denemede M yerine N kullanılmalı; ortalama
+    korelasyon interpolasyonu (Eq. 7-9) önerilir, AMA yazarlar bu
+    tahminin kısa örneklemde kötü koşullu/overfit olabileceğini ve
+    entropi temelli alternatifleri açıkça not eder.
+  - Ek A.2 / Exhibit 3.1: N < 50 iken analitik beklenen-maksimum
+    sayısal sonucu çok küçük bir farkla (varyans 1 için < 0.05) AŞIRI
+    tahmin edebilir; N büyüdükçe fark sıfıra yakınsar.
+  - Sayısal örnek: T=1250 günlük gözlem (metin), yıllık 250 gözlem
+    ile "non-annualized" SR kullanımı (metin), sonuç "only a 90%
+    chance" (metin), N=46'da DSR 0.9505 (metin), normal getirilerde
+    eşik N=88 (metin).
+
+Bağımsız sayısal doğrulama (preflight, scratchpad, float stdlib —
+production DEĞİL):
+  Örnek girdileri (N=100, yıllık SR=2.5 -> SR=2.5/sqrt(250), yıllık
+  V=1/2 -> V=0.5/250, T=1250, skewness=-3, kurtosis=10) PDF'te görsel
+  olduğundan METİNDEN OKUNAMADI; bu değerler hatırlanan örnek
+  girdileridir ve aşağıdaki DÖRT metinsel sonucu birlikte yeniden
+  ürettikleri için DOĞRULANMIŞ sayılır:
+    formül: Z[(SR - SR0) * sqrt(T-1) / sqrt(1 - g3*SR + (g4-1)/4*SR^2)]
+    N=100 -> 0.9004 ("90%"); N=46 -> 0.9505 (metin: 0.9505);
+    normal (g3=0, g4=3): N=88 -> 0.95049 >= 0.95, N=89 -> 0.94984.
+  Konvansiyon ayrımı: sqrt(T) varyantı N=46'da 0.9506, excess-kurtosis
+  varyantı N=46'da 0.9495 verir — yalnızca sqrt(T-1) + HAM (normal=3)
+  kurtosis kombinasyonu makalenin 0.9505 değerini üretir. Ayrıca
+  (g4-1)/4 terimi normal dağılımda (g4=3) 1 + SR^2/2 verir; bu,
+  iid-normal SR tahmincisinin bilinen asimptotik varyansıyla tutarlıdır.
+
+ERİŞİLEMEYEN kaynaklar (erişilmiş gibi davranılmaz):
+  - Bailey & López de Prado (2012a) PSR / "The Sharpe Ratio Efficient
+    Frontier" ve Mertens (2002) — okunmadı. Payda biçimi yukarıdaki
+    bağımsız yeniden üretimle doğrulanmıştır; bu kaynakların skewness/
+    kurtosis tahmin konvansiyonunu (population vs. bias-corrected)
+    belirleyip belirlemediği DOĞRULANMADI -> §17.4.2 karar 6'da bu
+    nedenle açıkça bir konvansiyon SEÇİLİR ve sınırı kaydedilir.
+  - Marsaglia, G. (2004). "Evaluating the Normal Distribution." Journal
+    of Statistical Software 11(4) — bu turda okunmadı; §17.4.8'deki
+    seri, standart normal CDF'nin bilinen Taylor açılımıdır ve doğruluğu
+    kaynak iddiasına değil §17.4.12'deki bağımsız referans testlerine
+    dayandırılır.
+
+Repository kaynak bulguları (kod, DEĞİŞMEDEN):
+  - metrics.compute_stage2_metrics(result, *, risk_free_per_period):
+    per-observation Sharpe = (mean - rf) / sample-stdev(n-1), private
+    context prec=28, TEK bir BacktestResult üzerinde; en az 2 return;
+    stdev > 0 şartı.
+  - metrics.compute_periodic_returns(result): N equity noktası -> N
+    simple return (ilk return initial_cash'e göre), prec=28.
+  - trial_group.TrialGroup: benzersiz candidate_id, homojen provenance
+    ve BİREBİR aynı ordered evaluation pencere dizisi; recorded_trial_
+    count = len(trials). Trial.results çok pencereli olabilir;
+    duplicate/overlapping pencereler legaldir; her pencere taze sermaye
+    ile başlar (Bölüm 11).
+  - annualized_metrics: Sharpe_annual = Stage-2 Sharpe *
+    sqrt(periods_per_year); 365-gün takvim tabanı.
+  - Bölüm 15.16 / 27: float'a dönüşüm, statistics modülü (float ile),
+    NumPy/pandas/SciPy YASAK; pyproject runtime dependency YOK.
+  - Repo'da skewness/kurtosis, normal CDF/ters-CDF, Euler-Mascheroni
+    sabiti YOK (grep: skew/kurtos/NormalDist/erf( — eşleşme yok).
+```
+
+**17.4.2 On Açık Kararın Çözümü (LOCKED)**
+
+```
+1. N'in anlamı
+   Kanıt: Eq. (2) ve Ek A.3 — N BAĞIMSIZ deneme sayısıdır; M bağımlı
+   denemede M kullanmak eşiği şişirir. recorded_trial_count (§20.7)
+   yalnızca kabul edilmiş kayıt sayısıdır.
+   KARAR: N, caller tarafından AÇIKÇA verilen zorunlu bir keyword
+   girdisidir: `independent_trial_count: int`. recorded_trial_count
+   N'e varsayılan/yedek olarak ASLA kullanılmaz; ikisi arasında
+   mekanik bir sınır (N <= M veya N >= M) ENFORCE EDİLMEZ — bağımlılık
+   N'i M'nin altına, kaydedilmemiş denemeler üstüne taşıyabilir.
+   Sınır: DSR sonucu beyan edilen N'e KOŞULLUDUR; N'in doğruluğu
+   mekanik olarak doğrulanamaz (makalenin kendisi de N'i "disclose"
+   edilen bir girdi olarak ele alır). Ek bağımlılık: yok.
+
+2. N'in kapsamı
+   Kanıt: V[SR_n] aynı örneklem üzerinde hesaplanmış SR'ler gerektirir;
+   TrialGroup bunu tek partition için mekanik olarak garanti eder.
+   KARAR: V ve seçilen denemenin istatistikleri YALNIZCA verilen TEK
+   TrialGroup'tan hesaplanır. N ise araştırma programı kapsamında
+   (diğer gruplar, coin'ler, kaydedilmemiş denemeler dahil) caller
+   tarafından belirlenir. Gruplar-arası tekrarların ayıklanması ve
+   program-düzeyi sayım bu API'nin DIŞINDADIR (registry YOK).
+   Sınır: N'i geniş, V'yi dar kapsamdan almak, makalenin "aynı strateji
+   sınıfı" varsayımına bir yaklaşımdır; kaydedilir.
+
+3. Başarısız / iptal / kaydedilmemiş denemeler
+   KARAR: Hiçbir yeni failure nesnesi yok. Bu denemeler V'ye KATKI
+   VERMEZ (gözlenmiş bir SR yok). Bağımsız deneme sayılıp sayılmayacakları
+   yalnızca caller'ın beyan ettiği N'e yansır. Sınır: metrik hesaplaması
+   sırasında hata veren (örn. equity <= 0) bir deneme gruba giremez; bu
+   V'yi aşağı yönlü yanlı kılabilir — mekanik tespit YOK.
+
+4. Çok pencereli Trial, tek SR ve T
+   Kanıt: DSR tek bir getiri örnekleminin SR'sini, T'sini ve momentlerini
+   kullanır. Repo'da çok pencereli pooling kontratı yoktur; pencereler
+   overlap/duplicate olabilir (T şişer), boşluk içerebilir ve her pencere
+   sermayeyi sıfırlar; pencere-başı Sharpe'ları ortalamak makalede
+   tanımlı değildir.
+   KARAR: Bu kontratta her Trial TAM OLARAK BİR WindowResult içermelidir
+   (len(trial.results) == 1); aksi ValueError. SR = o pencerenin Stage-2
+   Sharpe'ı; T = compute_periodic_returns(...) uzunluğu. Tüm Trial'ların
+   equity_curve uzunluğu eşit olmalıdır (aynı pencere -> aynı T).
+   Gerekçe: DSR, seçimin yapıldığı TEK bir örneklem (tipik olarak
+   tek, bitişik IS penceresi) üzerindeki seçim yanlılığını düzeltir.
+   Çok pencereli pooling DEFERRED (§17.4.14).
+
+5. Ölçek
+   Kanıt: Makale örneği non-annualized SR, V ve T'yi aynı gözlem
+   ölçeğinde kullanır. DSR bir olasılıktır; ölçek tutarlıysa ölçekten
+   bağımsızdır.
+   KARAR: Tüm hesap PER-OBSERVATION ölçektedir (Stage-2 Sharpe, aynı
+   ölçekte V, gözlem sayısı T). Annualized metrikler DSR'de
+   KULLANILMAZ; periods_per_year/timeframe girdisi YOKTUR.
+
+6. Skewness / kurtosis
+   KARAR: Seçilen denemenin compute_periodic_returns çıktısı üzerinden
+   POPULATION moment tahmincileri (payda T): m_k = sum((r-mean)^k)/T,
+   skewness = m3 / (m2 * sqrt(m2)), kurtosis = m4 / (m2 * m2) — HAM
+   kurtosis (normal = 3), excess DEĞİL (§17.4.1 yeniden üretimi).
+   Bias-corrected (G1/G2) tahminciler KULLANILMAZ. Sınır: SR'nin kendisi
+   n-1 paydalı sample stdev kullanır (Stage-2, DEĞİŞMEZ); moment
+   konvansiyonunun kaynak kod düzeyinde yazarlarla birebir aynı olduğu
+   DOĞRULANMADI (asimptotik olarak eşdeğer). m2 > 0 değilse ValueError.
+
+7. Normal CDF / ters-CDF
+   Kanıt: Bölüm 15.16/27 float ve statistics modülünü yasaklar;
+   bu kuralı değiştirmek kullanıcı kararı olurdu -> değiştirilmez.
+   KARAR: Private, Decimal-only implementasyon: Φ için standart normal
+   CDF'nin Taylor serisi, Φ^-1 için x0=0'dan Newton iterasyonu
+   (§17.4.8). Doğruluk bağımsız referanslarla test edilir (§17.4.12).
+
+8. Trial'lar arası Sharpe varyansı
+   KARAR: Gruptaki TÜM Trial'ların (seçilen dahil) per-observation
+   Stage-2 Sharpe'larının SAMPLE varyansı (payda M-1, M =
+   recorded_trial_count). M >= 2 zorunlu; V > 0 zorunlu (V = 0 ise
+   ValueError — beklenen-maksimum modelinin dejenere olduğu ve
+   deflasyonun sessizce kaybolduğu durum). Makale varyans
+   konvansiyonunu belirtmez; n-1 seçimi repo'nun Stage-2 konvansiyonu
+   ile tutarlılık içindir.
+
+9. Seçilen Trial
+   KARAR: Zorunlu keyword `selected_candidate_id: str`; gruptaki bir
+   Trial'ın candidate_id'si ile BİREBİR eşleşmelidir. DSR hiçbir seçim,
+   sıralama veya "en yüksek SR" tespiti YAPMAZ; seçilenin maksimum
+   olduğunu DOĞRULAMAZ.
+
+10. IS / OOS / final holdout
+   KARAR: API pencerelerin rolünü BİLEMEZ (role alanı yok, §18.7).
+   DSR, seçimin yapıldığı örneklem üzerinde kullanılmak üzere
+   tanımlanır; bunu doğrulamak caller disiplinidir. DSR sonucu final
+   holdout koruması DEĞİLDİR, bir işlem/yatırım kararı DEĞİLDİR ve
+   OOS sonuçlarının seçimde kullanılmasını MEŞRULAŞTIRMAZ.
+   API'nin mekanik olarak doğrulayabildikleri: grup homojenliği
+   (TrialGroup), tek pencere, eşit T, seçilenin grupta bulunması.
+```
+
+**17.4.3 Exact Public API (LOCKED)**
+
+```python
+# Modül: src/crypto_quant_lab/validation/deflated_sharpe.py (YENİ modül)
+
+def compute_deflated_sharpe_ratio(
+    group: TrialGroup,
+    *,
+    selected_candidate_id: str,
+    independent_trial_count: int,
+    risk_free_per_period: Decimal = Decimal(0),
+) -> Decimal: ...
+```
+
+```
+- Tek public sembol: compute_deflated_sharpe_ratio. Bare Decimal döner
+  (Annualized Metrics precedent'i) — [0, 1] aralığında bir olasılık.
+- Import edilen isimler private alias'larla alınır; modülün public
+  sembol kümesi TAM OLARAK {compute_deflated_sharpe_ratio} olur.
+- Package-root export YOK; validation/__init__.py DEĞİŞMEZ.
+- Hiçbir mevcut modül (metrics.py, annualized_metrics.py, candidate.py,
+  trial_group.py, rolling.py, windows.py, purging.py) DEĞİŞMEZ.
+- Private yardımcılar (isimleri kilitli, test erişimi §17.4.12'de):
+    _deflated_sharpe_from_statistics(*, sharpe_ratio, trial_sharpe_variance,
+        independent_trial_count, sample_length, skewness, kurtosis) -> Decimal
+    _normal_cdf(x: Decimal) -> Decimal
+    _normal_quantile(p: Decimal) -> Decimal
+```
+
+**17.4.4 Veri Akışı (LOCKED)**
+
+```
+TrialGroup (mevcut, doğrulanmış)
+  -> her Trial: tek WindowResult -> BacktestResult
+  -> compute_stage2_metrics(result, risk_free_per_period=rf).sharpe_ratio
+     (gruptaki HER Trial için, grup sırasıyla) -> SR_1..SR_M
+  -> V = sample variance(SR_1..SR_M)
+  -> seçilen Trial: SR_sel, returns = compute_periodic_returns(result),
+     T = len(returns), skewness, kurtosis
+  -> _deflated_sharpe_from_statistics(...) -> DSR
+Hiçbir getiri/Sharpe/stdev algoritması yeniden implement EDİLMEZ;
+Stage-2 ve periodic-returns DOĞRUDAN reuse edilir.
+```
+
+**17.4.5 Formüller ve Exact Operation Sırası (LOCKED)**
+
+Tümü §17.4.7'deki private context içinde; `g` Euler-Mascheroni sabiti, `e = Decimal(1).exp()`.
+
+```python
+# Trial'lar arası varyans (M = recorded_trial_count(group))
+mean_sr = sum(srs, Decimal(0)) / Decimal(M)
+V = sum((sr - mean_sr) * (sr - mean_sr) for sr in srs) / Decimal(M - 1)
+
+# Seçilen denemenin momentleri (T = len(returns))
+mean_r = sum(returns, Decimal(0)) / Decimal(T)
+m2 = sum((r - mean_r) ** 2 for r in returns) / Decimal(T)
+m3 = sum((r - mean_r) ** 3 for r in returns) / Decimal(T)
+m4 = sum((r - mean_r) ** 4 for r in returns) / Decimal(T)
+skewness = m3 / (m2 * m2.sqrt())
+kurtosis = m4 / (m2 * m2)
+
+# Beklenen maksimum eşik (Eq. 1 / Snippet 1, mu = 0)
+N = Decimal(independent_trial_count)
+q1 = _normal_quantile(Decimal(1) - Decimal(1) / N)
+q2 = _normal_quantile(Decimal(1) - Decimal(1) / (N * e))
+sr0 = V.sqrt() * ((Decimal(1) - g) * q1 + g * q2)
+
+# DSR (Eq. 2)
+variance_term = Decimal(1) - skewness * sr + (kurtosis - Decimal(1)) / Decimal(4) * sr * sr
+z = (sr - sr0) * Decimal(T - 1).sqrt() / variance_term.sqrt()
+dsr = _normal_cdf(z)
+```
+
+```
+- Toplamlar ve kuvvetler soldan sağa, gösterilen sırayla; ara rounding
+  YOK (yalnızca context precision'ı). `** 2/3/4` tamsayı üsleridir.
+- Beklenen-maksimum ifadesinde mu = 0 (makalenin sıfır-gerçek-SR null
+  hipotezi); caller'a bir mu/threshold girdisi AÇILMAZ.
+- Sonuç, §17.4.7'deki prec=28 context'te TEK BİR KEZ `plus()` ile
+  28 anlamlı basamağa yuvarlanır.
+```
+
+**17.4.6 Validation / Fail-Fast Sırası ve Exact Mesajlar (LOCKED)**
+
+```
+1. group TrialGroup değil ->
+   TypeError(f"group must be a TrialGroup, got {type(group).__name__}")
+2. selected_candidate_id str değil ->
+   TypeError(f"selected_candidate_id must be a str, got {type(v).__name__}")
+3. independent_trial_count int değil veya bool ->
+   TypeError(f"independent_trial_count must be an int, got {type(v).__name__}")
+4. 2 <= independent_trial_count <= 10**30 değil ->
+   ValueError(f"independent_trial_count must be between 2 and 10**30 inclusive, got {v}")
+5. risk_free_per_period Decimal değil ->
+   TypeError(f"risk_free_per_period must be a Decimal, got {type(v).__name__}")
+   finite değil ->
+   ValueError(f"risk_free_per_period must be finite, got {v}")
+6. recorded_trial_count(group) < 2 ->
+   ValueError(f"at least two trials are required to estimate trial Sharpe variance, got {m}")
+7. selected_candidate_id grupta yok ->
+   ValueError(f"selected_candidate_id {v!r} is not in the group")
+8. GLOBAL geçiş, index artan: len(trial.results) != 1 ->
+   ValueError(f"trials[{i}] must have exactly one window result for deflated Sharpe, got {k}")
+9. GLOBAL geçiş, index 1'den artan: equity_curve uzunluğu trials[0]'dan
+   farklı ->
+   ValueError(f"trials[{i}] has {n_i} equity observations, trials[0] has {n_0}")
+10. GLOBAL geçiş, index artan: compute_stage2_metrics(...) — alt katman
+   hataları (tip/sonluluk/n>=2/stdev>0/pozitif payda) DEĞİŞMEDEN
+   propagate edilir (sarmalama/yeniden yazma YOK).
+11. V hesaplanır; finite değil veya V <= 0 ->
+   ValueError(f"trial Sharpe ratio variance must be greater than zero, got {V}")
+12. Seçilen denemenin momentleri; m2, skewness, kurtosis finite değil
+   veya m2 <= 0 ->
+   ValueError(f"computed {name} must be finite and valid, got {value}")
+   (name: "m2" | "skewness" | "kurtosis")
+13. variance_term finite değil veya <= 0 ->
+   ValueError(f"deflated Sharpe variance term must be greater than zero, got {value}")
+14. sr0, z finite değil ->
+   ValueError(f"computed {name} must be finite, got {value}")
+15. dsr = _normal_cdf(z); 28 basamağa yuvarlanır; döndürülür.
+Hiçbir adım girdiyi sessizce düzeltmez, trial atlamaz, N'i veya V'yi
+başka bir kaynaktan türetmez, kısmi sonuç döndürmez.
+```
+
+**17.4.7 Decimal Precision ve Context (LOCKED)**
+
+```
+- DSR hesap context'i: Bölüm 15.17 ile AYNI shape, yalnızca prec=80:
+  Context(prec=80, rounding=ROUND_HALF_EVEN, Emin=-999999, Emax=999999,
+          capitals=1, clamp=0, traps=[])
+  — her çağrıda taze, private; localcontext(...) izolasyonu; caller'ın
+  ambient context'i sonucu ETKİLEMEZ.
+- Çıkış yuvarlaması: Bölüm 15.17'nin prec=28 context shape'i ile tek
+  bir `plus()`.
+- Sabitler (modül-seviyesi, immutable Decimal string'lerden):
+  EULER_MASCHERONI = 0.57721566490153286060651209008240243104215933593992
+  PI = 3.14159265358979323846264338327950288419716939937510582097494459
+  (her ikisi de en az 50 doğru basamak; e = Decimal(1).exp() context
+  içinde hesaplanır).
+- Girdi SR'leri ve getiriler Stage-2/periodic-returns'ün kendi prec=28
+  çıktılarıdır (DEĞİŞMEZ); DSR bunları yeniden hesaplamaz.
+```
+
+**17.4.8 Normal CDF ve Ters-CDF — Nümerik Yöntem, Yakınsama, Uç Değerler (LOCKED)**
+
+```
+_normal_cdf(x):
+  - x >= 15  -> exact Decimal(1);  x <= -15 -> exact Decimal(0)
+    (|x| >= 15'te gerçek kuyruk < 3.7e-51; mutlak hata sınırının altında).
+  - Aksi halde: Φ(x) = 1/2 + φ(x) * S(x),
+      φ(x) = exp(-x*x/2) / sqrt(2*PI),
+      S(x) = x + x^3/3 + x^5/(3*5) + ... ; term_k = term_{k-1} * x^2 / (2k+1)
+    Tüm terimler x ile aynı işaretlidir (seri içinde iptal yok).
+    Durma: s + term == s (working precision'da) olduğunda; güvenlik
+    sınırı 5000 terim -> aşılırsa ArithmeticError (alan içinde
+    erişilemez; preflight'te |x| <= 15 için en fazla 368 terim).
+  - Hedef: [-15, 15] üzerinde mutlak hata <= 1e-60.
+_normal_quantile(p):
+  - Alan: 1/2 <= p < 1 (DSR yalnızca 1-1/N ve 1-1/(N e), N >= 2
+    değerlerini ister); alan dışı -> ValueError (private invariant).
+  - Newton: x_0 = 0; x_{k+1} = x_k + (p - Φ(x_k)) / φ(x_k).
+    Φ, (0, ∞) üzerinde konkav olduğundan x_0 = 0'dan başlayan iterasyon
+    köke MONOTON olarak yaklaşır (aşma yok).
+  - Durma: |adım| <= 1e-45. Güvenlik sınırı 200 iterasyon -> aşılırsa
+    ArithmeticError. Preflight: N in {2, 10, 100, 1e6, 1e12, 1e30} için
+    en fazla 75 iterasyon; kalan |Φ(x) - p| <= 5e-79.
+  - N <= 10**30 sınırının gerekçesi: bu aralıkta kantil < 11.6 kalır
+    (Φ'nin clamp sınırı 15'in altında) ve 1 - 1/(N e), prec=80'de 1'e
+    yuvarlanmaz.
+Global doğruluk hedefi: döndürülen DSR, §17.4.5 formülünün girdi
+istatistikleri üzerinden tam değerinden en fazla 1e-27 mutlak farklıdır
+(28 basamaklı çıkış yuvarlaması baskındır).
+```
+
+**17.4.9 Tanımsız Durumlar ve Minimum Veri Gereksinimleri (LOCKED)**
+
+```
+Mekanik minimumlar (ENFORCE EDİLİR):
+  - M = recorded_trial_count(group) >= 2 (V için)
+  - N = independent_trial_count, 2 <= N <= 10**30
+  - her Trial tek pencere; tüm Trial'larda eşit equity-gözlem sayısı
+  - T >= 2 (Stage-2'nin kendi minimumu; sqrt(T-1) > 0)
+  - her Trial'da Stage-2 return_stdev > 0
+  - V > 0, m2 > 0, variance_term > 0
+İstatistiksel yeterlilik eşiği (örn. "T >= 250") KİLİTLENMEZ — makale
+asimptotik bir yaklaşım kullanır; kanıtlanmamış bir eşik İCAT EDİLMEZ.
+Küçük T ve küçük N'de sonuç yaklaşık kalır (Ek A.2: N < 50'de beklenen
+maksimum hafifçe yüksek tahmin edilir -> DSR muhafazakâr yönde).
+Skewness/kurtosis ölçeği nedeniyle variance_term <= 0 olabilir (aşırı
+pozitif skewness + yüksek SR); bu durum ValueError'dır, clip EDİLMEZ.
+```
+
+**17.4.10 Purity ve Import Direction (LOCKED)**
+
+```
+crypto_quant_lab.validation.deflated_sharpe (YENİ)
+  imports: validation.metrics (compute_periodic_returns,
+           compute_stage2_metrics), validation.trial_group (TrialGroup,
+           recorded_trial_count), decimal (stdlib) — private alias'larla.
+  Hiçbir mevcut modül deflated_sharpe.py'yi import ETMEZ; döngü YOK.
+- Girdi mutasyonu YOK; wall-clock/randomness/I/O YOK; float/statistics/
+  math modülü YOK; seçim/sıralama/persistence YOK.
+- Aynı girdi -> aynı Decimal çıktı (ambient context'ten bağımsız).
+```
+
+**17.4.11 Dosya Kapsamı (Planlama — Şimdi Değiştirilmez)**
+
+```
+Yeni production: src/crypto_quant_lab/validation/deflated_sharpe.py
+Yeni test:       tests/test_validation_deflated_sharpe.py
+Dokümantasyon:   VALIDATION_SPEC.md (combined closure)
+Değişmeyecek:    tüm mevcut production/test dosyaları, __init__.py,
+                 ROADMAP.md, pyproject.toml, AGENTS.md, CLAUDE.md
+```
+
+**17.4.12 Doğrulama Yöntemi — Bağımsız Referanslar (LOCKED)**
+
+```
+Referans doğrulaması aynı algoritmanın ikinci bir kopyasına DAYANMAZ:
+1. Yayımlanmış sonuçlar (Bailey & López de Prado 2014 sayısal örneği),
+   _deflated_sharpe_from_statistics üzerinden: N=100 -> 0.9004 (4
+   ondalık); N=46 -> 0.9505 (4 ondalık); g3=0, g4=3: N=88 -> >= 0.95,
+   N=89 -> < 0.95.
+2. Bağımsız implementasyon: TEST dosyasında stdlib
+   statistics.NormalDist (float, farklı algoritma) ile _normal_cdf
+   [-15, 15] ızgarasında |fark| <= 1e-15; _normal_quantile için
+   p in {0.5, 0.9, 0.975, 0.99, 0.999, 1-1/(100e)} |fark| <= 1e-12.
+   (float yalnızca test oracle'ıdır; production'a GİRMEZ.)
+3. Literatürdeki yüksek hassasiyetli sabitler: Φ(1) =
+   0.8413447460685429485852325456320379 (>= 30 basamak eşleşme);
+   Φ^-1(0.975) = 1.959963984540054 (15 basamak).
+4. İç tutarlılık (tek başına yeterli SAYILMAZ): Φ(Φ^-1(p)) - p <= 1e-60;
+   Φ(-x) + Φ(x) = 1 (<= 1e-60); Φ monoton artan.
+5. Grup düzeyi: sentetik equity eğrilerinden kurulan bir TrialGroup için
+   compute_deflated_sharpe_ratio sonucu, TEST içinde float stdlib
+   (statistics.mean/pvariance/NormalDist) ile bağımsız hesaplanan DSR'ye
+   |fark| <= 1e-9.
+Private yardımcıların (§17.4.3) doğrudan test edilmesine YALNIZCA bu
+bağımsız-referans doğrulaması için izin verilir; davranış testlerinin
+geri kalanı public API üzerinden yapılır.
+```
+
+**17.4.13 Gerçek Entegrasyon Senaryosu (LOCKED)**
+
+```
+Gerçek SQLiteHistoricalCandleStore (tmp_path) üzerinde, fiyatı
+değişen (sabit OLMAYAN) mumlarla, tek bir IS penceresi; en az üç farklı
+candidate (farklı deterministik policy'ler) için
+run_rolling_backtest_from_store -> Trial -> TrialGroup;
+compute_deflated_sharpe_ratio(group, selected_candidate_id=...,
+independent_trial_count=...) sonucu [0, 1] içinde ve bağımsız float
+referansıyla (§17.4.12 madde 5) uyumludur; N arttıkça DSR artmaz
+(monoton azalmayan eşik); iki pencereli bir Trial içeren grup
+exact mesajla reddedilir.
+```
+
+**17.4.14 Deferred / Kapsam Dışı (Bu Kontratta DEĞİL)**
+
+```
+- Efektif-N estimator'ı (Ek A.3 ortalama-korelasyon interpolasyonu,
+  entropi/kümeleme yöntemleri) — ayrı kontrat; hizalanmış getiri
+  matrisi ve kötü koşulluluk kararları gerektirir.
+- Çok pencereli pooling (walk-forward OOS birleştirme, overlap/boşluk/
+  sermaye sıfırlama kuralları) — ayrı kontrat.
+- Harvey-Liu alternatif eşiği, PSR'nin ayrı public API'si, annualized
+  DSR raporlaması, güven eşiği (örn. 0.95) kararı veya "geçti/kaldı"
+  etiketi — DSR yalnızca bir olasılık döndürür.
+- Candidate selection, optimizer, final holdout enforcement, CPCV, PBO,
+  multiple-testing correction, parameter stability, persistence,
+  raporlama/CLI/UI, risk profili, günlük öneri bildirimi, paper/live.
+```
+
+**17.4.15 Durum**
+
+```
+LOCKED — IMPLEMENTATION PENDING. §28.K — 0/27. Bu kilit, FAZ6C'nin
+veya Faz 6'nın tamamlandığı anlamına GELMEZ; Faz 7 önkoşulunu (§29)
+DEĞİŞTİRMEZ.
+```
 
 ### 17.5 PBO — LATER IN FAZ 6
 
@@ -4652,6 +5119,8 @@ implement ETMEZ.
 
 ### 20.12 Deflated Sharpe İçin Bağımlılık Durumu — Çözülen / Açık Kalan (LOCKED Kayıt)
 
+**Durum güncellemesi (DSR exact contract lock):** Aşağıdaki on madde, bu bölüm yazıldığı andaki durumu kaydeder (tarihsel olarak korunur). Maddelerin tamamı artık §17.4.2'de karara bağlanmıştır: 1 N = caller-beyanlı `independent_trial_count` (recorded_trial_count ile ikame YOK); 2 V/istatistikler tek TrialGroup'tan, N program kapsamında caller'dan; 3 başarısız/kaydedilmemiş denemeler V'ye girmez, yalnızca beyan edilen N'e yansır; 4 her Trial tek pencere, SR = Stage-2 Sharpe, T = getiri sayısı; 5 per-observation ölçek; 6 population moment skewness + HAM kurtosis; 7 Decimal-only Taylor serisi Φ + Newton Φ^-1; 8 Stage-2 Sharpe'ların sample varyansı (M-1), V > 0; 9 zorunlu `selected_candidate_id`, seçim YOK; 10 rol doğrulanamaz, holdout koruması YOK. Deferred kalanlar: efektif-N estimator'ı ve çok pencereli pooling (§17.4.14).
+
 ```
 Bu kontratla ÇÖZÜLEN (kontrat düzeyinde; implementasyon HENÜZ YOK):
 - Tek bir karşılaştırılabilir partition için "candidate/trial history"
@@ -4946,10 +5415,17 @@ FAZ 6C — Advanced Overfitting Controls
         commit `1b666fd` — bu madde "kilitlenmiş, henüz implement
         edilmemiş" olarak kaydedilmişti, §28.J — 0/19.)
 
+    Kilitlenmiş, HENÜZ İMPLEMENT EDİLMEMİŞ bileşen:
+      - Deflated Sharpe exact kontratı (Bölüm 17.4.1–17.4.15) —
+        `compute_deflated_sharpe_ratio`
+        (`src/crypto_quant_lab/validation/deflated_sharpe.py`, YENİ
+        modül, henüz yok); §28.K — 0/27.
+
     Kalan zorunlu bileşenler (HENÜZ PENDING):
-      - CPCV (17.2), Deflated Sharpe (17.4), PBO (17.5), multiple-testing
-        corrections (17.6), parameter stability (17.7) — hiçbiri henüz
-        spec-lock edilmemiştir; bu doküman onları henüz TASARLAMAZ.
+      - Deflated Sharpe implementasyonu + regression suite'i (§28.K).
+      - CPCV (17.2), PBO (17.5), multiple-testing corrections (17.6),
+        parameter stability (17.7) — hiçbiri henüz spec-lock
+        edilmemiştir; bu doküman onları henüz TASARLAMAZ.
 
     Durum: FAZ6C — NOT COMPLETE. Purging/embargo foundation'ının
     implement/test edilmiş olması, CPCV/Deflated Sharpe/PBO/multiple-
@@ -4990,7 +5466,7 @@ FAZ 6D — Faz 6 Final Acceptance
 |---|---|---|---|
 | FAZ6A | COMPLETE | temporal window/IS-OOS primitives (§28.A — 22/22), zero-context rolling OOS evaluation (§28.C — 12/12), Stage-1 metrics (§28.D — 18/18) | locked FAZ6A scope içinde yok |
 | FAZ6B | COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 (§8.3.16, §28.F — 22/22, LOCKED VE IMPLEMENTED + TESTED), candidate/trial foundation (§18, §28.G — 25/25, LOCKED VE IMPLEMENTED + TESTED), Annualized Metrics (§15.19–15.33, §28.H — 30/30, LOCKED VE IMPLEMENTED + TESTED) | locked FAZ6B scope içinde yok |
-| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + kaydedilmiş Trial sayısı exact kontratı + implementasyonu (§20.1–20.14, §28.J — 19/19, LOCKED VE IMPLEMENTED + TESTED) | CPCV, Deflated Sharpe, PBO, multiple-testing corrections, parameter stability |
+| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + kaydedilmiş Trial sayısı exact kontratı + implementasyonu (§20.1–20.14, §28.J — 19/19, LOCKED VE IMPLEMENTED + TESTED); Deflated Sharpe exact kontratı (§17.4.1–17.4.15, LOCKED — implementasyon YOK, §28.K — 0/27) | Deflated Sharpe implementasyonu; CPCV, PBO, multiple-testing corrections, parameter stability |
 | FAZ6D | NOT STARTED | yok | Faz 6 final acceptance audit'i |
 
 Bu tablo, §28.A/B/C/D'nin bağımsız acceptance sayımlarını **birleşik bir yüzdeye veya tek bir sayıya dönüştürmez** — her grup kendi bağımsız kanıtını korur; bu tablo yalnızca hangi grubun hangi alt-fazın kanıtı olduğunu özetler.
@@ -5621,16 +6097,41 @@ DELIVERY — TAMAMLANDI:
   selection, optimizer, persistence ve final holdout enforcement
   BAŞLATILMADI. FAZ6C ve Faz 6 NOT COMPLETE kalır.
 
+FAZ6C — DEFLATED SHARPE SOURCE PREFLIGHT + §20.12 DECISIONS + EXACT
+CONTRACT LOCK — TAMAMLANDI (docs-only):
+  Birincil kaynağı (Bailey & López de Prado 2014, JPM 40(5); yazarların
+  PDF'i) okudu: Eq. (1)/(2), Ek A.1-A.3 ve yazarların kod listesi metin
+  olarak doğrulandı; denklem gövdeleri görsel olduğundan formül biçimi,
+  makalenin metinsel sonuçlarının (N=100'de ~%90, N=46'da 0.9505,
+  normal getirilerde N=88 eşiği) bağımsız float yeniden üretimiyle
+  doğrulandı — bu yeniden üretim yalnızca sqrt(T-1) + ham kurtosis
+  konvansiyonunda tutar. PSR (2012a), Mertens (2002) ve Marsaglia
+  (2004) bu turda OKUNMADI (§17.4.1). §20.12'nin on maddesini §17.4.2'de
+  karara bağladı (N caller-beyanlı bağımsız deneme sayısı; V ve seçilen
+  istatistikler tek TrialGroup'tan; tek-pencereli Trial; per-observation
+  ölçek; population moment skewness + ham kurtosis; Decimal-only Taylor
+  Φ + Newton Φ^-1; M-1 paydalı V > 0; zorunlu selected_candidate_id;
+  rol/holdout doğrulanamaz). Exact kontratı §17.4.3–17.4.15'te kilitledi:
+  `compute_deflated_sharpe_ratio` (`src/crypto_quant_lab/validation/
+  deflated_sharpe.py`, YENİ, henüz yok), veri akışı, formüller ve
+  operation sırası, 15 adımlı validation sırası ve mesajlar, prec=80
+  private context + 28 basamak çıkış, Φ clamp/yakınsama/iterasyon
+  sınırları, minimum veri, bağımsız-referans doğrulama yöntemi, gerçek
+  entegrasyon senaryosu. Nümerik iddialar scratchpad'de bir prototiple
+  (production DEĞİL) sınandı: Φ, [-15, 15]'te float referansıyla
+  2.2e-16 içinde; Newton N <= 1e30 için <= 75 iterasyon. §28.K'yi 0/27
+  olarak ekledi; §17.4, §20.12, §22, §22.2, §28 girişi ve §29 durum
+  cümlesini güncelledi (§29'un Faz 7 önkoşulu DEĞİŞMEDİ). Deferred:
+  efektif-N estimator'ı ve çok pencereli pooling (§17.4.14). Docs-only;
+  production kod ve test YOK. FAZ6C ve Faz 6 NOT COMPLETE kalır.
+
 Sonraki (henüz başlanmadı):
-  Deflated Sharpe'ın (17.4) kendi source-preflight + exact kontrat
-  kilidi — ancak §20.12'deki açık kararlar (özellikle N semantiği ve
-  kapsamı, başarısız denemelerin durumu, çok pencereli trial Sharpe
-  tanımı ve T, per-observation vs. annualized ölçek, skewness/kurtosis,
-  Decimal normal-CDF kaynağı, seçilmiş denemenin explicit girdisi)
-  kullanıcı tarafından çözüldükten sonra; bu adım o kararları
-  BAŞLATMAZ veya kendiliğinden SEÇMEZ. CPCV, PBO, multiple-testing
-  corrections ve parameter stability hâlâ spec-lock edilmemiştir.
-  Candidate selection/ranking, optimizer/grid/random/Bayesian search ve
+  Bölüm 17.4.1–17.4.15'te LOCKED olan Deflated Sharpe kontratının,
+  yeniden tasarlanmadan, tek bir combined implementation delivery olarak
+  implement edilmesi (`src/crypto_quant_lab/validation/deflated_sharpe.py`
+  + `tests/test_validation_deflated_sharpe.py` + §28.K closure). CPCV,
+  PBO, multiple-testing corrections ve parameter stability hâlâ
+  spec-lock edilmemiştir. Candidate selection/ranking, optimizer ve
   final holdout enforcement BAŞLATILMAZ. Ardından FAZ6D — Faz 6 Final
   Acceptance audit'i. Faz 6'nın tamamlanması için FAZ6C/FAZ6D'nin ikisi
   de gereklidir (bkz. Bölüm 22).
@@ -5716,9 +6217,9 @@ Aynı girdiler → aynı pencere sonuçları — mevcut `run_backtest_from_store
 - external LLM decision-making
 ```
 
-## 28. Acceptance Criteria — On Ayrı Grup (LOCKED)
+## 28. Acceptance Criteria — On Bir Ayrı Grup (LOCKED)
 
-Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Annualized Metrics'in (Sharpe/Sortino/CAGR/Calmar) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.H'de kaydedilir (bkz. Bölüm 15.19–15.33, 23 — 30/30). Window-level purging/embargo'nun (Bölüm 17.1.1–17.1.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.I'de kaydedilir (bkz. Bölüm 17.1, 23 — 19/19). Trial-group / recorded-trial-count foundation'ının (Bölüm 20.1–20.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.J'de kaydedilir (bkz. Bölüm 20, 23 — 19/19). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G/28.H/28.I/28.J altındaki sayılar). §28.A/B/C/D/E/F/G/H/I/J'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
+Foundation acceptance, runner-independent (pure/store-free) kontratlar ile Layer-1 context-aware runner acceptance kontratları (28.B, artık runtime/test exercised) **karıştırılmaz.** 28.B'nin karşılanması, Layer-2 çok-pencereli orchestrator'ın hazır olduğu anlamına **gelmez** (Bölüm 8.3.6, 13) — zero-context Layer-2'nin kendi implementasyon acceptance checklist'i, artık runtime/test exercised olan ayrı bir liste olarak 28.C'de kaydedilir (12/12). Stage-1 metrics'in (total return + max drawdown) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.D'de kaydedilir (bkz. Bölüm 15, 23 — 18/18). Stage-2'nin (return-series + per-observation Sharpe) implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.E'de kaydedilir (bkz. Bölüm 15.9–15.18, 23 — 29/29). Non-zero-context Layer-2'nin implementasyon acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.F'de kaydedilir (bkz. Bölüm 8.3.16, 23 — 22/22). Candidate/trial foundation'ının implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.G'de kaydedilir (bkz. Bölüm 18, 23 — 25/25). Annualized Metrics'in (Sharpe/Sortino/CAGR/Calmar) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.H'de kaydedilir (bkz. Bölüm 15.19–15.33, 23 — 30/30). Window-level purging/embargo'nun (Bölüm 17.1.1–17.1.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.I'de kaydedilir (bkz. Bölüm 17.1, 23 — 19/19). Trial-group / recorded-trial-count foundation'ının (Bölüm 20.1–20.13) implementasyon/test acceptance checklist'i de, artık implementation/test exercised olan ayrı bir liste olarak 28.J'de kaydedilir (bkz. Bölüm 20, 23 — 19/19). Deflated Sharpe'ın (Bölüm 17.4.1–17.4.15) implementasyon/test acceptance checklist'i, HENÜZ implementation/test exercised OLMAYAN ayrı bir liste olarak 28.K'de kaydedilir (bkz. Bölüm 17.4, 23 — 0/27). Önceki sürümün tek listedeki "15 madde" sayısı korunmaya çalışılmaz — spec wording'ine göre yeniden türetilmiştir (bkz. 28.A/28.B/28.C/28.D/28.E/28.F/28.G/28.H/28.I/28.J/28.K altındaki sayılar). §28.A/B/C/D/E/F/G/H/I/J/K'nin sayımları birbirine **katlanmaz** — her biri kendi bağımsız, ayrı kanıtını korur.
 
 ### 28.A — LOCKED FOUNDATION ACCEPTANCE (Runner-Bağımsız)
 
@@ -6007,6 +6508,40 @@ Bu liste, Bölüm 20.1–20.13'te LOCKED olan trial-group / recorded-trial-count
 
 **Trial-group / recorded-trial-count acceptance count: 19 / 19 implementation/test exercised.** (Kilit zamanındaki tarihsel sayım: 0 / 19, commit `1b666fd`.) Bu grubun 19/19 olması, aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: Deflated Sharpe; efektif/bağımsız trial sayısı; gruplar-arası veya tüm-araştırma-programı deneme sayımı; başarısız/iptal deneme kaydı; PBO; CPCV; multiple-testing correction; parameter stability; candidate selection/ranking; optimizer/search; final holdout protection; persistence; FAZ6C'nin veya Faz 6'nın tamamlanması.
 
+### 28.K — DEFLATED SHARPE ACCEPTANCE (0/27 IMPLEMENTATION/TEST EXERCISED)
+
+Bu liste, Bölüm 17.4.1–17.4.15'te LOCKED olan Deflated Sharpe exact kontratının gelecekteki implementasyonu için acceptance kriterlerini kaydeder. **Bu 27 kriterin HİÇBİRİ henüz implementation/test exercised DEĞİLDİR** — `src/crypto_quant_lab/validation/deflated_sharpe.py` ve `tests/test_validation_deflated_sharpe.py` henüz mevcut değildir.
+
+1. `compute_deflated_sharpe_ratio(group, *, selected_candidate_id, independent_trial_count, risk_free_per_period=Decimal(0)) -> Decimal` kilitli modül yolunda, kilitli imzayla mevcuttur; modülün public sembol kümesi TAM OLARAK `{compute_deflated_sharpe_ratio}`'dir (§17.4.3). **PENDING**
+2. Package-root export YOK; hiçbir mevcut production/test dosyası ve `validation/__init__.py` değişmez (§17.4.3, 17.4.11 — static `git diff` + tam regression suite). **PENDING**
+3. Adım 1-5 tip/aralık doğrulamaları exact tür ve mesajlarla, kilitli sırayla uygulanır; `bool` N reddedilir; N=2 ve N=10**30 kabul, N=1 ve N=10**30+1 reddedilir (§17.4.6). **PENDING**
+4. Tek-Trial grup exact mesajlı ValueError ile reddedilir (adım 6). **PENDING**
+5. Grupta olmayan `selected_candidate_id` exact mesajlı ValueError ile reddedilir; DSR hiçbir seçim yapmaz — seçilen denemenin en yüksek SR'ye sahip OLMADIĞI durumda da hesaplanır (§17.4.2 karar 9, adım 7). **PENDING**
+6. Birden fazla pencereli herhangi bir Trial, global geçişle exact mesajlı ValueError ile reddedilir (adım 8). **PENDING**
+7. Eşit olmayan equity-gözlem sayısı exact mesajlı ValueError ile reddedilir (adım 9). **PENDING**
+8. Stage-2 alt katman hataları (örn. sıfır stdev, tek gözlem) DEĞİŞMEDEN propagate edilir (adım 10). **PENDING**
+9. V = 0 (tüm Sharpe'lar eşit) exact mesajlı ValueError ile reddedilir (adım 11). **PENDING**
+10. variance_term <= 0 durumu exact mesajlı ValueError ile reddedilir, clip EDİLMEZ (adım 13, §17.4.9). **PENDING**
+11. Eşzamanlı ihlallerde kilitli sıra (adım 1→15) davranışsal testlerle kanıtlanır (§17.4.6). **PENDING**
+12. `recorded_trial_count` hiçbir koşulda N yerine kullanılmaz: aynı grup farklı N ile farklı DSR verir; N > M ve N < M ikisi de kabul edilir (§17.4.2 karar 1). **PENDING**
+13. V, seçilen dahil tüm Trial'ların Stage-2 Sharpe'larının sample varyansıdır (payda M-1) — bağımsız float referansıyla doğrulanır (§17.4.2 karar 8, §17.4.5). **PENDING**
+14. Skewness/kurtosis population moment tahmincileridir ve kurtosis HAMDIR (normal=3); simetrik/sabit-olmayan bilinen bir örneklemde beklenen değerler bağımsız hesapla doğrulanır (§17.4.2 karar 6). **PENDING**
+15. Hesap per-observation ölçektedir; annualized metrik veya timeframe girdisi kullanılmaz (§17.4.2 karar 5). **PENDING**
+16. `risk_free_per_period`, gruptaki TÜM Trial'ların Stage-2 Sharpe'ına aynı şekilde uygulanır (§17.4.4). **PENDING**
+17. Makalenin sayısal örneği `_deflated_sharpe_from_statistics` ile yeniden üretilir: N=100 → 0.9004, N=46 → 0.9505 (4 ondalık); normal getirilerde N=88 → ≥ 0.95, N=89 → < 0.95 (§17.4.12 madde 1). **PENDING**
+18. `_normal_cdf`, [-15, 15] ızgarasında `statistics.NormalDist` ile |fark| ≤ 1e-15; Φ(1) literatür değeriyle ≥ 30 basamak eşleşir; |x| ≥ 15 clamp davranışı exact 0/1'dir (§17.4.8, 17.4.12). **PENDING**
+19. `_normal_quantile`, kilitli p kümesinde `statistics.NormalDist.inv_cdf` ile |fark| ≤ 1e-12; Φ^-1(0.975) 15 basamak eşleşir; p=1/2 → exact 0; alan dışı p ValueError (§17.4.8). **PENDING**
+20. İç tutarlılık: Φ(Φ^-1(p)) - p ≤ 1e-60 ve Φ(-x) + Φ(x) = 1 (≤ 1e-60); N ∈ {2, 10, 100, 1e6, 1e12, 1e30} için Newton 200 iterasyon sınırına ulaşmadan yakınsar (§17.4.8). **PENDING**
+21. Euler-Mascheroni ve π sabitleri en az 50 doğru basamak taşır; e context içinde hesaplanır (§17.4.7). **PENDING**
+22. Sonuç [0, 1] içindedir, 28 anlamlı basamağa tek kez yuvarlanır; caller'ın ambient Decimal context'i (prec/rounding/traps) sonucu değiştirmez (§17.4.7). **PENDING**
+23. Aynı grup ve parametrelerle N arttıkça DSR artmaz (monoton azalmayan eşik) (§17.4.13). **PENDING**
+24. Girdi mutasyonu YOK; tekrarlı çağrı aynı sonucu verir; float/statistics/math/random/time import'u production modülünde YOKTUR (§17.4.10). **PENDING**
+25. Import direction: `deflated_sharpe.py` yalnızca `metrics` (iki public fonksiyon), `trial_group` ve `decimal` import eder; hiçbir mevcut modül onu import etmez (§17.4.10). **PENDING**
+26. Grup düzeyi sonuç, sentetik bir TrialGroup için bağımsız float referansıyla |fark| ≤ 1e-9 uyumludur (§17.4.12 madde 5). **PENDING**
+27. Gerçek SQLite + `run_rolling_backtest_from_store` entegrasyon senaryosu (§17.4.13) geçer: ≥ 3 candidate, tek pencere, [0, 1] sonuç, float referansıyla uyum, iki pencereli Trial reddi. **PENDING**
+
+**Deflated Sharpe acceptance count: 0 / 27 implementation/test exercised.** Bu grubun ileride 27/27 olması da aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: efektif-N estimator'ı; çok pencereli pooling; candidate selection; final holdout protection; PBO; CPCV; multiple-testing correction; parameter stability; bir yatırım/işlem kararı; FAZ6C'nin veya Faz 6'nın tamamlanması.
+
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
 ROADMAP.md'deki bir sonraki faz **Faz 7 — İlk Funding/Basis araştırması**dır. Faz 7'nin güvenilir olabilmesi için, en azından Bölüm 22'deki FAZ6A (temporal split + rolling fixed-policy OOS evaluation + basic return/drawdown metrikleri) tamamlanmış olmalıdır — bu, Faz 7'nin IS'te seçilen bir funding/basis sinyalini gerçekten görülmemiş bir OOS penceresinde kontrol edebilmesi için minimum güven sınırıdır. Faz 6'nın daha ileri maddeleri (CPCV/PBO/DSR), Faz 7'nin **başlaması** için zorunlu değildir, ama FAZ6A'nın kendisi zorunludur. Bu doküman Faz 7'nin strateji tasarımını **yapmaz.**
@@ -6025,8 +6560,10 @@ ROADMAP.md'deki bir sonraki faz **Faz 7 — İlk Funding/Basis araştırması**d
   foundation, VE Annualized Metrics [Sharpe/Sortino/Calmar/CAGR]
   hepsi IMPLEMENTED + TESTED'dır, bkz. §22.2, 28.H — 30/30; FAZ6C:
   advanced overfitting controls — purging/embargo foundation'ı artık
-  LOCKED VE IMPLEMENTED + TESTED'dır (§28.I — 19/19); CPCV/
-  Deflated Sharpe/PBO/multiple-testing/parameter-stability HÂLÂ
+  LOCKED VE IMPLEMENTED + TESTED'dır (§28.I — 19/19); trial-group
+  foundation'ı LOCKED VE IMPLEMENTED + TESTED'dır (§28.J — 19/19);
+  Deflated Sharpe exact kontratı LOCKED, implementasyonu YOK (§28.K —
+  0/27); CPCV/PBO/multiple-testing/parameter-stability HÂLÂ
   spec-lock edilmemiştir) tamamlamaya devam EDEBİLİR (bu doküman bir
   sıralama zorunluluğu icat etmez).
 - CPCV/PBO/DSR'nin Faz 7'nin başlaması için zorunlu olmadığına dair
