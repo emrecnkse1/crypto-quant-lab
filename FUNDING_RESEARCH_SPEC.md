@@ -1312,3 +1312,247 @@ K5 lot/step/tick yuvarlama kuralları ve kaynağı
 K6 portföy sonucunun BacktestResult'a indirgenmesi mi, yeni sonuç tipi mi
 K7 spot ve perp cüzdanları arası transfer modeli (tek havuz mu, ayrık mı)
 ```
+
+### 19.12 Çok bacaklı replay / event-scheduling sözleşmesi — DRAFT, NOT IMPLEMENTED
+
+**Durum (2026-09-24):** DRAFT. Kod veya test YOKTUR; aşağıdaki kabul matrisi çalıştırılmış test DEĞİLDİR. §19.10.1 (muhasebe ilk dilimi) IMPLEMENTED + TESTED olarak kalır. Hiçbir yeni ekonomik karar burada kilitlenmez; her satırın karar durumu ayrıca yazılmıştır.
+
+#### 19.12.1 Mevcut tek bacaklı zamanlama sözleşmesi (kanıtla)
+
+```
+Kavram                     Kural                                           Kanıt
+mum aralığı                [open_time, open_time + süre)                   market_data/timeframes.py candle_duration;
+                                                                           data_quality/feature_availability.py
+erişilebilirlik (bilgi)    availability = open_time + süre; OPEN dahil tüm BACKTEST_SPEC §8; feature_availability_time;
+                           OHLCV bu andan önce kullanılamaz; sınır dahil   is_candle_available_for_features (>=)
+                           (as_of >= availability)
+veri kümesi                tek sembol+timeframe, kesin artan open_time,    replay.py _validate_dataset (satır 74);
+                           boşluksuz bitişik (availability(N) ==          BACKTEST_SPEC §30, §31
+                           open_time(N+1)), her mum as_of'ta erişilebilir
+karar                      mum N'nin availability anında, yalnız o ana    replay.py (policy çağrısı, satır ~397);
+                           kadar erişilebilir önek (PolicyContext)        BACKTEST_SPEC §9
+fill                       N'nin kararı N+1'in OPEN fiyatından, zamanı    execution.py execute_target_on_next_candle;
+                           open_time(N+1) == availability(N)              BACKTEST_SPEC §10; acceptance §36 madde 10
+son mum                    son mumun kararı fill OLMAZ, fiyat uydurulmaz   replay.py (i == last_index, satır ~403);
+                                                                           BACKTEST_SPEC §11
+equity mark                her değerlendirme mumunda candle.CLOSE ile;     replay.py satır ~394; BACKTEST_SPEC §18;
+                           mark, o anın kendi fill'inden ÖNCE              FUNDING_SPEC §13
+funding settlement zamanı  event_time; muhasebeyi yalnız o anda etkiler;   FUNDING_SPEC §11
+                           event_time > as_of uygulanamaz
+aynı an sırası (T)         1) funding settlement(ler) 2) equity mark       FUNDING_SPEC §12 (LOCKED MS9/MS10);
+                           3) policy 4) fill; funding PRE-FILL pozisyona   replay.py _apply_due_funding_events (satır 250);
+                                                                           test_same_time_open_from_flat_pays_no_funding,
+                                                                           test_same_time_close_to_flat_uses_held_position,
+                                                                           test_same_time_long_to_short_reversal_uses_pre_fill_position
+mumlar arası funding       kronolojik uygulanır, sonraki mark'ta görünür;   FUNDING_SPEC §13; test_long_positive_funding_between_marks
+                           kendi EquityPoint'i yok
+aynı anda çoklu funding    her biri ayrı, (event_time, rate_type) artan,   FUNDING_SPEC §12; replay.py satır ~197;
+                           hepsi aynı pre-fill pozisyonu görür             test_same_time_multiple_funding_events_applied_sequentially,
+                                                                           test_funding_event_same_time_rate_type_descending_raises
+kimlik / tekrar            canonical_key (exchange, market_type, symbol,  funding/models.py canonical_key; replay.py satır ~207;
+                           event_time, rate_type); tekrar -> ValueError    test_duplicate_funding_event_key_raises
+funding aralığı            run_start <= event_time < run_end;             replay.py _validate_funding_events;
+                           run_start = evaluation_start (yoksa ilk open), test_funding_at_run_start_is_legal_and_zero_when_flat,
+                           run_end = availability(son mum); dışı -> hata  test_funding_before_run_start_is_rejected,
+                           (filtrelenmez)                                  test_funding_at_run_end_is_rejected
+düz pozisyonda funding     formülle 0 (özel dal yok)                       FUNDING_SPEC §8.2; test_flat_funding_event_is_zero_cost
+warmup/evaluation_start    öncesindeki mumlar yalnız bağlam: funding,      replay.py modül docstring; VALIDATION_SPEC §8.3
+                           mark, policy, fill yok; state o anda başlar
+funding referans fiyatı    mark fiyatı DEĞİLDİR                            FUNDING_SPEC §13
+```
+
+İki zaman AYRIDIR: bir nakit hareketinin muhasebeye ait olduğu **settlement zamanı** (`FundingEvent.event_time`, replay'de `event_time <= mark_time` taraması) ile bir verinin karar için bilinebildiği **availability zamanı** (mum: `open_time + süre`; funding sinyali: `event_time + publication_lag`, research/funding_carry.py FundingSignalHistory). Replay muhasebesi yayın gecikmesi uygulamaz; sinyal görünürlüğü ise yalnız research katmanında vardır. Funding olaylarının muhasebe için ayrı bir "availability" metadata'sı YOKTUR — varmış gibi kabul edilmez.
+
+Belge/kod farkı: bulunmadı. FUNDING_SPEC §12'deki "fill" adımı kodda mum N iterasyonunda open(N+1) fiyatıyla, zaman damgası availability(N) olan fill'dir; sıra birebir aynıdır.
+
+#### 19.12.2 Karşılaştırma
+
+```
+Yeniden kullanılır: feature_availability_time; _validate_dataset kuralları (her seri için);
+  MS9 aynı-an sırası; funding aralık/sıra/kimlik doğrulaması; LinearFundingModel;
+  CostModel; §19.10.1 muhasebe API'si; decimal_policy açık context'i.
+Yeni tanımlanmalı: iki serinin senkronizasyonu; dışarıdan deterministik "intent"
+  sözleşmesi; olay izi (trace) ve çıktı tipi; düz pozisyonda funding kaydı.
+İlk muhasebe API'siyle çakışan: _require_after_last_event (multileg.py satır 303)
+  aynı zaman damgasındaki İKİNCİ state-değiştiren olayı reddeder; bu, MS9'un
+  "funding(T) sonra fill(T)" ve "aynı T'de çoklu funding" kurallarıyla çakışır.
+  apply_perpetual_funding FLAT/FLAT_CLOSED'da reddeder (satır 470); tek bacaklı
+  motor ise düz pozisyonda formülle 0 uygular.
+Bu adımın ve ilk replay'in dışında: store-backed runner, strateji/policy çerçevesi,
+  warmup/evaluation_start, legging/partial fill, margin/liquidation, metrik adapter'ı.
+```
+
+#### 19.12.3 İlk replay için dar taslak
+
+```
+A) Girdiler
+  pair: HedgedPair (§19.10.1); spot_candles: tuple[Candle] (spot_trade dataset'ten),
+  perpetual_candles: tuple[Candle] (contract_trade dataset'ten); aynı timeframe;
+  funding_events: tuple[HistoricalFundingEvent] (yalnız pair.perpetual partition'ı);
+  initial spot_cash, perpetual_collateral; spot/perp CostModel; FundingModel; as_of;
+  intents: tuple[HedgeIntent(action "open"|"close", decision_time, quantity)].
+  Provenance (spot_trade / contract_trade) store'dan okunurken zaten doğrulanır;
+  in-memory replay'de Candle provenance taşımaz — çağıran sorumludur (açık not).
+B) Senkronizasyon
+  Her seri tek başına _validate_dataset kurallarını geçer (mevcut). İki serinin
+  open_time kümeleri BİREBİR eşit olmalı; aksi halde tüm çalıştırma reddedilir
+  (eksik mum, farklı timeframe, sırasız/duplicate -> hata). Forward-fill,
+  interpolasyon, tolerans süresi YOK. [Taslak öneri: tek bacaklı "boşluksuz"
+  kuralının iki seriye doğal uzantısı; kısmi boşlukla çalışma açık karar R1.]
+C) Karar / execution ayrımı
+  Intent'in decision_time'ı bir mumun availability anına (N < son) eşit olmalı;
+  fill iki serinin N+1 OPEN fiyatlarından, zaman damgası decision_time.
+  Intent fiyat taşımaz. Son mumdaki intent reddedilir (tek bacaklı §11 kuralı:
+  fill yok, fiyat uydurulmaz). Replay intent'in içeriğinin hangi bilgiyle
+  üretildiğini doğrulayamaz; yalnız mekanik zamanlamayı garanti eder. Strateji
+  çerçevesi gerekmez; policy katmanı sonraki bir dilimdir.
+D) Fiyat kaynakları
+  Execution: spot_trade ve contract_trade mumlarının OPEN'ı. Valuation (mark):
+  aynı mumların CLOSE'u (tek bacaklı §18 ile aynı). mark_hedged_portfolio'nun
+  spot_mark_price/perpetual_mark_price parametreleri "değerleme fiyatı" demektir,
+  borsanın markPrice dataset'i DEĞİLDİR; mark-price ingestion yapılmadı.
+  Index/mark fiyatları fill olamaz (TradableInstrument zaten reddeder).
+E) Çıktılar (öneri, sahte BacktestResult YOK, Stage-1/2 adapter'ı YOK)
+  MultiLegReplayResult: trace (her olay: time, phase {funding, mark, fill},
+  ayrıntı), paired_fills, funding_records (canonical_key, gözlenen perp
+  pozisyonu, maliyet), equity_points (time, spot_equity, perp_margin_equity,
+  portfolio_equity, total_pnl), final_state, final_mark, unexecuted_final_intent,
+  kapsam bayrakları (liquidation_not_modeled, legging_not_modeled,
+  valuation_source "trade_close").
+  Çalıştırma sonunda pair açık kalabilir (tek bacaklı motorda pozisyon açık
+  bitebilir); o durumda summarize_closed_hedge değil son mark raporlanır.
+  [Taslak öneri.]
+```
+
+#### 19.12.4 Aynı zaman damgası uyumluluğu
+
+`last_event_time` yalnız open, funding ve close ile ilerler (multileg.py satır 402, 458, 504); `_require_after_last_event` KESİN büyüklük ister (satır 303–307); mark bir görünümdür, state'i değiştirmez ve `time >= last_event_time` yeter (satır 548). `applied_funding_keys` canonical_key'leri tutar (satır 484, 503); lifecycle kontrolleri satır 367, 417, 470.
+
+```
+Durum: funding(T) + açılış(T)
+ 1 tek bacaklı: funding PRE-FILL (düz) pozisyona -> 0; sonra fill        (test_same_time_open_from_flat_pays_no_funding)
+ 2 multileg API: FLAT'ta apply_perpetual_funding reddeder; açılış tek başına geçer
+ 3 öneri: scheduler olayı izde kaydeder, gözlenen pozisyon 0, maliyet FundingModel(0, ...) = 0;
+          muhasebe API'si çağrılmaz; sonra açılış
+ 4 mevcut API ile: EVET
+ 5 değişiklik: yok (istenirse ileride FLAT funding kaydı için additive API)
+ 6 karar: ekonomik sonuç mevcut kuralla belirli (0); kayıt biçimi taslak öneri
+
+Durum: funding(T) + kapanış(T)
+ 1 tek bacaklı: funding açık (short) pre-fill pozisyona uygulanır, sonra fill (test_same_time_close_to_flat_uses_held_position)
+ 2 multileg API: funding(T) sonrası kapanış(T) "strictly after" ile reddedilir; kapanış önce yapılırsa funding FLAT_CLOSED'da reddedilir
+ 3 öneri: MS9 sırası — önce funding (short'a), sonra kapanış
+ 4 mevcut API ile: HAYIR
+ 5 en küçük additive değişiklik E1: olay sıralama anahtarı (zaman, faz[, rate_type]) —
+   faz FUNDING < FILL; state'e varsayılanlı yeni alan (ör. last_event_key); aynı T'de
+   funding -> fill izinli, fill -> funding reddedilir; eski davranış farklı zamanlarda aynı
+ 6 karar: MS9'un çok bacaklıya uygulanması TASLAK ÖNERİ (tek bacaklı kural kilitli,
+   çok bacaklıya uzatılması kullanıcı onayı ister); onaylanmazsa ilk replay bu durumu
+   §19.10.1 gibi reddeder
+
+Durum: aynı T'de farklı canonical_key'li iki funding (ör. Regular + Special)
+ 1 tek bacaklı: ikisi ayrı, (event_time, rate_type) artan, aynı pre-fill pozisyona (test_same_time_multiple_funding_events_applied_sequentially)
+ 2 multileg API: ikincisi "strictly after" ile reddedilir
+ 3 öneri: tek bacaklıdaki sıra
+ 4 mevcut API ile: HAYIR
+ 5 değişiklik: E1'in rate_type bileşeni (zaman, FUNDING, rate_type) kesin artan
+ 6 karar: taslak öneri (E1 ile aynı onaya bağlı)
+
+Durum: aynı funding olayının tekrarı
+ 1 tek bacaklı: girişte duplicate canonical_key -> ValueError (test_duplicate_funding_event_key_raises)
+ 2 multileg API: "already applied" ile reddeder
+ 3 öneri: scheduler girişte (hiçbir olay uygulanmadan) reddeder
+ 4 mevcut API ile: EVET
+ 5 değişiklik: yok
+ 6 karar: mevcut kuralla belirli
+
+Durum: aynı kimlikte çelişkili payload (aynı key, farklı rate/reference_price)
+ 1 tek bacaklı: duplicate key olarak reddedilir (payload karşılaştırılmaz); store yazımı DataConflictError verir
+ 2 multileg API: ikincisi "already applied" (tekrar ile çelişki ayırt edilmez)
+ 3 öneri: scheduler girişte reddeder; mesajda "conflicting payload" ile "duplicate" ayrılır
+ 4 mevcut API ile: EVET (scheduler doğrulaması)
+ 5 değişiklik: yok
+ 6 karar: ret mevcut kuralla belirli; mesaj ayrımı taslak
+
+Durum: mark ile state değiştiren olayın aynı T'de olması
+ 1 tek bacaklı: T'de funding -> mark -> policy -> fill; mark fill'i içermez, funding'i içerir (FUNDING_SPEC §12-13)
+ 2 multileg API: mark görünümdür; T'deki funding'den sonra (>=) izinli; T'deki fill'den önce çağrılabilir
+ 3 öneri: aynı sıra: funding(ler), mark (fill öncesi state), fill
+ 4 mevcut API ile: EVET
+ 5 değişiklik: yok
+ 6 karar: mevcut kuralla belirli
+```
+
+Sonuç: yalnız scheduler yazmak MS9'un tamamı için YETMEZ; "funding(T) + kapanış(T)" ve "aynı T'de çoklu funding" için E1 gerekir. Zaman damgasına yapay mikro-saniye eklemek, olay kaydırmak, funding atlamak, olayları birleştirmek veya kesin-zaman kontrollerini körlemesine gevşetmek reddedilir.
+
+#### 19.12.5 Gelecek implementasyon için kabul matrisi (TASLAK — çalıştırılmamış)
+
+Ortak kurulum (S1–S5): 1h mumlar, t0 = 00:00Z, mum k = [t0 + k·h, t0 + (k+1)·h), k = 0..3; run_end = availability(3) = t0 + 4h. Başlangıç: spot_cash 200, collateral 200, qty 1, sıfır maliyet. Intent'ler: open decision t0+1h (mum 0 kapanışı) -> fill mum 1 OPEN (spot 100, perp 102) @ t0+1h; close decision t0+3h -> fill mum 3 OPEN (spot 101, perp 101) @ t0+3h. Kapanışlar (spot/perp): mum0 100/102, mum1 100.5/101.5, mum2 101/101, mum3 101/101.
+
+```
+S1 funding yok
+   sıra: t0+1h mark(FLAT) -> fill open; t0+2h mark; t0+3h mark -> fill close; t0+4h mark
+   equity: 400 (FLAT) | 401 (spot 100+100.5; perp 200+(101.5-102)(-1)) | 402 | 402
+   final: spot_cash 201, collateral 201, total_pnl 2   [§19.10.1 C ile aynı; mevcut API yeter]
+S2 açıkken mumlar arası funding: t0+2h30m, rate 0.0001, reference 101
+   sıra: ... t0+2h mark; funding (short -1) cost = -1*101*0.0001 = -0.0101 (alınır);
+         t0+3h mark (funding dahil) -> fill close
+   equity t0+3h: 402.0101; final collateral 201.0101, final equity 402.0101
+   [mevcut API yeter; scheduler yeni]
+S3 kapanışla aynı anda funding: t0+3h, rate 0.0001, reference 101
+   sonuç KARARA BAĞLI:
+   - MS9 çok bacaklıya uygulanırsa (öneri, E1 gerekir): funding short'a -> +0.0101,
+     sonra kapanış; final 402.0101
+   - uygulanmazsa: ilk replay çalıştırmayı reddeder (mevcut §19.10.1 davranışı)
+   - "önce fill" alternatifi MS9'la çelişir (pozisyon 0 -> funding 0, final 402); önerilmez
+S4 açılışla aynı anda funding: t0+1h, rate 0.0001
+   MS9: pre-fill pozisyon 0 -> maliyet 0 (izde kayıt), sonra açılış; final 402
+   [ekonomi mevcut kuralla belirli; mevcut API ile yapılabilir]
+S5 aynı anda iki funding (t0+2h30m): Regular 0.0001 ve Special 0.00005, reference 101
+   (Regular < Special sırasıyla) maliyetler -0.0101 ve -0.00505 -> collateral 201.01515,
+   final 402.01515   [E1'e bağlı; E1 yoksa ret]
+S6 aynı canonical_key iki kez (aynı ya da çelişkili payload) -> girişte ret, hiçbir olay
+   uygulanmaz [mevcut kural]
+S7 run sınırları: event_time < ilk open -> ret; event_time == t0+4h (run_end) -> ret;
+   event_time == t0 (açılıştan önce, FLAT) -> maliyet 0 kaydı [mevcut kural]
+S8 kapanıştan sonra aralık içinde funding (FLAT_CLOSED) -> pozisyon 0, maliyet 0 kaydı
+   [ekonomi mevcut kural; kayıt biçimi taslak]
+S9 senkronizasyon: spot mum 2 eksik / perp farklı timeframe / sırasız veya duplicate ->
+   çalıştırmanın tamamı ret, hiçbir fill yok [her seri için mevcut kural; eşitlik yeni]
+S10 look-ahead: decision_time mumun availability'si değil (ör. t0+1h30m) -> ret;
+   son mumda intent (t0+4h) -> fill yok, "unexecuted_final_intent"; intent fiyat taşıyamaz
+   [BACKTEST_SPEC §9-11'in uzantısı]
+S11 determinizm: aynı girdiler + decimal_policy açık context -> özdeş trace ve
+   sonuç; ortam prec=4 iken açık context içinde yine özdeş [mevcut desen: §18.1,
+   test_explicit_research_context_makes_results_independent_of_ambient_context]
+S12 lifecycle: ikinci open intent, açılmadan close, 1:1 dışı miktar -> ret
+   (§19.10.1 API'si zaten reddeder)
+```
+
+#### 19.12.6 Açık kararlar
+
+```
+R1 iki serinin kısmi boşlukla çalışması (öneri: tam eşitlik şart; ilk replay'i ENGELLEMEZ)
+R2 MS9 aynı-an sırasının çok bacaklıya uzatılması + E1 (engellemez: onay yoksa
+   ilk replay aynı-an durumlarını reddeder)
+R3 run sonunda açık pair'in raporlanması (öneri: son mark; engellemez)
+R4 düz pozisyonda funding kayıt biçimi (engellemez)
+R5 warmup/evaluation_start (ilk replay'de yok; policy katmanıyla birlikte)
+K1–K7 (§19.11) ilk replay'i engellemez; §19.10.1 geçici sınırları geçerli kalır.
+```
+
+#### 19.12.7 Önerilen sonraki TEK implementasyon dilimi
+
+```
+Amaç: in-memory, store'suz çok bacaklı replay — iki mum serisi + deterministik
+  intent'ler + funding olayları -> MultiLegReplayResult; MS9 sırasıyla.
+Dosya sınırı: yeni backtest/multileg_replay.py; backtest/multileg.py'de yalnız E1
+  (additive: varsayılanlı sıralama anahtarı alanı; farklı zamanlı davranış aynı);
+  yeni test dosyası; spec §19.12 durum güncellemesi. Tek bacaklı motor, runner'lar,
+  CLI/rapor sözleşmeleri DEĞİŞMEZ.
+Önkoşul: R2 kararı (E1'i dahil et / etme). R1, R3, R4 öneriyle ilerleyebilir.
+Kabul: §19.12.5 S1–S12 elle türetilmiş Decimal değerlerle; §19.10.1'in 22 testi ve
+  tüm tek bacaklı testler değişmeden yeşil.
+```
+
+Durumlar: Multi-leg accounting first slice IMPLEMENTED + TESTED · Multi-leg replay contract DRAFT · Multi-leg replay implementation NOT IMPLEMENTED · Partial fill/legging PENDING · Margin/liquidation NOT MODELED · Basis/carry strategy evaluation PENDING · Faz 7 NOT COMPLETE · FAZ6C NOT COMPLETE · FAZ6D NOT STARTED.
