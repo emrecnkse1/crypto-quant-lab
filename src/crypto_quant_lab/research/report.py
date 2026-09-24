@@ -3,13 +3,27 @@
 A report is one JSON document plus a Markdown rendering of it:
 
     {
-      "schema_version": "crypto-quant-lab/research-report/v1",
+      "schema_version": "crypto-quant-lab/research-report/v2",
       "run_kind": ...,
       "status": "succeeded" | "failed",
+      "warning_count": n,              # checks with status "warning" (v2)
       "deterministic": {...},          # everything derived from config + inputs
       "deterministic_sha256": ...,     # SHA-256 of canonical JSON of "deterministic"
       "run_metadata": {...}            # wall clock, git revision, runtime — NOT hashed
     }
+
+Checks are {name, status, category, detail}. Status: passed | failed |
+skipped | warning. Category: execution | data_integrity | formula |
+descriptive | anomaly | general. "failed" in any category (and any error)
+makes the run "failed"; "warning" never does, but is counted in
+`warning_count` and printed, so a run with warnings is never presented as
+"everything passed". v1 (2026-09-23 reports) had no category, no
+"warning" status and no `warning_count`; v1 reports are kept as they were.
+
+`deterministic.run_input_sha256` fingerprints the run's INPUTS (effective
+config incl. the resolved Decimal context + logical input fingerprints);
+`deterministic_sha256` fingerprints the OUTPUT payload. Equal output hashes
+alone do not prove equal inputs.
 
 Serialization rules: Decimal -> string (never float), datetime -> ISO-8601 in
 UTC with explicit "+00:00" (naive rejected), float/NaN rejected, keys sorted,
@@ -43,10 +57,11 @@ from pathlib import Path
 from crypto_quant_lab import __version__
 from crypto_quant_lab.storage.sqlite_codec import datetime_to_epoch_us
 
-REPORT_SCHEMA_VERSION = "crypto-quant-lab/research-report/v1"
+REPORT_SCHEMA_VERSION = "crypto-quant-lab/research-report/v2"
 REPORT_JSON = "report.json"
 REPORT_MARKDOWN = "report.md"
-CHECK_STATUSES = ("passed", "failed", "skipped")
+CHECK_STATUSES = ("passed", "failed", "skipped", "warning")
+CHECK_CATEGORIES = ("execution", "data_integrity", "formula", "descriptive", "anomaly", "general")
 
 
 def to_jsonable(value: object) -> object:
@@ -87,10 +102,12 @@ def fingerprint(value: object) -> str:
     return sha256_hex(canonical_json(value))
 
 
-def check(name: str, status: str, detail: str) -> dict[str, str]:
+def check(name: str, status: str, detail: str, *, category: str = "general") -> dict[str, str]:
     if status not in CHECK_STATUSES:
         raise ValueError(f"check status must be one of {CHECK_STATUSES}, got {status!r}")
-    return {"name": name, "status": status, "detail": detail}
+    if category not in CHECK_CATEGORIES:
+        raise ValueError(f"check category must be one of {CHECK_CATEGORIES}, got {category!r}")
+    return {"name": name, "status": status, "category": category, "detail": detail}
 
 
 def _git(args: list[str], cwd: Path) -> str | None:
@@ -120,11 +137,11 @@ def run_metadata(created_at: datetime) -> dict[str, object]:
         "git_tracked_changes": None if status is None else bool(status),
         "package_version": __version__,
         "python_version": platform.python_version(),
-        "decimal_context": {
+        "ambient_decimal_context": {
             "prec": context.prec,
             "rounding": context.rounding,
-            "note": "engine accounting/costs use the process decimal context "
-            "(COST_MODEL_SPEC.md); the CLI never changes it",
+            "note": "the caller's context, recorded only for audit; computations run in a "
+            "fresh context built from deterministic.config.decimal_context",
         },
     }
 
@@ -147,6 +164,7 @@ def build_report(
         "schema_version": REPORT_SCHEMA_VERSION,
         "run_kind": run_kind,
         "status": "failed" if failed else "succeeded",
+        "warning_count": sum(1 for item in deterministic["checks"] if item["status"] == "warning"),
         "deterministic": payload,
         "deterministic_sha256": fingerprint(payload),
         "run_metadata": to_jsonable(run_metadata(created_at)),
@@ -158,10 +176,11 @@ def render_markdown(report: dict[str, object]) -> str:
     lines = [
         f"# Research report: {report['run_kind']}",
         "",
-        f"- Status: **{report['status']}**",
+        f"- Status: **{report['status']}** ({report['warning_count']} warning(s))",
         f"- Schema: `{report['schema_version']}`",
         f"- Deterministic SHA-256: `{report['deterministic_sha256']}`",
         f"- Config SHA-256: `{det.get('config_sha256')}`",
+        f"- Run input SHA-256 (config + logical inputs): `{det.get('run_input_sha256')}`",
         (
             f"- Git revision: `{report['run_metadata'].get('git_revision')}` "
             f"(tracked changes: {report['run_metadata'].get('git_tracked_changes')})"
@@ -171,7 +190,9 @@ def render_markdown(report: dict[str, object]) -> str:
         "## Checks",
         "",
     ]
-    lines += [f"- [{c['status']}] {c['name']}: {c['detail']}" for c in det["checks"]] or ["- none"]
+    lines += [
+        f"- [{c['status']}] ({c['category']}) {c['name']}: {c['detail']}" for c in det["checks"]
+    ] or ["- none"]
     lines += ["", "## Errors", ""]
     lines += [f"- {e}" for e in det["errors"]] or ["- none"]
     lines += ["", "## Results", "", "```json"]

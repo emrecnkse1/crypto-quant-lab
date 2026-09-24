@@ -16,7 +16,8 @@ responsibility, operating on the raw values these methods return.
 """
 
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -31,6 +32,11 @@ from crypto_quant_lab.storage.sqlite_codec import (
     decimal_to_text,
     epoch_us_to_datetime,
     text_to_decimal,
+)
+from crypto_quant_lab.storage.sqlite_readonly import (
+    connect_read_only,
+    read_snapshot,
+    require_tables,
 )
 
 _CREATE_EVENTS_TABLE_SQL = """
@@ -144,6 +150,36 @@ class SQLiteHistoricalFundingStore:
         except Exception:
             self._connection.close()
             raise
+
+    @classmethod
+    def open_read_only(cls, database_path: str | Path) -> "SQLiteHistoricalFundingStore":
+        """Open an EXISTING funding store for reading only (FUNDING_RESEARCH_SPEC.md Bölüm 18.2).
+
+        No table is created or migrated; missing file -> FileNotFoundError,
+        missing tables -> StorageError, schema mismatch -> DataCorruptionError.
+        Writes fail with StorageError because the connection refuses them.
+        """
+        connection = connect_read_only(database_path)
+        store = cls.__new__(cls)
+        store._connection = connection
+        try:
+            require_tables(
+                connection,
+                ("historical_funding_events", "historical_funding_coverage"),
+                Path(database_path).name,
+            )
+            store._validate_table_schema("historical_funding_events", _EXPECTED_EVENTS_SCHEMA)
+            store._validate_table_schema("historical_funding_coverage", _EXPECTED_COVERAGE_SCHEMA)
+        except Exception:
+            connection.close()
+            raise
+        return store
+
+    @contextmanager
+    def read_snapshot(self) -> Iterator[None]:
+        """Run the enclosed reads in one read transaction (one consistent state)."""
+        with read_snapshot(self._connection):
+            yield
 
     def _validate_table_schema(
         self, table_name: str, expected_schema: tuple[tuple[str, str, int, int], ...]

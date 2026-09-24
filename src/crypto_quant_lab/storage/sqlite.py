@@ -15,7 +15,8 @@ registered namespace can only be written through `write_ingestion_batch`.
 """
 
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -32,6 +33,11 @@ from crypto_quant_lab.storage.sqlite_codec import (
     decimal_to_text,
     epoch_us_to_datetime,
     text_to_decimal,
+)
+from crypto_quant_lab.storage.sqlite_readonly import (
+    connect_read_only,
+    read_snapshot,
+    require_tables,
 )
 
 _CREATE_TABLE_SQL = """
@@ -187,6 +193,39 @@ class SQLiteHistoricalCandleStore:
         except Exception:
             self._connection.close()
             raise
+
+    @classmethod
+    def open_read_only(cls, database_path: str | Path) -> "SQLiteHistoricalCandleStore":
+        """Open an EXISTING store for reading only (FUNDING_RESEARCH_SPEC.md Bölüm 18.2).
+
+        No table is created and nothing is migrated: a missing file raises
+        FileNotFoundError, missing tables raise StorageError, a mismatching
+        schema raises DataCorruptionError (same validation as the normal
+        constructor). Every write method fails on the returned store with
+        StorageError, because the connection itself refuses writes.
+        """
+        connection = connect_read_only(database_path)
+        store = cls.__new__(cls)
+        store._connection = connection
+        try:
+            require_tables(
+                connection,
+                ("historical_candles", "candle_datasets", "candle_coverage"),
+                Path(database_path).name,
+            )
+            store._validate_schema()
+            store._validate_extension_schema("candle_datasets", _EXPECTED_DATASETS_SCHEMA)
+            store._validate_extension_schema("candle_coverage", _EXPECTED_COVERAGE_SCHEMA)
+        except Exception:
+            connection.close()
+            raise
+        return store
+
+    @contextmanager
+    def read_snapshot(self) -> Iterator[None]:
+        """Run the enclosed reads in one read transaction (one consistent state)."""
+        with read_snapshot(self._connection):
+            yield
 
     def _validate_schema(self) -> None:
         try:

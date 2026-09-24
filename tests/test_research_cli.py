@@ -43,6 +43,7 @@ from crypto_quant_lab.research.report import (
     to_jsonable,
 )
 from crypto_quant_lab.research.usdm_perpetual import evaluate_usdm_perpetual_funding_research
+from crypto_quant_lab.storage.base import StorageError
 from crypto_quant_lab.storage.sqlite import SQLiteHistoricalCandleStore
 from crypto_quant_lab.validation.windows import TemporalWindow
 
@@ -269,12 +270,12 @@ def test_read_only_store_access_never_creates_or_migrates(tmp_path):
     legacy = tmp_path / "legacy.db"
     _legacy_db(legacy)
     before = legacy.read_bytes()
-    with pytest.raises(ValueError, match="lacks tables"):
+    with pytest.raises(StorageError, match="lacks tables"):
         cli.open_candle_store(legacy)
     assert legacy.read_bytes() == before
     garbage = tmp_path / "garbage.db"
     garbage.write_bytes(b"not sqlite at all" * 100)
-    with pytest.raises(ValueError, match="not a readable SQLite"):
+    with pytest.raises(StorageError, match="not a readable SQLite"):
         cli.sqlite_tables(garbage)
 
 

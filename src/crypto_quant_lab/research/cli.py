@@ -7,22 +7,23 @@ Commands (offline unless stated): `doctor`, `inspect`, `basis-report`,
 command `public-smoke --allow-network`. Every command only orchestrates
 production APIs — no formula, accounting or strategy logic lives here.
 
-Existing databases are only ever read: before a production store is opened,
-a read-only SQLite connection verifies that the file exists and already has
-every table the store would otherwise create, so opening it cannot add
-tables to a user database. Result bundles go to a NEW output directory
-(see research/report.py); nothing is overwritten.
+Input databases are opened through `open_read_only` (a `mode=ro` SQLite
+connection with `query_only`; no file, table or migration is ever created)
+and every store's queries and fingerprints run inside one read snapshot.
+Each computation runs inside a FRESH Decimal context built from the config's
+`decimal_context` (research/decimal_policy.py). Result bundles go to a NEW
+output directory (see research/report.py); nothing is overwritten.
 """
 
 import argparse
 import json
 import os
-import sqlite3
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from decimal import ROUND_HALF_EVEN, Context, Decimal
+from decimal import ROUND_HALF_EVEN, Context, Decimal, localcontext
 from pathlib import Path
 
 from crypto_quant_lab.backtest.costs import (
@@ -39,11 +40,8 @@ from crypto_quant_lab.funding.calculator import LinearFundingModel
 from crypto_quant_lab.funding.quality import build_funding_data_quality_report_from_store
 from crypto_quant_lab.funding.sqlite import SQLiteHistoricalFundingStore
 from crypto_quant_lab.market_data.timeframes import candle_duration
-from crypto_quant_lab.research.basis import (
-    CloseBasisHistory,
-    compare_with_official_basis,
-    load_close_basis_history,
-)
+from crypto_quant_lab.research.basis import CloseBasisHistory, load_close_basis_history
+from crypto_quant_lab.research.decimal_policy import build_context, normalize_decimal_context
 from crypto_quant_lab.research.diagnostics import diagnose_funding_research_trial
 from crypto_quant_lab.research.funding_carry import (
     funding_carry_candidate,
@@ -59,6 +57,7 @@ from crypto_quant_lab.research.report import (
     sha256_hex,
 )
 from crypto_quant_lab.research.usdm_perpetual import evaluate_usdm_perpetual_funding_research
+from crypto_quant_lab.storage.base import DataCorruptionError, StorageError
 from crypto_quant_lab.storage.datasets import (
     BINANCE,
     USDM_PERPETUAL,
@@ -68,6 +67,7 @@ from crypto_quant_lab.storage.datasets import (
     coverage_contains,
 )
 from crypto_quant_lab.storage.sqlite import SQLiteHistoricalCandleStore
+from crypto_quant_lab.storage.sqlite_readonly import connect_read_only, existing_tables
 from crypto_quant_lab.validation.metrics import compute_stage1_metrics, compute_stage2_metrics
 from crypto_quant_lab.validation.windows import TemporalWindow
 
@@ -75,9 +75,6 @@ CONFIG_VERSION = 1
 CANDLE_TABLES = ("historical_candles", "candle_datasets", "candle_coverage")
 FUNDING_TABLES = ("historical_funding_events", "historical_funding_coverage")
 PUBLIC_SMOKE_SYMBOLS = ("BTCUSDT", "ETHUSDT")
-PUBLIC_SMOKE_RATE_TOLERANCE = Decimal("0.0001")
-PUBLIC_SMOKE_TIMEOUT_SECONDS = 10.0
-PUBLIC_SMOKE_MAX_ATTEMPTS = 2
 _STATS = Context(prec=34, rounding=ROUND_HALF_EVEN)
 
 BASIS_DOES_NOT_PROVE = [
@@ -187,11 +184,18 @@ class ResearchConfig:
     as_of: datetime
     stores: dict[str, Path] = field(default_factory=dict)
     funding: FundingResearchConfig | None = None
+    decimal_context: dict = field(default_factory=lambda: normalize_decimal_context(None))
 
     def effective(self) -> dict:
-        """The config as recorded in reports: store paths reduced to file names."""
+        """The config as recorded in reports.
+
+        Store paths are reduced to file names; `decimal_context` is always the
+        RESOLVED context (the documented default when the config omits it), so
+        the report fingerprint changes whenever the arithmetic would.
+        """
         recorded = json.loads(json.dumps(self.raw))
         recorded["stores"] = {role: Path(path).name for role, path in self.raw["stores"].items()}
+        recorded["decimal_context"] = self.decimal_context
         return recorded
 
 
@@ -228,6 +232,15 @@ def parse_config(raw: dict, *, base_dir: Path) -> ResearchConfig:
     resolved = list(stores.values())
     if len(set(resolved)) != len(resolved):
         raise ConfigError("stores: two roles point to the same file")
+    existing = [path for path in resolved if path.is_file()]
+    for i, first in enumerate(existing):
+        for second in existing[i + 1 :]:
+            if os.path.samefile(first, second):
+                raise ConfigError("stores: two roles point to the same physical file (alias/link)")
+    try:
+        decimal_context = normalize_decimal_context(raw.get("decimal_context"))
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
 
     funding = None
     if "funding_research" in raw:
@@ -291,6 +304,7 @@ def parse_config(raw: dict, *, base_dir: Path) -> ResearchConfig:
         as_of=as_of,
         stores=stores,
         funding=funding,
+        decimal_context=decimal_context,
     )
 
 
@@ -313,37 +327,38 @@ def load_config(path: Path) -> ResearchConfig:
 
 
 def sqlite_tables(path: Path) -> set[str]:
-    """Table names of an EXISTING SQLite file, via a read-only connection (never creates)."""
-    if not path.is_file():
-        raise FileNotFoundError(f"store file does not exist: {path.name}")
-    uri = f"{path.resolve().as_uri()}?mode=ro"
-    connection = sqlite3.connect(uri, uri=True)
+    """Table names of an EXISTING SQLite file via a genuinely read-only connection."""
+    connection = connect_read_only(path)
     try:
-        rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
-    except sqlite3.DatabaseError as exc:
-        raise ValueError(f"{path.name} is not a readable SQLite database: {exc}") from exc
+        return existing_tables(connection)
     finally:
         connection.close()
-    return {row[0] for row in rows}
-
-
-def _require_tables(path: Path, required: tuple[str, ...]) -> None:
-    missing = [name for name in required if name not in sqlite_tables(path)]
-    if missing:
-        raise ValueError(
-            f"{path.name} lacks tables {missing}; it was not written by the provenance-aware "
-            "ingestion (legacy or foreign file) and is not opened, to avoid modifying it"
-        )
 
 
 def open_candle_store(path: Path) -> SQLiteHistoricalCandleStore:
-    _require_tables(path, CANDLE_TABLES)
-    return SQLiteHistoricalCandleStore(path)
+    """Read-only candle store: never creates the file, a table or a migration."""
+    return SQLiteHistoricalCandleStore.open_read_only(path)
 
 
 def open_funding_store(path: Path) -> SQLiteHistoricalFundingStore:
-    _require_tables(path, FUNDING_TABLES)
-    return SQLiteHistoricalFundingStore(path)
+    """Read-only funding store: never creates the file, a table or a migration."""
+    return SQLiteHistoricalFundingStore.open_read_only(path)
+
+
+@contextmanager
+def read_stores(*opened) -> Iterator[None]:
+    """Hold one read snapshot per store for the whole block, then close them all.
+
+    Each store is its own SQLite file, so each has its own snapshot; there is
+    no atomic snapshot ACROSS files. Every query and fingerprint of one store
+    inside the block comes from the same committed state of that store.
+    """
+    with ExitStack() as stack:
+        for store in opened:
+            stack.callback(store.close)
+        for store in opened:
+            stack.enter_context(store.read_snapshot())
+        yield
 
 
 def _require_store(config: ResearchConfig, role: str) -> Path:
@@ -362,6 +377,7 @@ class Section:
     inputs: list = field(default_factory=list)
     limitations: list = field(default_factory=list)
     does_not_prove: list = field(default_factory=list)
+    errors: list = field(default_factory=list)
 
 
 def _missing_open_times(store, dataset: CandleDataset, start: datetime, end: datetime) -> list:
@@ -424,6 +440,7 @@ def _candle_checks(role: str, entry: dict, expected: CandleDataset, store, start
                 f"{role}.provenance",
                 "failed",
                 f"namespace {list(expected.namespace)} has no registered provenance",
+                category="data_integrity",
             )
         )
     elif (registered["price_kind"], registered["source"]) != (expected.price_kind, expected.source):
@@ -433,11 +450,17 @@ def _candle_checks(role: str, entry: dict, expected: CandleDataset, store, start
                 "failed",
                 f"registered as {registered['price_kind']} from {registered['source']};"
                 f" expected {expected.price_kind}",
+                category="data_integrity",
             )
         )
     else:
         checks.append(
-            check(f"{role}.provenance", "passed", f"{expected.price_kind} from {expected.source}")
+            check(
+                f"{role}.provenance",
+                "passed",
+                f"{expected.price_kind} from {expected.source}",
+                category="data_integrity",
+            )
         )
     covered = coverage_contains(store.query_coverage(*expected.namespace, start, end), start, end)
     checks.append(
@@ -447,9 +470,47 @@ def _candle_checks(role: str, entry: dict, expected: CandleDataset, store, start
             "authoritative coverage contains [start, end)"
             if covered
             else "authoritative coverage does NOT contain [start, end)",
+            category="data_integrity",
         )
     )
     return checks
+
+
+def _funding_input(store, path: Path, symbol: str, start: datetime, end: datetime):
+    report = build_funding_data_quality_report_from_store(
+        store,
+        exchange=BINANCE,
+        market_type=USDM_PERPETUAL,
+        symbol=symbol,
+        requested_start=start,
+        requested_end=end,
+    )
+    events = store.query_events(
+        exchange=BINANCE,
+        market_type=USDM_PERPETUAL,
+        symbol=symbol,
+        start_time=start,
+        end_time=end,
+    )
+    rows = [
+        [
+            e.funding.event_time,
+            e.funding.funding_rate,
+            e.funding.reference_price,
+            e.funding.rate_type,
+        ]
+        for e in events
+    ]
+    entry = {
+        "role": "funding",
+        "file_name": path.name,
+        "requested_range": [start, end],
+        "event_count": len(rows),
+        "coverage_gaps": [list(gap) for gap in report.coverage_gaps],
+        "quality_status": report.overall_status,
+        "logical_fingerprint_sha256": fingerprint({"events": rows, "gaps": report.coverage_gaps}),
+    }
+    return entry, report, events
 
 
 def inspect_section(config: ResearchConfig) -> Section:
@@ -471,7 +532,7 @@ def inspect_section(config: ResearchConfig) -> Section:
             continue
         path = config.stores[role]
         store = open_candle_store(path)
-        try:
+        with read_stores(store):
             entry = candle_input(role, path, store, expected[role], config.start, config.end)
             entry["missing_open_times"] = _missing_open_times(
                 store, expected[role], config.start, config.end
@@ -480,60 +541,24 @@ def inspect_section(config: ResearchConfig) -> Section:
             section.checks += _candle_checks(
                 role, entry, expected[role], store, config.start, config.end
             )
-        finally:
-            store.close()
     if "funding" in config.stores:
         start, end = config.start, config.end
         if config.funding is not None:
             start, end = config.funding.coverage_start, config.funding.coverage_end
         store = open_funding_store(config.stores["funding"])
-        try:
-            report = build_funding_data_quality_report_from_store(
-                store,
-                exchange=BINANCE,
-                market_type=USDM_PERPETUAL,
-                symbol=config.symbol,
-                requested_start=start,
-                requested_end=end,
+        with read_stores(store):
+            entry, report, _ = _funding_input(
+                store, config.stores["funding"], config.symbol, start, end
             )
-            events = store.query_events(
-                exchange=BINANCE,
-                market_type=USDM_PERPETUAL,
-                symbol=config.symbol,
-                start_time=start,
-                end_time=end,
+        section.inputs.append(entry)
+        section.checks.append(
+            check(
+                "funding.quality",
+                "passed" if report.overall_status == "PASS" else "failed",
+                f"quality {report.overall_status}, {report.coverage_gap_count} coverage gap(s)",
+                category="data_integrity",
             )
-            rows = [
-                [
-                    e.funding.event_time,
-                    e.funding.funding_rate,
-                    e.funding.reference_price,
-                    e.funding.rate_type,
-                ]
-                for e in events
-            ]
-            section.inputs.append(
-                {
-                    "role": "funding",
-                    "file_name": config.stores["funding"].name,
-                    "requested_range": [start, end],
-                    "event_count": len(rows),
-                    "coverage_gaps": [list(gap) for gap in report.coverage_gaps],
-                    "quality_status": report.overall_status,
-                    "logical_fingerprint_sha256": fingerprint(
-                        {"events": rows, "gaps": report.coverage_gaps}
-                    ),
-                }
-            )
-            section.checks.append(
-                check(
-                    "funding.quality",
-                    "passed" if report.overall_status == "PASS" else "failed",
-                    f"quality {report.overall_status}, {report.coverage_gap_count} coverage gap(s)",
-                )
-            )
-        finally:
-            store.close()
+        )
     return section
 
 
@@ -588,15 +613,26 @@ BASIS_LIMITATIONS = [
 ]
 
 
-def basis_section(config: ResearchConfig) -> Section:
+def basis_history_and_section(config: ResearchConfig) -> tuple[CloseBasisHistory, Section]:
+    """Open both stores read-only, then query, fingerprint and pair inside their snapshots."""
     contract_path = _require_store(config, "contract")
     index_path = _require_store(config, "index")
+    if (
+        contract_path.is_file()
+        and index_path.is_file()
+        and os.path.samefile(contract_path, index_path)
+    ):
+        raise ConfigError("stores.contract and stores.index are the same physical file")
     contract = open_candle_store(contract_path)
-    index = open_candle_store(index_path)
     try:
-        section = Section(
-            limitations=list(BASIS_LIMITATIONS), does_not_prove=list(BASIS_DOES_NOT_PROVE)
-        )
+        index = open_candle_store(index_path)
+    except Exception:
+        contract.close()
+        raise
+    section = Section(
+        limitations=list(BASIS_LIMITATIONS), does_not_prove=list(BASIS_DOES_NOT_PROVE)
+    )
+    with read_stores(contract, index):
         for role, path, store, dataset in (
             (
                 "contract",
@@ -622,30 +658,33 @@ def basis_section(config: ResearchConfig) -> Section:
             start_time=config.start,
             end_time=config.end,
         )
-        section.results = basis_results(history, config.end)
-        section.checks.append(
-            check(
-                "basis.provenance_and_coverage",
-                "passed",
-                "both stores registered and cover [start, end)",
-            )
+    section.results = basis_results(history, config.end)
+    section.checks.append(
+        check(
+            "basis.provenance_and_coverage",
+            "passed",
+            "both stores registered and cover [start, end)",
+            category="data_integrity",
         )
-        gaps = (
-            len(history.contract_only_open_times)
-            + len(history.index_only_open_times)
-            + len(history.both_missing_open_times)
+    )
+    gaps = (
+        len(history.contract_only_open_times)
+        + len(history.index_only_open_times)
+        + len(history.both_missing_open_times)
+    )
+    section.checks.append(
+        check(
+            "basis.pairing_gaps",
+            "passed",
+            f"{gaps} unpaired slot(s) reported (not a failure; not filled)",
+            category="descriptive",
         )
-        section.checks.append(
-            check(
-                "basis.pairing_gaps",
-                "passed",
-                f"{gaps} unpaired slot(s) reported (not a failure; not filled)",
-            )
-        )
-        return section
-    finally:
-        contract.close()
-        index.close()
+    )
+    return history, section
+
+
+def basis_section(config: ResearchConfig) -> Section:
+    return basis_history_and_section(config)[1]
 
 
 def _cost_model(fr: FundingResearchConfig) -> CostModel:
@@ -698,23 +737,27 @@ def funding_section(config: ResearchConfig) -> Section:
     contract_path = _require_store(config, "contract")
     funding_path = _require_store(config, "funding")
     contract = open_candle_store(contract_path)
-    funding = open_funding_store(funding_path)
     try:
-        section = Section(
-            limitations=[
-                (
-                    "engine: single instrument, next-open fills, funding applied once by the "
-                    "replay engine (funding_required=True); decisions at candle close"
-                ),
-                (
-                    f"cost model: commission {fr.commission_rate}, half-spread "
-                    f"{fr.half_spread_rate}, slippage {fr.slippage_rate} per fill on notional "
-                    "(config assumptions, not verified exchange fees)"
-                ),
-                "diagnostic reasons are the policy's own rule branches; no risk filter exists",
-            ],
-            does_not_prove=list(FUNDING_DOES_NOT_PROVE),
-        )
+        funding = open_funding_store(funding_path)
+    except Exception:
+        contract.close()
+        raise
+    section = Section(
+        limitations=[
+            (
+                "engine: single instrument, next-open fills, funding applied once by the "
+                "replay engine (funding_required=True); decisions at candle close"
+            ),
+            (
+                f"cost model: commission {fr.commission_rate}, half-spread "
+                f"{fr.half_spread_rate}, slippage {fr.slippage_rate} per fill on notional "
+                "(config assumptions, not verified exchange fees)"
+            ),
+            "diagnostic reasons are the policy's own rule branches; no risk filter exists",
+        ],
+        does_not_prove=list(FUNDING_DOES_NOT_PROVE),
+    )
+    with read_stores(contract, funding):
         section.inputs.append(
             candle_input(
                 "contract",
@@ -734,33 +777,11 @@ def funding_section(config: ResearchConfig) -> Section:
             coverage_end=fr.coverage_end,
             publication_lag=fr.publication_lag,
         )
-        events = funding.query_events(
-            exchange=BINANCE,
-            market_type=USDM_PERPETUAL,
-            symbol=config.symbol,
-            start_time=fr.coverage_start,
-            end_time=fr.coverage_end,
+        entry, _, events = _funding_input(
+            funding, funding_path, config.symbol, fr.coverage_start, fr.coverage_end
         )
+        section.inputs.append(entry)
         rates = [e.funding.funding_rate for e in events]
-        section.inputs.append(
-            {
-                "role": "funding",
-                "file_name": funding_path.name,
-                "requested_range": [fr.coverage_start, fr.coverage_end],
-                "event_count": len(events),
-                "logical_fingerprint_sha256": fingerprint(
-                    [
-                        [
-                            e.funding.event_time,
-                            e.funding.funding_rate,
-                            e.funding.reference_price,
-                            e.funding.rate_type,
-                        ]
-                        for e in events
-                    ]
-                ),
-            }
-        )
         candidates = [
             funding_carry_candidate(
                 fr.candidate_id,
@@ -803,25 +824,24 @@ def funding_section(config: ResearchConfig) -> Section:
                     "rule replay target changes equal engine fill counts"
                     if consistent
                     else "rule replay disagrees with engine fill counts",
+                    category="formula",
                 )
             )
-        section.results = {
-            "funding_events_in_coverage": len(rates),
-            "funding_rate_min": min(rates) if rates else None,
-            "funding_rate_max": max(rates) if rates else None,
-            "runs": runs,
-        }
-        section.checks.append(
-            check(
-                "funding.provenance_and_coverage",
-                "passed",
-                "contract provenance, candle and funding coverage verified before any backtest",
-            )
+    section.results = {
+        "funding_events_in_coverage": len(rates),
+        "funding_rate_min": min(rates) if rates else None,
+        "funding_rate_max": max(rates) if rates else None,
+        "runs": runs,
+    }
+    section.checks.append(
+        check(
+            "funding.provenance_and_coverage",
+            "passed",
+            "contract provenance, candle and funding coverage verified before any backtest",
+            category="data_integrity",
         )
-        return section
-    finally:
-        contract.close()
-        funding.close()
+    )
+    return section
 
 
 # ---------------------------------------------------------------- running and reporting
@@ -832,6 +852,22 @@ def _sanitize(message: str) -> str:
     return message.replace(home, "~").replace(home.replace("\\", "/"), "~")
 
 
+def run_input_fingerprint(config_view: dict | None, inputs: list) -> str | None:
+    """SHA-256 over what determines a run: effective config + logical input fingerprints.
+
+    This identifies the INPUTS. `deterministic_sha256` identifies the OUTPUT
+    payload; equal output hashes alone do not prove the inputs were the same.
+    """
+    if config_view is None:
+        return None
+    return fingerprint(
+        {
+            "config": config_view,
+            "inputs": [[i["role"], i.get("logical_fingerprint_sha256")] for i in inputs],
+        }
+    )
+
+
 def run_to_bundle(
     run_kind: str,
     output: Path,
@@ -839,21 +875,30 @@ def run_to_bundle(
     *,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> tuple[Path, dict]:
-    """Run `build` inside a staging bundle; always commit a report (failed or succeeded)."""
+    """Run `build` inside a staging bundle; always commit a report (failed or succeeded).
+
+    If `build` raises, results are null and the error is recorded. If it
+    returns a section carrying its own errors (e.g. one symbol of a smoke
+    failed), its partial results are kept and the run is still "failed".
+    """
     bundle = OutputBundle(output)
     created_at = clock()
     config_view, config_sha, errors = None, None, []
     section = Section()
+    raised = False
     try:
         config_view, config_sha, section = build(bundle)
-    except Exception as exc:  # noqa: BLE001 - recorded as a failed run, re-raised below as exit 1
+    except Exception as exc:  # noqa: BLE001 - recorded as a failed run, exit code 1
+        raised = True
         errors.append(_sanitize(f"{type(exc).__name__}: {exc}"))
+    errors += [_sanitize(e) for e in section.errors]
     deterministic = {
         "config": config_view,
         "config_sha256": config_sha,
+        "run_input_sha256": run_input_fingerprint(config_view, section.inputs),
         "inputs": section.inputs,
         "checks": section.checks,
-        "results": section.results if not errors else None,
+        "results": None if raised else section.results,
         "errors": errors,
         "limitations": section.limitations,
         "does_not_prove": section.does_not_prove,
@@ -863,23 +908,23 @@ def run_to_bundle(
     return bundle.commit(), report
 
 
+def _in_config_context(config: ResearchConfig, make_section: Callable[[ResearchConfig], Section]):
+    """Run a section inside a FRESH context built from the config's decimal_context."""
+    with localcontext(build_context(config.decimal_context)):
+        return make_section(config)
+
+
 def _config_builder(config_path: Path, make_section: Callable[[ResearchConfig], Section]):
     def build(bundle: OutputBundle):
         config = load_config(config_path)
-        return config.effective(), config.sha256, make_section(config)
+        return config.effective(), config.sha256, _in_config_context(config, make_section)
 
     return build
 
 
-def offline_smoke_builder(bundle: OutputBundle):
+def _offline_smoke_section(config: ResearchConfig) -> Section:
     from crypto_quant_lab.research import offline_fixture as fx
 
-    fixture = fx.build_offline_fixture(bundle.staging / "fixture")
-    config_path = fixture.directory / "config.json"
-    config_path.write_text(
-        json.dumps(fixture.config, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    config = load_config(config_path)
     inspect, basis, funding = (
         inspect_section(config),
         basis_section(config),
@@ -902,7 +947,6 @@ def offline_smoke_builder(bundle: OutputBundle):
         + ["a passing offline smoke proves the pipeline wiring on synthetic data only"],
     )
     b = basis.results
-    expected = fx.EXPECTED_BASIS
     observed_basis = {
         "paired_observation_count": b["paired_observation_count"],
         "contract_only_open_times": b["contract_only_open_times"],
@@ -915,8 +959,9 @@ def offline_smoke_builder(bundle: OutputBundle):
     section.checks.append(
         check(
             "expectation.basis",
-            "passed" if observed_basis == expected else "failed",
+            "passed" if observed_basis == fx.EXPECTED_BASIS else "failed",
             f"observed {canonical_json(observed_basis)}",
+            category="formula",
         )
     )
     runs = funding.results["runs"]
@@ -933,169 +978,22 @@ def offline_smoke_builder(bundle: OutputBundle):
                 f"expectation.{name}",
                 "passed" if observed == list(expected_windows) else "failed",
                 f"observed {canonical_json(observed)}",
+                category="formula",
             )
         )
-    return config.effective(), config.sha256, section
+    return section
 
 
-def public_smoke_builder(symbols: tuple[str, ...], clock: Callable[[], datetime]):
-    """Opt-in network smoke: last 7 closed UTC days, contract + index + official basis."""
-    from crypto_quant_lab.data_quality.usdm_ingestion import (
-        ingest_binance_usdm_index_price_klines,
-        ingest_binance_usdm_perpetual_klines,
+def offline_smoke_builder(bundle: OutputBundle):
+    from crypto_quant_lab.research import offline_fixture as fx
+
+    fixture = fx.build_offline_fixture(bundle.staging / "fixture")
+    config_path = fixture.directory / "config.json"
+    config_path.write_text(
+        json.dumps(fixture.config, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    from crypto_quant_lab.market_data.binance_usdm import (
-        fetch_binance_usdm_index_price_klines,
-        fetch_binance_usdm_klines,
-    )
-    from crypto_quant_lab.market_data.binance_usdm_basis import (
-        check_official_basis_consistency,
-        fetch_binance_official_basis,
-    )
-
-    def build(bundle: OutputBundle):
-        now = clock()
-        end = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        start = end - timedelta(days=7)
-        effective = {
-            "symbols": list(symbols),
-            "timeframe": "1h",
-            "start": start,
-            "end": end,
-            "as_of": now,
-            "official_contract_type": "PERPETUAL",
-            "rate_tolerance": PUBLIC_SMOKE_RATE_TOLERANCE,
-            "http_timeout_seconds": str(PUBLIC_SMOKE_TIMEOUT_SECONDS),
-            "max_attempts": PUBLIC_SMOKE_MAX_ATTEMPTS,
-            "request_budget": "3 requests per symbol plus bounded retries",
-        }
-        section = Section(
-            limitations=list(BASIS_LIMITATIONS)
-            + [
-                (
-                    "official /futures/data/basis record at T is a snapshot at T; the derived close "
-                    "basis is the close of [T-1h, T) — differences are expected and measured"
-                ),
-                "the window depends on the run clock; as_of and window are recorded above",
-            ],
-            does_not_prove=list(BASIS_DOES_NOT_PROVE),
-        )
-        results = {}
-        for symbol in symbols:
-            workdir = bundle.staging / symbol
-            workdir.mkdir()
-            contract = SQLiteHistoricalCandleStore(workdir / "contract.db")
-            index = SQLiteHistoricalCandleStore(workdir / "index.db")
-            try:
-                for ingest, store, fetch, key in (
-                    (
-                        ingest_binance_usdm_perpetual_klines,
-                        contract,
-                        fetch_binance_usdm_klines,
-                        "symbol",
-                    ),
-                    (
-                        ingest_binance_usdm_index_price_klines,
-                        index,
-                        fetch_binance_usdm_index_price_klines,
-                        "pair",
-                    ),
-                ):
-
-                    def page(*, start_time_ms, end_time_ms, _fetch=fetch, _symbol=symbol):
-                        return _fetch(
-                            _symbol,
-                            "1h",
-                            start_time_ms=start_time_ms,
-                            end_time_ms=end_time_ms,
-                            limit=1000,
-                            timeout=PUBLIC_SMOKE_TIMEOUT_SECONDS,
-                        )
-
-                    ingest(
-                        store,
-                        **{key: symbol},
-                        timeframe="1h",
-                        requested_start=start,
-                        requested_end=end,
-                        as_of_time=now,
-                        fetch_page=page,
-                        max_attempts=PUBLIC_SMOKE_MAX_ATTEMPTS,
-                    )
-                config = parse_config(
-                    {
-                        "config_version": 1,
-                        "symbol": symbol,
-                        "timeframe": "1h",
-                        "start": start.isoformat(),
-                        "end": end.isoformat(),
-                        "as_of": now.isoformat(),
-                        "stores": {"contract": "contract.db", "index": "index.db"},
-                    },
-                    base_dir=workdir,
-                )
-            finally:
-                contract.close()
-                index.close()
-            basis = basis_section(config)
-            section.inputs += [dict(item, role=f"{symbol}.{item['role']}") for item in basis.inputs]
-            contract = open_candle_store(workdir / "contract.db")
-            index = open_candle_store(workdir / "index.db")
-            try:
-                history = load_close_basis_history(
-                    contract, index, symbol=symbol, timeframe="1h", start_time=start, end_time=end
-                )
-            finally:
-                contract.close()
-                index.close()
-            official = fetch_binance_official_basis(
-                symbol,
-                "PERPETUAL",
-                "1h",
-                start_time=start,
-                end_time=end,
-                as_of_time=now,
-                timeout=PUBLIC_SMOKE_TIMEOUT_SECONDS,
-            )
-            consistency = [check_official_basis_consistency(r) for r in official]
-            comparison = compare_with_official_basis(
-                history.visible_at(end), official, rate_tolerance=PUBLIC_SMOKE_RATE_TOLERANCE
-            )
-            summary = {k: v for k, v in basis.results.items() if k != "observations"}
-            summary["official"] = {
-                "record_count": len(official),
-                "algebraically_consistent": sum(1 for c in consistency if c.is_consistent),
-                "comparable_count": comparison.comparable_count,
-                "official_only_timestamps": list(comparison.official_only_timestamps),
-                "observation_only_close_times": list(comparison.observation_only_close_times),
-                "max_abs_rate_difference": comparison.max_abs_rate_difference,
-                "mean_abs_rate_difference": comparison.mean_abs_rate_difference,
-                "rate_tolerance": comparison.rate_tolerance,
-                "exceeding_timestamps": list(comparison.exceeding_timestamps),
-            }
-            results[symbol] = summary
-            section.checks.append(
-                check(
-                    f"{symbol}.official_algebra",
-                    "passed"
-                    if len(official) == summary["official"]["algebraically_consistent"]
-                    else "failed",
-                    f"{summary['official']['algebraically_consistent']}/{len(official)} consistent",
-                )
-            )
-            section.checks.append(
-                check(
-                    f"{symbol}.within_rate_tolerance",
-                    "passed" if not comparison.exceeding_timestamps else "failed",
-                    f"{len(comparison.exceeding_timestamps)} of "
-                    f"{comparison.comparable_count} comparisons exceed {PUBLIC_SMOKE_RATE_TOLERANCE} "
-                    "(snapshot vs close semantics; tolerance is not relaxed)",
-                )
-            )
-        section.results = results
-        return to_view(effective), sha256_hex(canonical_json(effective)), section
-
-    return build
+    config = load_config(config_path)
+    return config.effective(), config.sha256, _in_config_context(config, _offline_smoke_section)
 
 
 def to_view(value: dict) -> dict:
@@ -1120,6 +1018,7 @@ def doctor(config_path: Path, output: Path | None = None) -> list[tuple[str, str
         add("FAIL", "config", f"{exc} — fix the field in {Path(config_path).name}")
         return lines
     add("PASS", "config", f"valid; sha256 {config.sha256}")
+    add("PASS", "decimal_context", canonical_json(config.decimal_context))
     if output is not None:
         output = Path(output).resolve()
         if output.exists():
@@ -1152,7 +1051,7 @@ def doctor(config_path: Path, output: Path | None = None) -> list[tuple[str, str
         required = FUNDING_TABLES if role == "funding" else CANDLE_TABLES
         try:
             tables = sqlite_tables(path)
-        except ValueError as exc:
+        except StorageError as exc:
             add("FAIL", f"{role}.schema", str(exc))
             continue
         missing = [t for t in required if t not in tables]
@@ -1164,41 +1063,35 @@ def doctor(config_path: Path, output: Path | None = None) -> list[tuple[str, str
                 "provenance-aware store (doctor does not migrate)",
             )
             continue
-        add("PASS", f"{role}.schema", "required tables present")
-        if role == "funding":
-            continue
-        store = SQLiteHistoricalCandleStore(path)  # all tables exist: opening creates nothing
         try:
+            store = open_funding_store(path) if role == "funding" else open_candle_store(path)
+        except (StorageError, DataCorruptionError) as exc:
+            add("FAIL", f"{role}.schema", str(exc))
+            continue
+        add("PASS", f"{role}.schema", "required tables present and valid (read-only connection)")
+        with read_stores(store):
+            if role == "funding":
+                if config.funding is not None:
+                    report = build_funding_data_quality_report_from_store(
+                        store,
+                        exchange=BINANCE,
+                        market_type=USDM_PERPETUAL,
+                        symbol=config.symbol,
+                        requested_start=config.funding.coverage_start,
+                        requested_end=config.funding.coverage_end,
+                    )
+                    add(
+                        "PASS" if report.overall_status == "PASS" else "FAIL",
+                        "funding.coverage",
+                        f"quality {report.overall_status}, {report.coverage_gap_count} gap(s) in "
+                        "[funding_coverage_start, funding_coverage_end)",
+                    )
+                continue
             entry = candle_input(role, path, store, expected[role], config.start, config.end)
             for item in _candle_checks(
                 role, entry, expected[role], store, config.start, config.end
             ):
                 add("PASS" if item["status"] == "passed" else "FAIL", item["name"], item["detail"])
-        finally:
-            store.close()
-    if (
-        "funding" in existing
-        and config.funding is not None
-        and "funding.schema" in {n for s, n, _ in lines if s == "PASS"}
-    ):
-        store = SQLiteHistoricalFundingStore(config.stores["funding"])
-        try:
-            report = build_funding_data_quality_report_from_store(
-                store,
-                exchange=BINANCE,
-                market_type=USDM_PERPETUAL,
-                symbol=config.symbol,
-                requested_start=config.funding.coverage_start,
-                requested_end=config.funding.coverage_end,
-            )
-        finally:
-            store.close()
-        add(
-            "PASS" if report.overall_status == "PASS" else "FAIL",
-            "funding.coverage",
-            f"quality {report.overall_status}, {report.coverage_gap_count} gap(s) in "
-            "[funding_coverage_start, funding_coverage_end)",
-        )
     return lines
 
 
@@ -1240,6 +1133,10 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "doctor":
@@ -1252,23 +1149,26 @@ def main(argv: list[str] | None = None) -> int:
             "public-smoke uses the network; re-run with --allow-network to confirm", file=sys.stderr
         )
         return 2
+    if args.command == "public-smoke":
+        from crypto_quant_lab.research.public_smoke import public_smoke_builder
+
     builders = {
         "inspect": lambda: _config_builder(args.config, inspect_section),
         "basis-report": lambda: _config_builder(args.config, basis_section),
         "funding-research": lambda: _config_builder(args.config, funding_section),
         "offline-smoke": lambda: offline_smoke_builder,
-        "public-smoke": lambda: public_smoke_builder(
-            tuple(args.symbol or ["BTCUSDT"]), lambda: datetime.now(UTC)
-        ),
+        "public-smoke": lambda: public_smoke_builder(tuple(args.symbol or ["BTCUSDT"]), _now),
     }
     try:
         path, report = run_to_bundle(args.command, args.output, builders[args.command]())
     except (FileExistsError, FileNotFoundError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    print(f"{report['status']}: {path}")
+    warnings = report["warning_count"]
+    suffix = f" with {warnings} warning(s) — read them" if warnings else ""
+    print(f"{report['status']}{suffix}: {path}")
     for item in report["deterministic"]["checks"]:
-        print(f"  [{item['status']}] {item['name']}: {item['detail']}")
+        print(f"  [{item['status']}] ({item['category']}) {item['name']}: {item['detail']}")
     for error in report["deterministic"]["errors"]:
         print(f"  error: {error}")
     return 0 if report["status"] == "succeeded" else 1
