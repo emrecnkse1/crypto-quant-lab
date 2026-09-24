@@ -54,3 +54,28 @@ Kesinti sonrası devam için tek kaynak. Tarihsel bir kayıttır; güncel durum 
 - Gece çıktıları (offline smoke denemeleri, public smoke paketi `public_smoke/`): oturum scratchpad'i `night/` — repo dışı, commit edilmez.
 - Önceki basis smoke (§15.9): scratchpad `smoke3/` (config, script, hash'ler, `out/` DB'leri ve rapor) — mevcut.
 - Commit edilmemiş iş: yok (final commit sonrası).
+
+---
+
+## Devam oturumu (2026-09-24) — güvenilirlik düzeltmeleri + çok bacaklı taslak
+
+Yukarıdaki gece kaydı tarihseldir ve değiştirilmedi. Bu bölüm sonraki oturumu kaydeder.
+
+- Başlangıç: HEAD `8f657a0`, origin ile 0/0; `pytest -q` 2483 passed; ruff/format temiz (148 dosya).
+- Gece "kritik karar" maddeleri bu oturumda ele alındı:
+  1. Decimal context → araştırma sınırında açık run girdisi yapıldı (FUNDING_RESEARCH_SPEC §18.1); motor/COST_MODEL_SPEC değişmedi.
+  2. Public smoke tolerans kontrolü → kullanıcı kararıyla betimsel **warning** (rapor v2, §18.3); tolerans 1 bp aynen.
+  3. ETH 7 aşım → post-hoc teşhis edildi (§18.4): fark index kapanış→açılış sıçramasından; mekanizma belgelenmemiş.
+- Kod commit'i `644f66b` (push edildi): `decimal_policy.py`, `storage/sqlite_readonly.py`, store'lara additive `open_read_only`/`read_snapshot`, `public_smoke.py`, rapor v2; testler `test_research_reliability.py` (19) ve `test_public_smoke.py` (11); tam suite 2513 passed.
+- Dokümanlar: FUNDING_RESEARCH_SPEC §18 (düzeltmeler + ETH teşhisi) ve §19 (çok bacaklı muhasebe/execution TASLAĞI — DRAFT, implementasyon yok), ROADMAP, runbook (v2 durum sözleşmesi, `decimal_context`, salt okunur erişim, yeni hata satırları).
+- Runbook komutları PowerShell'de yeniden çalıştırıldı: offline-smoke, doctor, inspect, basis-report, funding-research exit 0; public-smoke opt-in olmadan exit 2; girdi dosyaları (ad, boyut, mtime) değişmedi; rapor şeması v2.
+- ETH teşhisi için tek sınırlı read-only istek yapıldı (resmî basis, ETHUSDT, 2026-09-24T12:49Z); başka ağ çağrısı yok. Teşhis çıktısı: scratchpad `night/eth_diagnosis.json`.
+
+### Açık kritik kararlar (kullanıcıda)
+
+- FUNDING_RESEARCH_SPEC §19.11 K1–K7 (margin/likidasyon, hedge oranı, legging politikası, spot short/borrow, lot/tick yuvarlama, sonuç tipi, cüzdan transfer modeli).
+- Index kapanış→açılış sıçramasının mekanizması belgelenmemiş; close basis mı open-snapshot basis mı araştırma feature'ı olarak tercih edileceği bir araştırma kararıdır (bu oturumda değiştirilmedi).
+
+### Sonraki güvenli adım
+
+`.\.venv\Scripts\python.exe -m crypto_quant_lab.research offline-smoke --output "$env:TEMP\cql\offline-smoke-N"`; ardından §19 kararları verilince §19.10'daki ilk dilim.

@@ -1,6 +1,6 @@
 # FUNDING_RESEARCH_SPEC
 
-Bu doküman, Faz 7 — İlk Funding/Basis araştırmasının **ilk çalıştırılabilir, leakage-safe dikey dilimini** (§1–§9) ve **ikinci dikey dilimini** — USDⓈ-M perpetual kline ingestion, mekanik market provenance'ı, gerçek veri smoke run'ı (§10–§14) — ve **üçüncü dikey dilimini** — USDⓈ-M index-price ingestion, zaman güvenli close basis, resmî basis çapraz kontrolü (§15–§16) — tanımlar ve kapatır; §17 araştırma operasyon katmanını ve güncel durum özetini içerir. Faz 7'nin tamamı bu dilimlerle TAMAMLANMIŞ SAYILMAZ.
+Bu doküman, Faz 7 — İlk Funding/Basis araştırmasının **ilk çalıştırılabilir, leakage-safe dikey dilimini** (§1–§9) ve **ikinci dikey dilimini** — USDⓈ-M perpetual kline ingestion, mekanik market provenance'ı, gerçek veri smoke run'ı (§10–§14) — ve **üçüncü dikey dilimini** — USDⓈ-M index-price ingestion, zaman güvenli close basis, resmî basis çapraz kontrolü (§15–§16) — tanımlar ve kapatır; §17 araştırma operasyon katmanını, §18 onun güvenilirlik düzeltmelerini ve ETH teşhisini, §19 çok bacaklı muhasebe/execution TASLAĞINI (DRAFT) içerir. Faz 7'nin tamamı bu dilimlerle TAMAMLANMIŞ SAYILMAZ.
 
 ## 1. Başlangıç Koşulu ve Kapsam
 
@@ -787,7 +787,7 @@ Kanıt: `tests/test_usdm_index_basis.py` (72 test, tümü PASS); `tests/test_usd
 
 ## 16. Sıradaki Somut İş
 
-[2026-09-24 itibarıyla hâlâ geçerli; §17 operasyon paketi bunu değiştirmedi.]
+[2026-09-24 itibarıyla hâlâ geçerli; §17 operasyon paketi bunu değiştirmedi. Kodla eşleştirilmiş tasarım taslağı §19'dadır (DRAFT, kilitli değil; implementasyon yok).]
 
 Çok bacaklı (trade edilebilir Binance Spot bacağı + USDⓈ-M perpetual bacağı) muhasebe/execution sözleşmesinin yazılması: iki fill akışı, bacak başına maliyet, yalnız perpetual bacağında funding, hedge oranı, senkron execution/legging varsayımı, margin/liquidation sınırı ve portföy equity'si — mevcut tek bacaklı motor kontratını bozmadan. Bu yapılmadan gerçek basis/carry hipotezi sınanamaz.
 
@@ -909,5 +909,303 @@ Faz 7: funding temeli, contract-trade ingestion, index-price/close-basis
        index trade edilebilir bacak değil; gerçek basis/carry hedge'i yok.
 Sıradaki somut iş: §16 (çok bacaklı muhasebe/execution sözleşmesi) — değişmedi.
 ```
+
+[2026-09-24 sonrası: §18 güvenilirlik düzeltmeleri tamamlandı; §16 için taslak §19'da, karar bekliyor.]
 Bölüm 8, 13 ve 15.10'daki test sayıları (2320, 2367, 2439) o dilimlerin
 tarihindeki anlık görüntülerdir; güncel sayı `docs/NIGHT_CHECKPOINT.md`'dedir.
+
+## 18. Araştırma Operasyon Katmanı Güvenilirlik Düzeltmeleri (2026-09-24)
+
+**Durum:** tamamlandı (commit `644f66b`). §17'deki tarihsel sonuçlar değiştirilmedi; bu bölüm onların üzerine gelen düzeltmeleri kaydeder.
+
+### 18.1 Açık Decimal sözleşmesi
+
+```
+Deney (kanıt): offline fixture'da funding-research bölümü ortam context'i
+  default iken final equity 999.80500; ortam prec=5 / prec=4 ROUND_DOWN /
+  prec=3 ROUND_UP iken motor "total_pnl consistency invariant violated"
+  hatası verdi; trap Inexact veya Rounded (prec 28) sonucu değiştirmedi.
+  İlk yuvarlama: backtest/accounting.py apply_cash_cost (replay'in funding
+  sweep'inde nakit - funding maliyeti; 999.805 altı basamak ister).
+Karar: motor ve COST_MODEL_SPEC §20 ("konfigüre edilmiş Decimal context")
+  DEĞİŞMEDİ. Context araştırma orchestration sınırında bir RUN GİRDİSİ oldu:
+  research/decimal_policy.py — config'teki opsiyonel `decimal_context`
+  {prec, rounding, Emin, Emax, capitals, clamp, traps} doğrulanır, her
+  hesaplama bundan kurulan TAZE Context (flags boş) ile localcontext içinde
+  çalışır; çağıranın context'i değişmez. Flags konfigürasyon değildir.
+Varsayılan (config'te alan yoksa): Python'un belgelenmiş DefaultContext'i,
+  alan alan yazılmış — prec 28, ROUND_HALF_EVEN, Emin -999999, Emax 999999,
+  capitals 1, clamp 0, traps {InvalidOperation, DivisionByZero, Overflow}.
+  Motorun tüm test suite'i bu context'te koşar; prec/rounding/E-sınırları
+  VALIDATION_SPEC §15.7 metrik context'iyle aynıdır. Ortam durumundan
+  OKUNMAZ.
+Sürüm uyumluluğu: config_version 1 korunur; `decimal_context` opsiyoneldir.
+  Alan içermeyen eski config'ler varsayılanla, yani önceki CLI sürecinin
+  fiilen kullandığı context ile çalışır. Raporun config'ine her zaman
+  ÇÖZÜLMÜŞ context yazılır.
+Basis ve metrik modüllerinin özel context'leri aynen korunur.
+Parmak izleri: deterministic.run_input_sha256 = SHA-256(etkin config +
+  girdilerin mantıksal parmak izleri) — GİRDİ kimliği; deterministic_sha256
+  = çıktı payload'unun hash'i. Çıktı hash eşitliği tek başına girdi
+  eşitliğini kanıtlamaz. Test: düşmanca ortam context'inde (prec 5,
+  ROUND_DOWN, Inexact+Rounded trap) offline-smoke aynı sonucu ve aynı iki
+  hash'i verir; config prec 50 aynı ekonomik sonucu farklı girdi hash'iyle,
+  config prec 5 motor hatasıyla failed rapor verir.
+```
+
+### 18.2 Gerçek salt okunur store erişimi
+
+```
+Önceki durum (koddan doğrulandı): CLI read-only bağlantıyla tablo varlığını
+  denetleyip ardından NORMAL (yazılabilir) production store'u açıyordu;
+  garanti "CREATE TABLE IF NOT EXISTS no-op" ve bayt eşitliğine dayanıyordu.
+Yeni (additive; normal constructor ve ingestion davranışı değişmedi):
+  storage/sqlite_readonly.py — connect_read_only: `file:` URI, mode=ro,
+    yol yüzde-kodlanır (boşluk, Unicode, `#`, `%`, `&`, `=` harfiyen),
+    PRAGMA query_only=ON, isolation_level=None; olmayan dosya
+    FileNotFoundError (yaratılmaz); immutable=1 KULLANILMAZ (DB canlı olabilir).
+  SQLiteHistoricalCandleStore.open_read_only / SQLiteHistoricalFundingStore
+    .open_read_only: şema başlatma yok; eksik tablo -> StorageError;
+    uyumsuz şema -> DataCorruptionError (constructor ile aynı doğrulama);
+    her yazma "readonly" StorageError verir.
+  read_snapshot(): store başına tek okuma işlemi (BEGIN ... ROLLBACK). WAL'da
+    snapshot izolasyonu (eşzamanlı commit görünmez), rollback-journal'da
+    SHARED kilit yazanı bekletir; kilit 5 sn'de alınamazsa StorageError —
+    tutarsız okuma yapılmaz. Dosyalar arası atomik snapshot YOKTUR; her
+    store'un sorguları ve parmak izi aynı commit durumundan gelir.
+  CLI (inspect, basis-report, funding-research, doctor) yalnız bu yolu
+    kullanır; aynı fiziksel dosyanın hard-link/yol alias'ı config'te
+    reddedilir (os.path.samefile).
+Testler: yazma/CREATE reddi, eksik yolda dosya yaratılmaması, eski/yabancı
+  şemanın değişmemesi, okuyucu açıkken normal yazmanın sürmesi, WAL
+  snapshot'ı, rollback modunda yazanın bloklanması, özel karakterli yol,
+  komutlardan sonra girdi DB bayt+mtime eşitliği ve -wal/-shm/-journal
+  dosyası oluşmaması.
+```
+
+### 18.3 Public smoke durum sözleşmesi (rapor şeması v2)
+
+```
+Doğrulama (koddan): karşılaştırma resmî timestamp T ile close_time == T olan
+  gözlemi eşler; resmî taraf T'deki snapshot (futuresPrice/indexPrice),
+  yerel taraf [T-1h, T) kapanışıdır; oran farkı close_basis_rate −
+  basis/indexPrice (34 basamak). 1 bp tolerans DEĞİŞMEDİ.
+Rapor v2: kontrol {name, status, category, detail}; status passed | failed |
+  skipped | warning; category execution | data_integrity | formula |
+  descriptive | anomaly | general; üst düzeyde warning_count.
+  "failed" (her kategoride) veya hata -> rapor failed, exit 1.
+  "warning" raporu düşürmez (exit 0) ama sayılır, stdout'ta
+  "succeeded with N warning(s)" yazılır ve Markdown'da görünür.
+Sembol başına kontroller: execution (HTTP/API hatası, 429 dahil; timeout
+  sonrası sınırlı retry tükenmesi; parse; istek bütçesi; provenance/coverage
+  -> failed), candles_complete ve official_records_complete
+  (data_integrity, eksikse failed), official_algebra (formula, tutarsızsa
+  failed), official_open_snapshot (anomaly, resmî fiyat T'deki mum
+  açılışına eşit değilse warning), close_vs_snapshot_tolerance
+  (descriptive, aşım varsa warning; tüm aşım zamanları listelenir).
+Bir sembol başarısızsa hatası kaydedilir, diğer sembolün sonuçları korunur,
+  rapor failed kalır. İstek bütçesi sembol başına 6 (3 uç nokta x 2 deneme),
+  aşılırsa ek istek gönderilmeden durur.
+v1 raporları (2026-09-23 gecesi, §17.7) olduğu gibi kalır; o raporun
+  "failed" durumu v1 sözleşmesine göre doğruydu.
+Testler: mocked transport ile temiz akış, betimsel aşım, anomali, cebirsel
+  tutarsızlık, eksik mum, HTTP 500, 429, timeout/retry tükenmesi, bütçe,
+  iki sembolden birinin başarısızlığı, CLI exit kodları ve üzerine
+  yazmama; beklenen değerler elle türetildi.
+```
+
+### 18.4 ETHUSDT'deki 7 aşımın teşhisi (POST-HOC)
+
+```
+Girdi: gece artifact'leri (night/public_smoke/ETHUSDT/contract.db, index.db;
+  read-only açıldı) + resmî kayıtlar için TEK sınırlı read-only istek
+  (2026-09-24T12:49Z; gece yanıtı saklanmamıştı). Yeniden çekilen kayıtlar
+  artifact mumlarıyla aynı 7 aşım zamanını üretti; bu, gece yanıtının
+  birebir aynısı olduğunu KANITLAMAZ, yalnız tutarlıdır.
+Bütünlük: 168/168 contract ve index mumu, boşluk/hizalama sorunu yok;
+  resmî 168 kaydın 168'inde futuresPrice = contract open(T) ve
+  indexPrice = index open(T).
+Ayrıştırma: close_basis − official_basis = (C_close(T-1h) − F(T)) −
+  (I_close(T-1h) − I(T)), F = futuresPrice, I = indexPrice.
+  T (UTC)           basis farkı  contract bileşeni  index bileşeni  oran farkı
+  09-16 11:00        0.62860465        0.00          -0.62860465    0.000261348
+  09-16 15:00        0.39488373        0.00          -0.39488373    0.000165287
+  09-16 19:00        0.42372093       -0.01          -0.43372093    0.000176661
+  09-16 23:00        0.29604651        0.00          -0.29604651    0.000123681
+  09-17 15:00       -0.27116279       -0.01           0.26116279   -0.000110083
+  09-17 16:00        0.26581396       -0.01          -0.27581396    0.000107582
+  09-17 17:00        0.37953488        0.00          -0.37953488    0.000153639
+  (index bileşeni = I_close(T-1h) − I_open(T); contract bileşeni en fazla 1 tick)
+Yuvarlama: karşılaştırma resmî basisRate'i değil basis/indexPrice'ı kullanır;
+  basisRate'in 4 ondalık gösterim artığı (en fazla 0.0000485) farka girmez.
+Bulgu: 7 aşımın tamamında fark, index mumunun kapanışı ile bir sonraki index
+  mumunun açılışı arasındaki sıçramadan gelir (0.26–0.63); contract tarafı
+  0 veya 1 tick. BTC teşhisi (§15.9) kopyalanmadı; aynı sonuç ETH verisinden
+  bağımsız olarak elde edildi.
+Belirsizlik: index kline'ın kapanış/açılış değerlerinin hangi örneklerden
+  üretildiği resmî olarak belgelenmemiştir; sıçramanın mekanizması
+  AÇIKLANMADI, yalnız ölçüldü.
+```
+
+## 19. Çok Bacaklı Muhasebe/Execution — TASLAK (DRAFT, LOCKED DEĞİL)
+
+**Durum:** DRAFT. Bu bölüm §16'nın tasarım taslağıdır; implementasyon yoktur, hiçbir karar kilitlenmemiştir. Örnekler tasarım örnekleridir; çalışan motor veya kârlılık kanıtı değildir. Borsa kuralına dayanan sayısal değer (marj oranları, likidasyon formülü, spot borç faizi, fee seviyeleri) BURADA İDDİA EDİLMEZ; ilgili yerler açık karar olarak işaretlidir.
+
+### 19.1 Mevcut kod (tekrar tasarlanmaz)
+
+```
+backtest/accounting.py   AccountState(cash, position_quantity, average_entry_price,
+                         realized_pnl); apply_fill (açılış/tam kapanış/tam dönüş);
+                         apply_cash_cost; unrealized_pnl; equity = cash + qty * mark.
+backtest/execution.py    target_quantity_for (LONG/FLAT/SHORT -> ±qty), bir sonraki
+                         mumun OPEN'ında execute_target_on_next_candle.
+backtest/costs.py        CostModel(quantity, execution_price) -> Decimal; Composite.
+funding/calculator.py    LinearFundingModel: cost = signed_qty * reference_price * rate
+                         (pozitif = nakit çıkışı; FUNDING_SPEC §4.3, Binance tanımı §3).
+backtest/replay.py       tek sembol; funding sweep fill'den önce, fill öncesi
+                         pozisyonla ("event_time <= mark_time"); son mumda fill yok.
+validation/metrics.py    Stage-1/2 yalnız BacktestResult'ın equity_curve'ünü okur.
+storage/datasets.py      CandleDataset: spot_trade, contract_trade, index_price ... —
+                         veri rolleri zaten ayrık.
+```
+Mevcut tek bacaklı motorda perpetual, spot gibi tam notional nakitle alınıp satılır (`cash -= qty * price`); equity sayısal olarak doğru PnL verir ama nakit bakiyesi notional ile şişer/eksilir (§19.5 Örnek 1).
+
+### 19.2 Enstrüman ve veri rolleri
+
+```
+Trade edilebilir bacaklar (önerilen kimlik): (exchange, market_type, symbol)
+  spot bacağı:      ("binance", "spot", "BTCUSDT")            fiyat: spot_trade klines
+  perpetual bacağı: ("binance", "usdm_perpetual", "BTCUSDT")  fiyat: contract_trade klines
+Veri rolleri (trade EDİLEMEZ): index_price (close basis feature'ı, §15),
+  mark_price (funding referansı; resmî funding kaydındaki markPrice zaten
+  saklanıyor; mark klines ingestion yok). Hiçbiri fill fiyatı olamaz.
+```
+
+### 19.3 Önerilen ledger ayrımı
+
+```
+LegFill (bacak başına ayrı kayıt): leg_id, time, signed_quantity,
+  execution_price, cost, fill_state (filled / partial / unfilled).
+SpotLedger: spot_cash, spot_quantity (>= 0 varsayılan), average_entry,
+  realized_pnl; değer = spot_cash + spot_quantity * spot_mark.
+  (Mevcut AccountState/apply_fill bu semantiği zaten taşır -> yeniden kullanım.)
+PerpLedger: collateral (cüzdan bakiyesi), perp_quantity (işaretli),
+  average_entry, realized_pnl; değer = collateral + (mark − entry) * qty.
+  Notional HİÇBİR ZAMAN nakde/collateral'a eklenmez; fill yalnız fee'yi
+  collateral'dan düşer, kapanışta gerçekleşen PnL collateral'a yazılır.
+  (apply_fill perp için doğrudan kullanılamaz: cash −= qty * price yapar;
+  ayrı, küçük bir perp geçiş fonksiyonu gerekir.)
+Funding: yalnız PerpLedger'a, LinearFundingModel ile, settlement anında
+  tutulan perp pozisyonuyla, tam bir kez (mevcut sweep kuralı).
+Maliyet: bacak başına ayrı CostModel (spot ve perp fee'leri farklı olabilir);
+  mevcut CostModel arayüzü aynen kullanılabilir.
+Portföy equity = SpotLedger değeri + PerpLedger değeri. Aradaki transferler
+  (spot_cash <-> collateral) iç harekettir, equity'yi değiştirmez.
+Metrik entegrasyonu: portföy equity eğrisi mevcut EquityPoint/BacktestResult
+  biçimine indirgenirse Stage-1/2 değişmeden çalışır; bacak ayrıntısı ek alan
+  olarak taşınmalı (açık karar K6).
+```
+
+### 19.4 Zamanlama
+
+```
+Karar: mum kapanışında (feature_availability_time), iki bacağın da
+  kullanılabilir verisiyle (spot + contract; index yalnız feature).
+Fill: bir sonraki mumun OPEN'ı (mevcut kural) — iki bacak için ayrı mum
+  serileri; iki OPEN aynı an etiketlidir ama aynı fiyat anı değildir.
+Funding: settlement anındaki perp pozisyonuna, fill'den önce.
+Partial fill / legging: iki bacağın dolum durumu ayrı kaydedilir; biri dolup
+  diğeri dolmazsa hedge VARSAYILMAZ (Örnek 6). Politikası açık karar K3.
+```
+
+### 19.5 Elle hesaplanabilir örnekler (tasarım örneği; fee oranları yalnız örnektir)
+
+```
+Başlangıç: spot_cash 9000, collateral 1000 (toplam 10000). Spot fee %0.1,
+  perp fee %0.05 (varsayım, doğrulanmış borsa fee'si değil).
+Örnek 1 — düz fiyat + maliyet: 1 spot al @100 (fee 0.1), 1 perp short @100.5
+  (fee 0.05025). spot_cash 8899.9, spot_qty 1; collateral 999.94975,
+  perp_qty −1 @100.5. Fiyatlar aynı: equity = 8899.9 + 100 + 999.94975 + 0
+  = 9999.84975 = 10000 − 0.15025. Mevcut tek bacaklı muhasebe perp'i nakit
+  gibi işlerse collateral 1100.44975 görünür (+100.5 notional) — equity aynı,
+  ama nakit/collateral ve getiri paydası yanlış: bu ÇİFT SAYIM riskidir.
+Örnek 2 — birlikte hareket: S 100->110, P 100.5->110.5 (basis 0.5 sabit):
+  spot 8899.9 + 110 = 9009.9; perp 999.94975 + (110.5−100.5)(−1) = 989.94975;
+  toplam 9999.84975 (değişmez).
+Örnek 3 — basis değişimi: S 110, P 110.2 (basis 0.5 -> 0.2): perp
+  unrealized −9.7; toplam 10000.14975 = başlangıç + 0.3 basis daralması −
+  0.15025 maliyet.
+Örnek 4 — funding (reference 110.2): oran +0.0001 -> cost = (−1)(110.2)
+  (0.0001) = −0.01102 (short alır, collateral +0.01102); oran −0.0001 ->
+  +0.01102 (short öder). Spot bacağına funding YOK.
+Örnek 5 — kapanış (Örnek 3 + pozitif funding sonrası): spot sat @110 (fee
+  0.11) -> spot_cash 9009.79; perp al @110.2 (fee 0.0551), gerçekleşen
+  (100.5−110.2)*1 = −9.7 -> collateral 999.94975 + 0.01102 − 9.7 − 0.0551
+  = 990.20567. Toplam 9999.99567 = 10000 − 0.31535 maliyet + 0.3 basis +
+  0.01102 funding.
+Örnek 6 — yalnız bir bacak dolar: spot alındı (8899.9, 1 adet), perp short
+  dolmadı; S 100->90: equity 8899.9 + 90 + 1000 = 9989.9 — hedge'siz −10
+  fiyat kaybı + 0.1 fee. Motor bunu "hedge'li" göstermemeli.
+(Değerler Decimal ile ayrıca yeniden hesaplanıp doğrulandı.)
+```
+
+### 19.6 Spot short / borç senaryoları
+
+```
+Spot long + perp short: borç gerektirmez (bu taslağın kapsamı).
+Spot short + perp long (negatif basis carry): spot varlık ödünç alınmasını
+  gerektirir (margin/borrow). Borç erişimi, faiz, geri çağırma riski ve
+  teminat kuralları doğrulanmadı -> ilk dilimde KAPSAM DIŞI; ayrı karar (K4).
+```
+
+### 19.7 Hedge oranı ve miktar hassasiyeti
+
+```
+Varsayılan öneri: miktar bazında 1:1 (spot_qty = |perp_qty|). Notional veya
+  beta bazlı oran açık karar (K2). Borsa lot/step/tick kuralları (miktar
+  yuvarlama) doğrulanmadı; ilk dilimde miktarlar config'ten Decimal olarak
+  verilir ve yuvarlanmaz, kural doğrulanınca ayrı mikro-adım (K5).
+```
+
+### 19.8 Margin/likidasyon sınırları
+
+```
+İlk dilimde likidasyon MODELLENMEZ; yalnız "collateral + unrealized <= 0"
+  anında çalıştırma hata ile durur (sessizce negatif collateral yok).
+Başlangıç/bakım marjı, kaldıraç kademeleri ve likidasyon fiyatı resmî
+  kaynakla doğrulanmadan varsayılan davranış olarak kodlanmaz (K1).
+```
+
+### 19.9 Geriye uyumluluk
+
+```
+Mevcut tek bacaklı motor (replay, store_runner, rolling, BacktestResult,
+  funding-carry araştırması) DEĞİŞMEZ; çok bacaklı motor ayrı modül
+  (ör. backtest/multileg.py) olarak eklenir, mevcut CostModel, FundingModel,
+  AccountState (spot bacağı için) ve dataset/provenance katmanını kullanır.
+```
+
+### 19.10 Önerilen ilk uygulanabilir dilim
+
+```
+Kapsam: iki bacak (spot long + perpetual short, 1:1 miktar), tek sembol,
+  tam dolum varsayımı AÇIKÇA işaretli (partial fill yok), bacak başına
+  CostModel, yalnız perp'e LinearFundingModel, sabit giriş/çıkış zamanlarıyla
+  (strateji/politika yok) deterministik muhasebe + portföy equity eğrisi;
+  §19.5 örnekleri birebir acceptance testleri. Likidasyon yok (collateral
+  <= 0 -> hata). Spot short yok. Karar/sinyal katmanı yok.
+Önkoşul: spot bacağı için provenance'lı spot store (spot ingestion var;
+  provenance kaydı spot için eklenmeli) ve K1–K6 kararları.
+```
+
+### 19.11 Açık kararlar
+
+```
+K1 margin/likidasyon modeli ve kaynağı (Binance USDⓈ-M kuralları doğrulanmalı)
+K2 hedge oranı: miktar mı, notional mı, dinamik mi
+K3 legging/partial fill politikası: tek bacak dolunca iptal mi, bekle mi, zorla mı
+K4 spot short/borrow kapsamı
+K5 lot/step/tick yuvarlama kuralları ve kaynağı
+K6 portföy sonucunun BacktestResult'a indirgenmesi mi, yeni sonuç tipi mi
+K7 spot ve perp cüzdanları arası transfer modeli (tek havuz mu, ayrık mı)
+```

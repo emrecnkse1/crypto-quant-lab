@@ -2,7 +2,7 @@
 
 Bu komutlar araştırma altyapısını tekrar çalıştırılabilir hâle getirir. Hepsi **varsayılan olarak offline** çalışır; yalnız `public-smoke --allow-network` ağa çıkar. Hiçbiri emir göndermez, paper/live başlatmaz, API anahtarı kullanmaz.
 
-Aşağıdaki PowerShell örnekleri repo kökünde (`C:\Users\em80r\crypto-quant-lab`) çalıştırılmak üzere yazıldı ve 2026-09-23 gecesi bu ortamda doğrulandı.
+Aşağıdaki PowerShell örnekleri repo kökünde (`C:\Users\em80r\crypto-quant-lab`) çalıştırılmak üzere yazıldı; 2026-09-23 gecesi ve 2026-09-24 güncellemesinden sonra bu ortamda yeniden doğrulandı.
 
 ## 0. Hazırlık
 
@@ -15,7 +15,11 @@ New-Item -ItemType Directory -Force "$env:TEMP\cql" | Out-Null
 
 Her çalıştırma **yeni** bir `--output` dizini ister; var olan dizin asla ezilmez (exit 2).
 
-Çıkış kodları: `0` başarılı · `1` rapor `failed` (hata veya başarısız kontrol) ya da doctor'da FAIL · `2` kullanım hatası, var olan çıktı dizini veya eksik `--allow-network`.
+Çıkış kodları: `0` başarılı (uyarı olabilir: çıktı `succeeded with N warning(s)` der ve rapor `warning_count` taşır — uyarıları okuyun) · `1` rapor `failed` (hata veya başarısız kontrol) ya da doctor'da FAIL · `2` kullanım hatası, var olan çıktı dizini veya eksik `--allow-network`.
+
+Girdi DB'leri yalnız gerçek salt okunur bağlantıyla (`mode=ro`, `query_only`) açılır: dosya, tablo veya migration asla oluşturulmaz; her store'un sorguları tek bir okuma snapshot'ında yapılır. Hesaplamalar config'teki `decimal_context`'ten (yoksa belgelenmiş varsayılandan) kurulan taze bir Decimal context'inde çalışır; çağıran süreçteki context etkisizdir (FUNDING_RESEARCH_SPEC.md §18).
+
+Rapor şeması `crypto-quant-lab/research-report/v2`: her kontrolün bir `category`'si (execution, data_integrity, formula, descriptive, anomaly, general) vardır; `failed` raporu düşürür, `warning` düşürmez ama sayılır. `run_input_sha256` girdileri (etkin config + mantıksal girdi parmak izleri), `deterministic_sha256` çıktıyı tanımlar. 2026-09-23 gecesi üretilmiş raporlar v1'dir ve olduğu gibi geçerlidir.
 
 ## 1. Offline uçtan uca smoke
 
@@ -78,9 +82,19 @@ Bu sayımlar policy'nin kendi kural dallarıdır; repoda risk filtresi veya Risk
 .\.venv\Scripts\python.exe -m crypto_quant_lab.research public-smoke --allow-network --symbol BTCUSDT --symbol ETHUSDT --output "$env:TEMP\cql\public-1"
 ```
 
-Son tamamen kapanmış 7 UTC günü (çalıştırma saatine göre), 1h: contract + index klines ingestion (çıktı dizininde `<SYMBOL>\contract.db`, `index.db`), close basis, resmî `/futures/data/basis` cebirsel kontrolü ve karşılaştırma. Sabitler: tolerans `0.0001`, HTTP timeout 10 sn, en fazla 2 deneme, sembol başına 3 istek. Yalnız `BTCUSDT`/`ETHUSDT` kabul edilir.
+Son tamamen kapanmış 7 UTC günü (çalıştırma saatine göre), 1h: contract + index klines ingestion (çıktı dizininde `<SYMBOL>\contract.db`, `index.db`), close basis, resmî `/futures/data/basis` cebirsel kontrolü ve karşılaştırma. Sabitler: tolerans `0.0001`, HTTP timeout 10 sn, en fazla 2 deneme, sembol başına normalde 3 istek (bütçe 6). Yalnız `BTCUSDT`/`ETHUSDT` kabul edilir.
 
-`within_rate_tolerance` kontrolünün `failed` çıkması beklenebilir: resmî kayıt T anındaki snapshot'tır (T'deki mum açılışlarına eşit), close basis `[T−1h, T)` kapanışıdır. Tolerans sonuçtan sonra gevşetilmez; rapor bu durumda `failed` olur (bkz. FUNDING_RESEARCH_SPEC.md §15.9, §17.7).
+Durum sözleşmesi (rapor v2, FUNDING_RESEARCH_SPEC.md §18.3), sembol başına:
+
+| Kontrol | Kategori | Sonuç |
+|---|---|---|
+| `execution` | execution | HTTP/API hatası (429 dahil), timeout sonrası retry tükenmesi, parse, istek bütçesi, provenance/coverage → **failed** |
+| `candles_complete`, `official_records_complete` | data_integrity | eksik veri → **failed** |
+| `official_algebra` | formula | `basis ≠ futuresPrice − indexPrice` veya oran gösterim artığı > 0.00005 → **failed** |
+| `official_open_snapshot` | anomaly | resmî fiyat T'deki mum açılışına eşit değil → **warning** (açıklanamayan) |
+| `close_vs_snapshot_tolerance` | descriptive | 1 bp aşımı → **warning**; tüm aşım zamanları listelenir |
+
+Resmî kayıt T anındaki snapshot'tır, close basis `[T−1h, T)` kapanışıdır; bu yüzden tolerans aşımı tek başına veri hattının bozuk olduğu anlamına gelmez, ama gizlenmez ve tolerans gevşetilmez. Bir sembol başarısız olursa diğerinin sonuçları raporda kalır, rapor yine `failed` olur. Sembol başına istek bütçesi 6'dır (3 uç nokta × 2 deneme).
 
 Üretilen `contract.db`/`index.db` dosyaları kendi config'inizle `basis-report` için kullanılabilir.
 
@@ -102,6 +116,7 @@ Son tamamen kapanmış 7 UTC günü (çalıştırma saatine göre), 1h: contract
 | `funding_research.candidate` | `candidate_id`, `short_entry_rate`, `long_entry_rate` (string), `max_funding_age_hours` (tam sayı ≥ 1) |
 | `funding_research.include_no_trade_control` | `true`/`false` |
 | `funding_research.cost` | `commission_rate`, `half_spread_rate`, `slippage_rate` (string, ≥ 0; komisyon değeri bir varsayımdır) |
+| `decimal_context` (opsiyonel) | tam olarak `prec`, `rounding` (örn. `"ROUND_HALF_EVEN"`), `Emin`, `Emax`, `capitals`, `clamp`, `traps` (sinyal adları listesi). Yoksa: prec 28, ROUND_HALF_EVEN, Emin −999999, Emax 999999, capitals 1, clamp 0, traps `["DivisionByZero", "InvalidOperation", "Overflow"]`. Rapora her zaman çözülmüş hâli yazılır. |
 
 Ondalıklar JSON sayısı olarak yazılırsa (`0.0002`) config reddedilir — float'a hiç dönüştürülmez.
 
@@ -111,7 +126,11 @@ Ondalıklar JSON sayısı olarak yazılırsa (`0.0002`) config reddedilir — fl
 |---|---|---|
 | `output directory already exists` (exit 2) | çıktı asla ezilmez | yeni bir `--output` dizini verin |
 | `store file does not exist: X.db` | yol yanlış ya da ingestion yapılmadı | `stores.*` yolunu düzeltin; doctor ile kontrol edin |
-| `X.db lacks tables [...]` | eski/yabancı SQLite (provenance tabloları yok) | araçlar onu açmaz (değiştirmemek için); veriyi provenance-aware ingestion ile yeni bir store'a alın |
+| `X.db lacks tables [...]; read-only access never creates or migrates them` | eski/yabancı SQLite (provenance tabloları yok) | araçlar onu değiştirmez; veriyi provenance-aware ingestion ile yeni bir store'a alın |
+| `schema mismatch` | tablolar var ama kolonlar farklı | dosya bu projenin store'u değil; doğru dosyayı gösterin |
+| `stores: two roles point to the same physical file` | iki rol aynı dosyayı (yol alias'ı/hard link) gösteriyor | contract ve index için ayrı dosyalar kullanın |
+| `decimal_context...` | `decimal_context` eksik/fazla anahtar ya da geçersiz değer | yedi anahtarın hepsini verin veya alanı tamamen kaldırın |
+| `could not start a consistent read snapshot` | başka bir süreç DB'yi 5 sn'den uzun süre kilitledi | yazan süreç bitince tekrar çalıştırın |
 | `... registered as index_price ...` / `contract.provenance FAIL` | roller karışmış (contract ↔ index) | `stores.contract` contract-trade, `stores.index` index-price store'unu göstermeli |
 | `coverage does NOT contain [start, end)` | aralık ingestion ile kapsanmamış ya da kapanmamış | `start`/`end`'i coverage içine alın veya eksik aralığı ingest edin |
 | `JSON numbers with a fraction/exponent are not allowed` | ondalık JSON sayısı | tırnak içinde yazın: `"0.0002"` |

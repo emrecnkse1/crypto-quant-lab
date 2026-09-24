@@ -78,6 +78,8 @@ Bu doküman, Local Crypto Quant Research + Execution Platform projesinin fazlar�
   - Gerçek veri basis smoke'u (BTCUSDT 1h, 7 gün, önceden sabitlenmiş config): 168/168 eşleşme, resmî kayıtlar 168/168 cebirsel tutarlı; 1 bp önceden seçilmiş toleransla 167 karşılaştırmanın 4'ü aşıyor (snapshot vs. kapanış semantiği, index tarafı) — betimsel, kârlılık/arbitraj iddiası yok
   - Basis yalnız araştırma feature'ı: mevcut motor tek bacaklı olduğundan basis işlemi / hedge / PnL üretilmedi
   - Araştırma operasyon katmanı (2026-09-24): `python -m crypto_quant_lab.research` (doctor, inspect, basis-report, funding-research, offline-smoke, opt-in public-smoke), deterministik JSON/Markdown rapor + manifest, sentetik offline fixture, salt okunur "neden işlem yok?" araştırma teşhisi, Faz 7 regression denetimi — kullanım: `docs/RESEARCH_RUNBOOK.md`; yeni strateji/ekonomik varsayım eklemez
+  - Güvenilirlik düzeltmeleri (2026-09-24): araştırma çalıştırmalarında açık Decimal context (config girdisi, parmak izine dahil), gerçek salt okunur store erişimi + okuma snapshot'ı, public-smoke durum sözleşmesi (rapor v2: kategori + warning); ETHUSDT 7 aşımının post-hoc teşhisi (index kapanış→açılış sıçraması)
+  - Çok bacaklı muhasebe/execution: kodla eşleştirilmiş TASLAK (DRAFT, FUNDING_RESEARCH_SPEC §19); implementasyon yok, K1–K7 kararları bekliyor
   - Açık: çok bacaklı (spot + perpetual) muhasebe/execution sözleşmesi ve gerçek basis/carry araştırması, trade edilebilir spot bacağı, mark-price ingestion, eşik araştırması, çoklu sembol / uzun dönem çalıştırma
 - **Faz 8:** Risk Engine
 - **Faz 9:** Paper trading
