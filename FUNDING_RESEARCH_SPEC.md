@@ -1049,7 +1049,7 @@ Belirsizlik: index kline'ın kapanış/açılış değerlerinin hangi örneklerd
 
 ## 19. Çok Bacaklı Muhasebe/Execution — TASLAK (DRAFT, LOCKED DEĞİL)
 
-**Durum:** DRAFT. Bu bölüm §16'nın tasarım taslağıdır; implementasyon yoktur, hiçbir karar kilitlenmemiştir. Örnekler tasarım örnekleridir; çalışan motor veya kârlılık kanıtı değildir. Borsa kuralına dayanan sayısal değer (marj oranları, likidasyon formülü, spot borç faizi, fee seviyeleri) BURADA İDDİA EDİLMEZ; ilgili yerler açık karar olarak işaretlidir.
+**Durum:** DRAFT. Bu bölüm §16'nın tasarım taslağıdır; hiçbir karar kalıcı olarak kilitlenmemiştir. İstisna: §19.10.1'deki ilk muhasebe dilimi IMPLEMENTED + TESTED'dır (yalnız o dilime ait geçici sınırlarla). Örnekler tasarım örnekleridir; çalışan motor veya kârlılık kanıtı değildir. Borsa kuralına dayanan sayısal değer (marj oranları, likidasyon formülü, spot borç faizi, fee seviyeleri) BURADA İDDİA EDİLMEZ; ilgili yerler açık karar olarak işaretlidir.
 
 ### 19.1 Mevcut kod (tekrar tasarlanmaz)
 
@@ -1197,6 +1197,109 @@ Kapsam: iki bacak (spot long + perpetual short, 1:1 miktar), tek sembol,
 Önkoşul: spot bacağı için provenance'lı spot store (spot ingestion var;
   provenance kaydı spot için eklenmeli) ve K1–K6 kararları.
 ```
+
+### 19.10.1 İlk dilim — IMPLEMENTED + TESTED (2026-09-24)
+
+§19 bütünü DRAFT olarak kalır; yalnız bu ilk muhasebe dilimi uygulanmış ve test edilmiştir. Bu bir basis/carry stratejisi DEĞİLDİR; kârlılık sınanmamıştır; index trade edilmemiştir; liquidation ve legging modellenmemiştir; çok bacaklı replay/event scheduling YOKTUR. Faz 7 bütünü tamamlanmamıştır; FAZ6C tamamlanmamıştır; FAZ6D başlamamıştır.
+
+```
+Modül: src/crypto_quant_lab/backtest/multileg.py (additive; tek bacaklı motor,
+  AccountState, BacktestResult, replay, store/rolling runner, funding-carry,
+  CLI/rapor sözleşmeleri DEĞİŞMEDİ ve bu modülü import etmez).
+Public API:
+  LegSide {BUY, SELL}; HedgeLifecycle {FLAT, HEDGED_OPEN, FLAT_CLOSED}
+  TradableInstrument(exchange, market_type in {spot, usdm_perpetual}, symbol,
+      quote_asset); .from_candle_dataset(dataset, quote_asset=) — yalnız
+      spot_trade / contract_trade kabul; index_price, mark_price vb. reddedilir
+  HedgedPair(pair_id, spot, perpetual, hedge_ratio=1)  # açık eşleşme, sembol
+      parse edilmez; aynı exchange ve quote asset; hedge_ratio yalnız 1
+  LegExecution(instrument, side, quantity>0, price>0, time aware)
+  LegFill(execution, cost); PairedFill(action "open"|"close", time, spot, perpetual)
+  SpotLedger(cash, quantity, entry_price, realized_pnl, costs_paid)
+  PerpetualLedger(collateral, quantity<=0, entry_price, realized_pnl,
+      costs_paid, funding_paid)
+  HedgedPortfolioState(pair, lifecycle, initial_spot_cash,
+      initial_perpetual_collateral, spot, perpetual, fills,
+      applied_funding_keys, last_event_time); initial_total_capital;
+      liquidation_not_modeled == True
+  new_hedged_portfolio(pair, *, spot_cash, perpetual_collateral)
+  apply_hedged_open(state, *, spot, perpetual, spot_cost_model, perpetual_cost_model)
+  apply_perpetual_funding(state, event: HistoricalFundingEvent, *, funding_model)
+  apply_hedged_close(state, *, spot, perpetual, spot_cost_model, perpetual_cost_model)
+  mark_hedged_portfolio(state, *, time, spot_mark_price, perpetual_mark_price)
+      -> HedgedPortfolioMark (görünüm; state değişmez)
+  summarize_closed_hedge(state) -> HedgedLifecycleSummary
+      (liquidation_not_modeled, legging_not_modeled == True)
+Muhasebe:
+  spot açılış:  cash -= q * p_s + c_s;  quantity += q;  entry = p_s
+  spot kapanış: cash += q * p_s' - c_s'; realized += q * (p_s' - entry); quantity = 0
+  spot değeri:  cash + quantity * spot_mark
+  perp açılış:  collateral -= c_p (notional nakit DEĞİL); quantity = -q; entry = p_p
+  perp funding: cost = FundingModel(signed_qty, reference_price, rate) (mevcut
+                LinearFundingModel; pozitif ödenir); collateral -= cost
+  perp kapanış: realized += q * (entry - p_p'); collateral += realized - c_p'
+  perp unrealized = (mark - entry) * signed_qty; margin equity = collateral + unrealized
+  collateral == initial + realized - costs - funding (her geçişte doğrulanır)
+  portföy equity = spot cash + spot qty * spot mark + collateral + perp unrealized
+  total PnL = equity - (initial spot cash + initial collateral)
+Çift sayım önlemleri: perp notional hiçbir deftere yazılmaz; index/mark
+  fiyatı fill olamaz; maliyet ve funding yalnız kendi defterinden bir kez
+  düşer; her mark'ta bakiye tabanlı (equity - initial) ile atıf tabanlı
+  (realized + unrealized - maliyet - funding, bacak başına) PnL eşit olmak
+  zorundadır, değilse ValueError (fail-fast).
+Atomiklik: geçişler saf ve immutable (yeni state döner). Eksik bacak,
+  eşit olmayan miktar, farklı timestamp, yanlış yön (spot short / perp long),
+  yanlış enstrüman, geçersiz maliyet çıktısı (float, negatif, NaN), yetersiz
+  spot nakit, ikinci açılış, açılmadan kapanış, kısmi kapanış -> ValueError
+  veya TypeError, önceki state aynen kalır, fill kaydı oluşmaz.
+Zaman: tüm olaylar kesin artan (open < funding < close); açılış veya kapanış
+  anındaki funding belirsiz sayılıp reddedilir (sıra gelecekteki replay
+  sözleşmesine bırakıldı); mark zamanı son olaydan önce olamaz; eşdeğer
+  timezone anları tek an sayılır.
+Decimal: aritmetik tek bacaklı motor gibi çağıranın context'inde çalışır
+  (COST_MODEL_SPEC §20); araştırma çağrıları research/decimal_policy.py ile
+  açık context kullanır. Test: prec=4 ortamında aynı senaryo "closed hedge
+  invariant violated" ile durur (sessiz yanlış sonuç yok); açık context
+  içinde sonuç varsayılan context'tekiyle birebir aynıdır.
+```
+
+Bu dilime ait geçici sınırlar (K1–K7 kalıcı olarak KİLİTLENMEDİ):
+
+```
+K1 liquidation modeli yok; negatif margin equity gösterilir
+   (liquidation_not_modeled). Maintenance margin, kaldıraç kademesi,
+   liquidation fiyatı yok. Not: §19.8'deki "collateral + unrealized <= 0 ->
+   hata" taslak önerisi bu dilimde kullanıcı kararıyla UYGULANMADI.
+K2 yalnız sabit 1:1 base quantity (spot q, perp -q); eşitsiz miktar reddedilir.
+K3 atomik eşli fill; tek bacak, partial fill, farklı zaman reddedilir.
+K4 yalnız spot long + perp short; spot miktarı negatife düşemez.
+K5 exchange lot/step/tick quantization yok; girdi Decimal'ler aynen kullanılır.
+K6 ayrı sonuç tipleri (HedgedPortfolioMark, HedgedLifecycleSummary);
+   BacktestResult'a paketlenmez; Stage-1/2 metrik entegrasyonu yok.
+K7 iki sabit cüzdan (spot_cash, perpetual_collateral), aynı quote asset;
+   transfer ve cross-wallet collateral yok.
+```
+
+Acceptance eşlemesi (`tests/test_backtest_multileg.py`, 22 test; beklenenler elle türetildi):
+
+```
+A  açılışta çift sayım yok: equity 400 (500 değil)     test_a_open_does_not_double_count_the_perpetual_notional
+B  iki piyasa +10: spot 210, perp unrealized -10, 400  test_b_both_markets_rise_and_the_hedge_holds
+C  basis yakınsaması: +1 / +1, final 402              test_c_basis_convergence_realizes_both_legs
+D  bacak başına maliyet: spot 0.2, perp 0.1, final 399.7  test_d_costs_hit_each_ledger_exactly_once
+E  funding ±0.0001 @100: collateral 200.01 / 199.99, tekrar reddi  test_e_funding_moves_only_the_perpetual_ledger_once
+F  tam kapanış: cüzdanlar 201 + 201 = 402, her mark'ta test_f_full_close_leaves_only_the_two_wallets
+G  atomik ret: eksik bacak, miktar, zaman               test_g_invalid_pairs_are_rejected_atomically
+H  yön/oran/tradability sınırları                       test_h_direction_ratio_and_tradability_limits
+Ek: model doğrulama, ayrı cüzdan ve yetersiz nakit, geçersiz maliyet çıktısı,
+    lifecycle/zaman kuralları, eşdeğer timezone, yabancı funding olayı,
+    farklı bacak hareketleri (basis genişleme -2 / daralma +1), negatif margin
+    equity gösterimi (-15), saflık/tekrarlanabilirlik, açık Decimal context.
+§19.5'teki 6 taslak örneği bu testlerde birebir değil; kullanıcının A–H
+senaryoları acceptance olarak kullanıldı.
+```
+
+Gelecek işler (PENDING): çok bacaklı replay/event scheduling, partial fill/legging, margin/liquidation modeli, spot short/borrow, hedge oranı genelleştirmesi, lot/tick adapter'ı, portföy sonucunun metrik katmanına açık adapter sözleşmesi, basis/carry strateji değerlendirmesi.
 
 ### 19.11 Açık kararlar
 
