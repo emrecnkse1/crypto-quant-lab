@@ -65,7 +65,7 @@ Bu doküman, Local Crypto Quant Research + Execution Platform projesinin fazlar�
 - **Faz 6:** Validation / anti-overfitting — **Kısmen tamamlandı** (ayrıntı: `VALIDATION_SPEC.md` §22.2)
   - FAZ6A (temporal validation foundation): Tamamlandı
   - FAZ6B (context-aware extensions, return-series, candidate/trial, annualized metrics): Tamamlandı
-  - FAZ6C (advanced overfitting controls): Tamamlanmadı — purging/embargo, trial-group, Deflated Sharpe, trial return matrix, PBO/CSCV, Holm düzeltme temeli ve CPCV fold modeli (2026-09-25) tamamlandı; CPCV değerlendirmesi (train rolü kararı açık), geçerli p-değeri üretimi / aile kapsamı / seçim politikası, parameter stability, efektif-N, çok pencereli DSR ve PBO yan istatistikleri açık
+  - FAZ6C (advanced overfitting controls): Tamamlanmadı — purging/embargo, trial-group, Deflated Sharpe, trial return matrix, PBO/CSCV, Holm düzeltme temeli ve CPCV fold modeli ve train-seçimli CPCV path getirileri (2026-09-25; seçim yalnız offline teşhis için) tamamlandı; CPCV'nin kalanları (label/outcome-horizon purging, path dağılımı yorumu), geçerli p-değeri üretimi / aile kapsamı / seçim politikası, parameter stability, efektif-N, çok pencereli DSR ve PBO yan istatistikleri açık
   - FAZ6D (final acceptance audit): Başlamadı
 - **Faz 7:** İlk Funding/Basis araştırması — **Başladı; ilk üç dikey dilim tamamlandı, Faz 7 bütünü tamamlanmadı** (ayrıntı: `FUNDING_RESEARCH_SPEC.md`)
   - Karar anına kapılı settled-funding sinyal görünümü (`event_time + publication_lag <= as_of_time`)

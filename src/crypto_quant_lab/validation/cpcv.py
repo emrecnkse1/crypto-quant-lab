@@ -1,0 +1,228 @@
+"""CPCV path returns with training-set selection (VALIDATION_SPEC.md Bölüm 17.2.11-17.2.19, 28.P).
+
+User decision §17.2.10 A, for this OFFLINE research diagnostic only: in every
+split of a `CombinatorialFoldModel` the candidate(s) with the highest Stage-2
+Sharpe ratio over the TRAINING rows are selected (PBO's rule, Bölüm 17.5.15.5:
+every tied candidate is selected, in column order); the selection is then
+read on the split's TEST rows. Path p concatenates, for each group g in time
+order, the test-row returns of the candidate(s) selected in split
+`path_split_indices[p][g]`; a tied selection contributes the arithmetic mean
+of the tied candidates' returns (the expectation under PBO's uniform
+tie-break) and is flagged. Each path's Stage-2 Sharpe ratio is reported.
+
+Rows are matched to groups by `TrialReturnMatrix`'s own ownership rule,
+`start < observation_time <= end` (Bölüm 17.5). Training rows are only the
+rows of `train_groups`: test and embargoed rows never enter the selection.
+Purging is window-level only (embargo after each test group); there is no
+label/outcome-horizon purging (Bölüm 17.1.13).
+
+This is not a trading strategy, a general candidate-selection policy, a
+pass/fail verdict or "CPCV complete": no threshold, no ranking beyond the
+per-split argmax, no orders.
+"""
+
+from dataclasses import dataclass as _dataclass
+from decimal import Decimal as _Decimal
+from decimal import localcontext as _localcontext
+
+from crypto_quant_lab.validation.combinatorial_folds import (
+    CombinatorialFoldModel as _CombinatorialFoldModel,
+)
+from crypto_quant_lab.validation.pbo import _pbo_context, _subsample_sharpe_ratio
+from crypto_quant_lab.validation.return_matrix import TrialReturnMatrix as _TrialReturnMatrix
+
+_MAX_CELL_EVALUATIONS = 20_000_000
+
+
+@_dataclass(frozen=True, slots=True)
+class CpcvSplitResult:
+    """One split's training-set selection (`train_sharpe_ratios` in matrix column order)."""
+
+    split_index: int
+    test_groups: tuple[int, ...]
+    train_groups: tuple[int, ...]
+    train_row_count: int
+    train_sharpe_ratios: tuple[_Decimal, ...]
+    selected_candidate_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        for name in ("split_index", "train_row_count"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TypeError(f"{name} must be an int, got {type(value).__name__}")
+        for name in (
+            "test_groups",
+            "train_groups",
+            "train_sharpe_ratios",
+            "selected_candidate_ids",
+        ):
+            value = getattr(self, name)
+            if not isinstance(value, tuple):
+                raise TypeError(f"{name} must be a tuple, got {type(value).__name__}")
+        if not self.selected_candidate_ids:
+            raise ValueError("selected_candidate_ids must not be empty")
+
+
+@_dataclass(frozen=True, slots=True)
+class CpcvPathResult:
+    """One backtest path: `returns` has one entry per matrix row, in time order."""
+
+    path_index: int
+    split_indices: tuple[int, ...]
+    returns: tuple[_Decimal, ...]
+    tie_averaged_groups: tuple[int, ...]
+    sharpe_ratio: _Decimal
+
+    def __post_init__(self) -> None:
+        if isinstance(self.path_index, bool) or not isinstance(self.path_index, int):
+            raise TypeError(f"path_index must be an int, got {type(self.path_index).__name__}")
+        for name in ("split_indices", "returns", "tie_averaged_groups"):
+            value = getattr(self, name)
+            if not isinstance(value, tuple):
+                raise TypeError(f"{name} must be a tuple, got {type(value).__name__}")
+        if not isinstance(self.sharpe_ratio, _Decimal) or not self.sharpe_ratio.is_finite():
+            raise ValueError(f"sharpe_ratio must be a finite Decimal, got {self.sharpe_ratio!r}")
+
+
+@_dataclass(frozen=True, slots=True)
+class CpcvResult:
+    candidate_ids: tuple[str, ...]
+    row_groups: tuple[int, ...]
+    splits: tuple[CpcvSplitResult, ...]
+    paths: tuple[CpcvPathResult, ...]
+
+    def __post_init__(self) -> None:
+        for name in ("candidate_ids", "row_groups", "splits", "paths"):
+            value = getattr(self, name)
+            if not isinstance(value, tuple):
+                raise TypeError(f"{name} must be a tuple, got {type(value).__name__}")
+        for index, split in enumerate(self.splits):
+            if not isinstance(split, CpcvSplitResult):
+                raise TypeError(f"splits[{index}] must be a CpcvSplitResult")
+        for index, path in enumerate(self.paths):
+            if not isinstance(path, CpcvPathResult):
+                raise TypeError(f"paths[{index}] must be a CpcvPathResult")
+
+
+def _row_groups(matrix: _TrialReturnMatrix, fold_model: _CombinatorialFoldModel) -> list[int]:
+    groups = fold_model.groups
+    owners = []
+    for row, time in enumerate(matrix.observation_times):
+        owner = next((g for g, w in enumerate(groups) if w.start < time <= w.end), None)
+        if owner is None:
+            raise ValueError(
+                f"matrix row {row} at {time.isoformat()} is outside every fold group "
+                "(ownership is start < time <= end); rows are never dropped"
+            )
+        owners.append(owner)
+    for group in range(len(groups)):
+        if group not in owners:
+            raise ValueError(f"fold group {group} owns no matrix row")
+    return owners
+
+
+def compute_cpcv_paths(
+    matrix: _TrialReturnMatrix,
+    fold_model: _CombinatorialFoldModel,
+    *,
+    risk_free_per_period: _Decimal = _Decimal(0),
+) -> CpcvResult:
+    """CPCV path returns with per-split training-set selection (Bölüm 17.2.11-17.2.19)."""
+    if not isinstance(matrix, _TrialReturnMatrix):
+        raise TypeError(f"matrix must be a TrialReturnMatrix, got {type(matrix).__name__}")
+    if not isinstance(fold_model, _CombinatorialFoldModel):
+        raise TypeError(
+            f"fold_model must be a CombinatorialFoldModel, got {type(fold_model).__name__}"
+        )
+    if not isinstance(risk_free_per_period, _Decimal):
+        raise TypeError(
+            f"risk_free_per_period must be a Decimal, got {type(risk_free_per_period).__name__}"
+        )
+    if not risk_free_per_period.is_finite():
+        raise ValueError(f"risk_free_per_period must be finite, got {risk_free_per_period}")
+    candidate_count = len(matrix.candidate_ids)
+    if candidate_count < 2:
+        raise ValueError(
+            "at least two candidates are required for a training-set selection, "
+            f"got {candidate_count}"
+        )
+    row_groups = _row_groups(matrix, fold_model)
+    row_count = len(row_groups)
+    cell_evaluations = len(fold_model.splits) * row_count * candidate_count
+    if cell_evaluations > _MAX_CELL_EVALUATIONS:
+        raise ValueError(
+            f"CPCV cost of {cell_evaluations} cell evaluations (splits={len(fold_model.splits)} "
+            f"x T={row_count} x N={candidate_count}) exceeds the limit of "
+            f"{_MAX_CELL_EVALUATIONS}; no sampling is performed"
+        )
+
+    split_results: list[CpcvSplitResult] = []
+    selected_columns: list[list[int]] = []
+    for split in fold_model.splits:
+        train = set(split.train_groups)
+        train_rows = [row for row, group in enumerate(row_groups) if group in train]
+        if len(train_rows) < 2:
+            raise ValueError(
+                f"split {split.split_index} has {len(train_rows)} training row(s); at least 2 "
+                "are required for a sample standard deviation"
+            )
+        sharpes = []
+        for column, candidate_id in enumerate(matrix.candidate_ids):
+            sharpe = _subsample_sharpe_ratio(
+                [matrix.returns[row][column] for row in train_rows], risk_free_per_period
+            )
+            if sharpe is None:
+                raise ValueError(
+                    f"training Sharpe ratio is undefined for candidate {candidate_id!r} in split "
+                    f"{split.split_index}: zero standard deviation"
+                )
+            sharpes.append(sharpe)
+        best = max(sharpes)
+        selected = [column for column, value in enumerate(sharpes) if value == best]
+        selected_columns.append(selected)
+        split_results.append(
+            CpcvSplitResult(
+                split_index=split.split_index,
+                test_groups=split.test_groups,
+                train_groups=split.train_groups,
+                train_row_count=len(train_rows),
+                train_sharpe_ratios=tuple(sharpes),
+                selected_candidate_ids=tuple(matrix.candidate_ids[c] for c in selected),
+            )
+        )
+
+    path_results: list[CpcvPathResult] = []
+    for path_index, split_indices in enumerate(fold_model.path_split_indices):
+        returns = []
+        for row, group in enumerate(row_groups):
+            columns = selected_columns[split_indices[group]]
+            values = [matrix.returns[row][c] for c in columns]
+            if len(values) == 1:
+                returns.append(values[0])
+            else:
+                with _localcontext(_pbo_context()):
+                    returns.append(sum(values, _Decimal(0)) / _Decimal(len(values)))
+        sharpe = _subsample_sharpe_ratio(returns, risk_free_per_period)
+        if sharpe is None:
+            raise ValueError(
+                f"path {path_index} Sharpe ratio is undefined: zero standard deviation"
+            )
+        path_results.append(
+            CpcvPathResult(
+                path_index=path_index,
+                split_indices=split_indices,
+                returns=tuple(returns),
+                tie_averaged_groups=tuple(
+                    g
+                    for g, split_index in enumerate(split_indices)
+                    if len(selected_columns[split_index]) > 1
+                ),
+                sharpe_ratio=sharpe,
+            )
+        )
+    return CpcvResult(
+        candidate_ids=matrix.candidate_ids,
+        row_groups=tuple(row_groups),
+        splits=tuple(split_results),
+        paths=tuple(path_results),
+    )

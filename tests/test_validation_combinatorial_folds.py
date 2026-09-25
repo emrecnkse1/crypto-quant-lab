@@ -68,9 +68,13 @@ def test_import_direction_and_no_package_root_export():
                         "crypto_quant_lab.validation.purging",
                         "crypto_quant_lab.validation.windows"}  # fmt: skip
     assert not hasattr(validation_package, "build_combinatorial_fold_model")
-    for path in SRC.rglob("*.py"):
-        if path.name != "combinatorial_folds.py":
-            assert "combinatorial_folds" not in path.read_text(encoding="utf-8"), path
+    importers = {
+        path.name
+        for path in SRC.rglob("*.py")
+        if path.name != "combinatorial_folds.py"
+        and "combinatorial_folds" in path.read_text(encoding="utf-8")
+    }
+    assert importers == {"cpcv.py"}  # the §17.2.11 CPCV consumer only
 
 
 # ================================================================ splits and paths (hand-derived)
