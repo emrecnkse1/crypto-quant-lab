@@ -22,9 +22,11 @@ from crypto_quant_lab.validation import pbo as pbo_module
 from crypto_quant_lab.validation.combinatorial_folds import build_combinatorial_fold_model
 from crypto_quant_lab.validation.cpcv import (
     CpcvPathResult,
+    CpcvPathSummary,
     CpcvResult,
     CpcvSplitResult,
     compute_cpcv_paths,
+    summarize_cpcv_paths,
 )
 from crypto_quant_lab.validation.return_matrix import TrialReturnMatrix, build_trial_return_matrix
 from crypto_quant_lab.validation.windows import TemporalWindow
@@ -83,7 +85,8 @@ def units(values):
 
 def test_public_api_and_reuse_of_the_pbo_rules():
     public = {n for n in vars(cpcv) if not n.startswith("_")}
-    assert public == {"CpcvSplitResult", "CpcvPathResult", "CpcvResult", "compute_cpcv_paths"}
+    assert public == {"CpcvSplitResult", "CpcvPathResult", "CpcvResult", "compute_cpcv_paths",
+                      "CpcvPathSummary", "summarize_cpcv_paths", "DIAGNOSTIC_SCOPE"}  # fmt: skip
     signature = inspect.signature(compute_cpcv_paths)
     assert list(signature.parameters) == ["matrix", "fold_model", "risk_free_per_period"]
     assert signature.parameters["risk_free_per_period"].kind is inspect.Parameter.KEYWORD_ONLY
@@ -404,3 +407,132 @@ def test_real_rolling_trial_group_matrix_cpcv_integration(tmp_path):
         assert compute_cpcv_paths(real, model) == result
     finally:
         store.close()
+
+
+# ================================================================ path distribution summary (§17.2.20-17.2.24)
+
+
+def sqrt50(fraction):
+    with localcontext(Context(prec=50)):
+        return (Decimal(fraction.numerator) / Decimal(fraction.denominator)).sqrt()
+
+
+def reference_distribution(values):
+    """Independent 50-digit mean and sample standard deviation of Sharpe ratios."""
+    with localcontext(Context(prec=50)):
+        mean = sum(values, Decimal(0)) / len(values)
+        stdev = (sum((v - mean) ** 2 for v in values) / (len(values) - 1)).sqrt()
+    return mean, stdev
+
+
+def test_summary_of_the_hand_derived_fixture():
+    summary = summarize_cpcv_paths(run(MAIN))
+    # p0 (1,2,1,6): mean 5/2, variance 17/3 -> (5/2) sqrt(3/17) ~ 1.050210
+    # p1 (2,1,2,6): mean 11/4, variance 59/12 -> (11/4) sqrt(12/59) ~ 1.240216
+    # p2 (3,1,5,3): mean 3, variance 8/3 -> (3/4) sqrt(6) ~ 1.837117
+    s0 = Decimal(5) / 2 * sqrt50(Fraction(3, 17))
+    s1 = Decimal(11) / 4 * sqrt50(Fraction(12, 59))
+    s2 = Decimal(3) / 4 * sqrt50(Fraction(6))
+    assert (summary.path_count, summary.observations_per_path) == (3, 4)
+    assert all(close(a, b) for a, b in zip(summary.path_sharpe_ratios, (s0, s1, s2), strict=True))
+    assert summary.sorted_path_indices == (0, 1, 2)
+    assert summary.minimum_sharpe_ratio == summary.path_sharpe_ratios[0]
+    assert summary.maximum_sharpe_ratio == summary.path_sharpe_ratios[2]
+    assert summary.median_sharpe_ratio == summary.path_sharpe_ratios[1]  # odd count: middle
+    mean, stdev = reference_distribution([s0, s1, s2])  # ~1.375848, ~0.410613
+    assert close(summary.mean_sharpe_ratio, mean)
+    assert close(summary.sample_stdev_sharpe_ratio, stdev)
+    assert (summary.tie_averaged_path_count, summary.rows_identical_on_all_paths) == (0, 0)
+    assert summary.paths_share_observations is True
+    assert summary.label_horizon_purging_applied is False
+    for phrase in ("offline research diagnostic", "NOT independent samples",
+                   "no label/outcome-horizon purging", "no threshold, p-value or pass/fail",
+                   "not a full CPCV validation", "not a live strategy approval"):  # fmt: skip
+        assert phrase in summary.diagnostic_scope
+
+
+def test_summary_orders_paths_by_sharpe_and_counts_ties():
+    summary = summarize_cpcv_paths(run(TIES))
+    # p0 (1,2,5,7): 15/4 / sqrt(91/12) ~ 1.3617; p1 (1,1,2,7): 11/4 / sqrt(33/4) ~ 0.9574;
+    # p2 (3,1,5,3): (3/4) sqrt(6) ~ 1.8371 -> ascending p1, p0, p2; median p0
+    s0 = Decimal(15) / 4 / sqrt50(Fraction(91, 12))
+    s1 = Decimal(11) / 4 / sqrt50(Fraction(33, 4))
+    assert close(summary.path_sharpe_ratios[0], s0) and close(summary.path_sharpe_ratios[1], s1)
+    assert summary.sorted_path_indices == (1, 0, 2)
+    assert summary.median_sharpe_ratio == summary.path_sharpe_ratios[0]
+    assert summary.tie_averaged_path_count == 3  # every path uses a tied split
+
+
+def test_equal_path_sharpes_keep_path_order_and_zero_dispersion():
+    # A dominates every two-row training set (mean/|diff| >= 3.8 vs B <= 1.75): every split
+    # selects A, so the three paths are A's own returns and share every row
+    summary = summarize_cpcv_paths(run({"A": (10, 11, 12, 13), "B": (1, 5, 2, 9)}))
+    assert len(set(summary.path_sharpe_ratios)) == 1
+    assert summary.sorted_path_indices == (0, 1, 2)
+    assert (
+        summary.minimum_sharpe_ratio == summary.maximum_sharpe_ratio == summary.median_sharpe_ratio
+    )
+    assert summary.mean_sharpe_ratio == summary.path_sharpe_ratios[0]
+    assert summary.sample_stdev_sharpe_ratio == Decimal(0)
+    assert summary.rows_identical_on_all_paths == 4
+
+
+def test_even_path_count_median_is_the_mean_of_the_two_middle_values():
+    columns = {"A": (1, 2, 5, 3, 4), "B": (3, 1, 2, 6, 5), "C": (2, 5, 1, 7, 3)}
+    result = run(columns, n=5, k=2)
+    summary = summarize_cpcv_paths(result)
+    assert summary.path_count == 4  # C(4, 1)
+    reference = sorted(reference_sharpe(p.returns) for p in result.paths)
+    with localcontext(Context(prec=50)):
+        expected_median = (reference[1] + reference[2]) / 2
+    assert close(summary.median_sharpe_ratio, expected_median)
+    assert [summary.path_sharpe_ratios[i] for i in summary.sorted_path_indices] == sorted(
+        summary.path_sharpe_ratios
+    )
+
+
+def test_a_single_path_is_not_a_distribution():
+    result = run(MAIN, k=1)
+    with pytest.raises(ValueError) as caught:
+        summarize_cpcv_paths(result)
+    assert str(caught.value) == (
+        "a path distribution needs at least 2 paths, got 1 (test_group_count = 1 is plain "
+        "K-fold with a single path)"
+    )
+
+
+def test_invalid_summary_inputs_have_exact_messages():
+    with pytest.raises(TypeError, match="^result must be a CpcvResult, got dict$"):
+        summarize_cpcv_paths({})
+    base = run(MAIN)
+    shuffled = CpcvResult(base.candidate_ids, base.row_groups, base.splits,
+                          (base.paths[1], base.paths[0], base.paths[2]))  # fmt: skip
+    with pytest.raises(ValueError, match=r"^paths must be ordered by path_index 0\.\.P-1$"):
+        summarize_cpcv_paths(shuffled)
+    short = CpcvPathResult(0, base.paths[0].split_indices, base.paths[0].returns[:3], (),
+                           base.paths[0].sharpe_ratio)  # fmt: skip
+    broken = CpcvResult(base.candidate_ids, base.row_groups, base.splits,
+                        (short, base.paths[1], base.paths[2]))  # fmt: skip
+    with pytest.raises(
+        ValueError, match=r"^path 0 has 3 returns, expected 4 \(one per matrix row\)$"
+    ):
+        summarize_cpcv_paths(broken)
+
+
+def test_summary_is_context_independent_deterministic_and_pure():
+    result = run(TIES)
+    paths = result.paths
+    base = summarize_cpcv_paths(result)
+    with localcontext(Context(prec=3)):
+        assert summarize_cpcv_paths(run(TIES)) == base
+    assert summarize_cpcv_paths(result) == base
+    assert result.paths is paths
+
+
+def test_summary_model_refuses_a_purging_claim_and_non_finite_values():
+    base = summarize_cpcv_paths(run(MAIN))
+    fields = {name: getattr(base, name) for name in CpcvPathSummary.__slots__}
+    with pytest.raises(ValueError, match="^label/outcome-horizon purging is not implemented"):
+        CpcvPathSummary(**fields | {"label_horizon_purging_applied": True})
+    with pytest.raises(ValueError, match="^mean_sharpe_ratio must be a finite Decimal"):
+        CpcvPathSummary(**fields | {"mean_sharpe_ratio": Decimal("NaN")})

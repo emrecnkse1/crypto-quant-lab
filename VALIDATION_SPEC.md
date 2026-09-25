@@ -3469,7 +3469,7 @@ dashboard/CLI output, non-purging backtest davranışı.
 
 Bu maddeler **deferred boundary'ler** olarak kaydedilir — implement edilmiş özellikler DEĞİL. Bu bölümün (17.1) LOCKED olması, FAZ6C'nin veya Faz 6'nın tamamlandığı anlamına GELMEZ (bkz. Bölüm 22, 22.2, 28.I).
 
-### 17.2 CPCV — Fold Model (§17.2.1–17.2.10, §28.O — 17/17) ve Train-Seçimli Path Getirileri (§17.2.11–17.2.19, §28.P — 18/18) LOCKED VE IMPLEMENTED + TESTED; Label/Outcome-Horizon Purging ve Path Dağılımı Yorumu AÇIK
+### 17.2 CPCV — Fold Model (§17.2.1–17.2.10, §28.O — 17/17), Train-Seçimli Path Getirileri (§17.2.11–17.2.19, §28.P — 18/18) ve Betimsel Path Dağılımı Özeti (§17.2.20–17.2.24, §28.Q — 10/10) LOCKED VE IMPLEMENTED + TESTED; Label/Outcome-Horizon Purging AÇIK (öneri §17.2.25)
 
 [2026-09-25 notu: aşağıdaki ilk paragraf kilit öncesi tarihsel durumdur. Fold modeli önkoşulu §17.2.1–17.2.10'da kilitlendi ve `src/crypto_quant_lab/validation/combinatorial_folds.py` ile implement edildi. CPCV'nin kendisi (path getirileri/performans dağılımı) ve label/outcome-horizon purging hâlâ YOKTUR.]
 
@@ -3719,7 +3719,98 @@ optimizer YOKTUR.
 
 **17.2.18 Dosya kapsamı:** yeni `cpcv.py`, `tests/test_validation_cpcv.py`; `tests/test_validation_combinatorial_folds.py`'deki import yönü testi dar güncellendi (izinli tek tüketici `cpcv.py`); `pbo.py`, `return_matrix.py`, `combinatorial_folds.py` değişmedi.
 
-**17.2.19 Açık kalanlar:** label/outcome-horizon purging; path Sharpe dağılımının özet istatistikleri/yorumu (ör. dağılım momentleri, DSR ile ilişki) ayrı kontrat; FAZ6C'nin diğer maddeleri (§23).
+**17.2.19 Açık kalanlar:** label/outcome-horizon purging; path Sharpe dağılımının özet istatistikleri/yorumu (ör. dağılım momentleri, DSR ile ilişki) ayrı kontrat; FAZ6C'nin diğer maddeleri (§23). [2026-09-25 notu: deterministik betimsel özet §17.2.20–17.2.24'te eklendi; yorum/eşik yine YOK.]
+
+**17.2.20 Path Dağılımı Özeti — Kapsam (LOCKED; offline araştırma teşhisi)**
+
+```
+summarize_cpcv_paths(result: CpcvResult) -> CpcvPathSummary (cpcv.py, additive;
+  compute_cpcv_paths DEĞİŞMEDİ). Yalnız betimsel: path sayısı, path Sharpe'ları,
+  sıralama, min, max, ortalama, medyan, örneklem (n-1) standart sapması ve
+  bağımlılık/sınır bayrakları. Eşik, p-değeri, güven aralığı, bağımsız örnek
+  varsayımı, DSR/PBO birleştirmesi, geçti/kaldı YOK. Sonuç, sabit
+  DIAGNOSTIC_SCOPE metnini taşır: offline araştırma teşhisi; path'ler aynı
+  gözlemleri yeniden kullanır (bağımsız örnek DEĞİL); purge yalnız pencere
+  düzeyi embargo, label/outcome-horizon purging YOK; tam CPCV doğrulaması ve
+  canlı strateji onayı DEĞİL.
+```
+
+**17.2.21 Alanlar ve Tanımlar (LOCKED)**
+
+```
+diagnostic_scope, path_count (P), observations_per_path (T),
+path_sharpe_ratios (path_index sırası; CpcvPathResult.sharpe_ratio aynen),
+sorted_path_indices (Sharpe artan; eşit değerler path sırasını korur — stable),
+minimum/maximum_sharpe_ratio, mean_sharpe_ratio (Σ/P), median_sharpe_ratio
+(P tek: orta; P çift: iki ortadakinin ortalaması), sample_stdev_sharpe_ratio
+(Σ(x-ort)²/(P-1) karekökü; Stage-2 §15.16 ile aynı n-1 kuralı; eşit
+Sharpe'larda tam 0 — tanımlıdır), tie_averaged_path_count (en az bir eşitlik
+ortalamalı grubu olan path sayısı), rows_identical_on_all_paths (her path'te
+aynı getiriye sahip satır sayısı — path'ler arası bağımlılığın görünür ölçüsü),
+paths_share_observations = True (her path her satırı kapsar),
+label_horizon_purging_applied = False (model başka değeri REDDEDER).
+Ortalama/medyan/stdev sabit 28 basamaklı PBO/Stage-2 context'inde; ambient
+context etkisiz.
+```
+
+**17.2.22 Geçersiz / Tanımsız (LOCKED, exact mesajlar)**
+
+```
+1 result tipi         TypeError "result must be a CpcvResult, got <tip>"
+2 P < 2               ValueError "a path distribution needs at least 2 paths, got P
+                      (test_group_count = 1 is plain K-fold with a single path)"
+                      — dağılım tanımsızdır; None/0 döndürülmez (Stage-2 ilkesi)
+3 path sırası         ValueError "paths must be ordered by path_index 0..P-1"
+4 path uzunluğu       ValueError "path p has n returns, expected T (one per matrix row)"
+Path Sharpe'ları CpcvPathResult tarafından zaten sonlu doğrulanır; sıfır
+stdev'li path compute_cpcv_paths'te reddedilir (§17.2.14 adım 10).
+```
+
+**17.2.23 Kanıt:** §28.Q.
+
+**17.2.24 Kanıtlamadıkları:** path Sharpe'larının bağımsızlığı, istatistiksel anlamlılık, aşırı uyumun yokluğu, kârlılık; CPCV'nin, FAZ6C'nin veya Faz 6'nın tamamlanması.
+
+**17.2.25 Label/Outcome-Horizon Purging — Ufuk Bilgisi Kaynak İncelemesi ve Sonraki Dilim Önerisi (2026-09-25; KOD YOK)**
+
+```
+Kaynak                              Taşıdığı ufuk                  CPCV'ye ulaşıyor mu
+BacktestPolicy / PositionTarget     yok (salt mum-öneki)            —
+BacktestResult                      yalnız fill_count/trade_count   HAYIR: fill zamanları yok;
+                                    + equity eğrisi                 işlem tutma süresi geri
+                                                                    kazanılamaz
+ContextAwareWindow.context_start    GERİYE DOĞRU özellik ufku       HAYIR: WindowResult yalnız
+  (rolling.py, çağıran beyanı)      (lookback = evaluation.start    değerlendirme penceresini
+                                    - context_start), gerçek        tutar; TrialGroup/Matrix'te
+                                                                    yok
+TrialReturnMatrix window_indices    her rolling penceresi ayrı,     EVET: satırların hangi
+  + observation_times               düz başlayan bağımsız backtest  backtest penceresinden
+                                    (pozisyon pencereler arası      geldiği ve pencere sınırları
+                                    taşınmaz)                       kayıtlı
+Tek-bar getiri r_t, sahiplik        getirinin kendi aralığı         EVET: (t - tf, t] her zaman
+  start < t <= end                  (t - timeframe, t]              tek grubun içinde
+```
+
+Bulgular: (1) Getirinin kendi aralığı grup sınırını hiç aşmaz. (2) İleriye dönük gerçek "sonuç ufku" pozisyonun tutulduğu süredir; bir fold grubu sınırı bir rolling backtest penceresinin İÇİNE düşerse, bir gruptaki karar sonraki grubun getirisini üretebilir (pozisyon taşınır) — bu klasik label örtüşmesidir ve süresi kayıtlı değildir. Sınır pencere sınırıyla çakışırsa her backtest düz başladığı için bu kanal kapalıdır. (3) Geriye dönük kanal lookback'tir; gerçek değeri ContextAwareWindow'da vardır ama CPCV girdisine taşınmaz.
+
+Önerilen sonraki dilim (varsayımsal ufuk ÜRETMEZ, çalışan sözleşmeleri değiştirmez):
+
+```
+a) Pencere-hizalı grup denetimi: compute_cpcv_paths'e additive, saf bir kontrol —
+   her fold grubu sınırının TrialReturnMatrix window_indices blok sınırıyla
+   çakıştığını doğrula; bir sınır bir backtest penceresinin içine düşerse
+   (pozisyon taşınabilir, ufuk bilinmez) belirli hata veya açık bayrak
+   (karar: varsayılan davranış ret mi bayrak mı — öneri: ret, eski davranış
+   isteğe bağlı parametreyle).
+b) Lookback-embargo denetimi: çağıranın rolling'de kullandığı
+   ContextAwareWindow'ları açık girdi olarak alan saf yardımcı
+   (ör. required_context_embargo(windows) = max(evaluation.start -
+   context_start)); fold_model.embargo bundan küçükse belirli hata. Ufuk
+   çağıranın gerçekten kullandığı pencerelerden gelir; uydurulmaz. WindowResult/
+   Trial sözleşmeleri DEĞİŞMEZ.
+Bu iki denetimden sonra pencere düzeyinde purge "label örtüşmesi olamayacak
+şekilde hizalı" hâle gelir; gözlem düzeyi t1 tabanlı klasik purging yine
+(fill zamanı kaydı olmadan) uygulanamaz.
+```
 
 ### 17.3 Sharpe-Ailesi Metrikler — Aşama 2 (Bölüm 15/16)
 
@@ -6616,7 +6707,7 @@ FAZ 6D — Faz 6 Final Acceptance
 |---|---|---|---|
 | FAZ6A | COMPLETE | temporal window/IS-OOS primitives (§28.A — 22/22), zero-context rolling OOS evaluation (§28.C — 12/12), Stage-1 metrics (§28.D — 18/18) | locked FAZ6A scope içinde yok |
 | FAZ6B | COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 (§8.3.16, §28.F — 22/22, LOCKED VE IMPLEMENTED + TESTED), candidate/trial foundation (§18, §28.G — 25/25, LOCKED VE IMPLEMENTED + TESTED), Annualized Metrics (§15.19–15.33, §28.H — 30/30, LOCKED VE IMPLEMENTED + TESTED) | locked FAZ6B scope içinde yok |
-| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + kaydedilmiş Trial sayısı exact kontratı + implementasyonu (§20.1–20.14, §28.J — 19/19, LOCKED VE IMPLEMENTED + TESTED); Deflated Sharpe exact kontratı + implementasyonu (§17.4.1–17.4.17, §28.K — 27/27, LOCKED VE IMPLEMENTED + TESTED); PBO önkoşulu trial return matrix (§17.5.1–17.5.12, §28.L — 22/22, LOCKED VE IMPLEMENTED + TESTED); PBO/CSCV (§17.5.13–17.5.24, §28.M — 24/24, LOCKED VE IMPLEMENTED + TESTED); Holm düzeltme temeli (§17.6.1–17.6.10, §28.N — 18/18, LOCKED VE IMPLEMENTED + TESTED); CPCV fold modeli (§17.2.1–17.2.10, §28.O — 17/17, LOCKED VE IMPLEMENTED + TESTED); CPCV train-seçimli path getirileri (§17.2.11–17.2.19, §28.P — 18/18, LOCKED VE IMPLEMENTED + TESTED) | CPCV'nin kalanları (label/outcome-horizon purging, path dağılımı özeti/yorumu), multiple-testing p-değeri üretimi/aile kapsamı/seçim politikası, multiple-testing corrections, parameter stability |
+| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + kaydedilmiş Trial sayısı exact kontratı + implementasyonu (§20.1–20.14, §28.J — 19/19, LOCKED VE IMPLEMENTED + TESTED); Deflated Sharpe exact kontratı + implementasyonu (§17.4.1–17.4.17, §28.K — 27/27, LOCKED VE IMPLEMENTED + TESTED); PBO önkoşulu trial return matrix (§17.5.1–17.5.12, §28.L — 22/22, LOCKED VE IMPLEMENTED + TESTED); PBO/CSCV (§17.5.13–17.5.24, §28.M — 24/24, LOCKED VE IMPLEMENTED + TESTED); Holm düzeltme temeli (§17.6.1–17.6.10, §28.N — 18/18, LOCKED VE IMPLEMENTED + TESTED); CPCV fold modeli (§17.2.1–17.2.10, §28.O — 17/17, LOCKED VE IMPLEMENTED + TESTED); CPCV train-seçimli path getirileri (§17.2.11–17.2.19, §28.P — 18/18, LOCKED VE IMPLEMENTED + TESTED); CPCV betimsel path dağılımı özeti (§17.2.20–17.2.24, §28.Q — 10/10, LOCKED VE IMPLEMENTED + TESTED) | CPCV'nin kalanları (label/outcome-horizon purging — öneri §17.2.25), multiple-testing p-değeri üretimi/aile kapsamı/seçim politikası, multiple-testing corrections, parameter stability |
 | FAZ6D | NOT STARTED | yok | Faz 6 final acceptance audit'i |
 
 Bu tablo, §28.A/B/C/D'nin bağımsız acceptance sayımlarını **birleşik bir yüzdeye veya tek bir sayıya dönüştürmez** — her grup kendi bağımsız kanıtını korur; bu tablo yalnızca hangi grubun hangi alt-fazın kanıtı olduğunu özetler.
@@ -7403,9 +7494,18 @@ TAMAMLANDI (2026-09-25):
   Label/outcome-horizon purging ve path dağılımı yorumu AÇIK; CPCV bütünü,
   FAZ6C ve Faz 6 NOT COMPLETE.
 
+FAZ6C — CPCV PATH DISTRIBUTION SUMMARY — TAMAMLANDI (2026-09-25):
+  §17.2.20–17.2.24 kilitlendi; cpcv.py'ye additive summarize_cpcv_paths /
+  CpcvPathSummary (betimsel; eşik/p-değeri/geçti-kaldı yok; path'lerin
+  gözlem paylaşımı ve purging sınırı sonuçta görünür). Test:
+  tests/test_validation_cpcv.py (+8, toplam 34). §28.Q 10/10. Ufuk kaynak
+  incelemesi ve sonraki dilim önerisi §17.2.25 (kod yok). CPCV bütünü,
+  FAZ6C ve Faz 6 NOT COMPLETE.
+
 Sonraki (henüz başlanmadı):
-  FAZ6C'nin kalanları: CPCV'nin kalanları (label/outcome-horizon purging;
-  path Sharpe dağılımı özeti/yorumu — ayrı kontrat), multiple-testing için geçerli
+  FAZ6C'nin kalanları: CPCV'nin kalanı (label/outcome-horizon purging —
+  önerilen ilk dilim §17.2.25: pencere-hizalı grup + lookback-embargo
+  denetimleri), multiple-testing için geçerli
   p-değeri üretimi + aile kapsamı + sonuç seçim politikası (17.6.10),
   parameter stability (17.7 — Candidate.parameters için parametre
   uzayı/komşuluk tanımı YOK). Deferred: efektif-N estimator'ı (DSR Ek
@@ -7953,6 +8053,23 @@ Bu liste, Bölüm 17.2.11–17.2.19'da LOCKED olan train-seçimli CPCV path geti
 18. Gerçek SQLite + rolling -> TrialGroup -> TrialReturnMatrix (T=12, boşluklu iki pencere) -> 4 bitişik grup, k=2 -> 3 path x 12 satır; her satır seçimle tutarlı; deterministik (§17.2.13). **PASS** — `test_real_rolling_trial_group_matrix_cpcv_integration`.
 
 **CPCV path returns acceptance count: 18 / 18 implementation/test exercised.** Bu, aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: label/outcome-horizon purging; path dağılımının istatistiksel yorumu veya eşiği; canlı veya genel aday seçim politikası; "CPCV bütünü", FAZ6C'nin veya Faz 6'nın tamamlanması.
+
+### 28.Q — CPCV PATH DISTRIBUTION SUMMARY ACCEPTANCE (10/10 IMPLEMENTATION/TEST EXERCISED)
+
+Bölüm 17.2.20–17.2.24'ün `summarize_cpcv_paths` tarafından karşılandığını kaydeder; `tests/test_validation_cpcv.py`'ye 8 yeni test (dosyada toplam 34, tümü PASS).
+
+1. Public semboller `CpcvPathSummary`, `summarize_cpcv_paths`, `DIAGNOSTIC_SCOPE` eklendi; mevcut `compute_cpcv_paths` API'si aynı (§17.2.20). **PASS** — `test_public_api_and_reuse_of_the_pbo_rules`.
+2. Elle türetilmiş fixture: path Sharpe'ları (5/2)√(3/17), (11/4)√(12/59), (3/4)√6; min, max, medyan (orta) ve bağımsız referansla ortalama/stdev (§17.2.21). **PASS** — `test_summary_of_the_hand_derived_fixture`.
+3. Sonuç, offline teşhis / bağımsız olmayan path / purging yok / eşik yok / tam CPCV değil / canlı onay değil ifadelerini ve bayraklarını taşır (§17.2.20). **PASS** — aynı test.
+4. Sharpe'a göre artan sıralama ve eşitlik sayımı (1, 0, 2; 3 path) (§17.2.21). **PASS** — `test_summary_orders_paths_by_sharpe_and_counts_ties`.
+5. Eşit Sharpe'larda sıra korunur; stdev tam 0; ortak satırlar sayılır (4) (§17.2.21). **PASS** — `test_equal_path_sharpes_keep_path_order_and_zero_dispersion`.
+6. Çift P'de medyan iki ortadakinin ortalamasıdır (P = 4) (§17.2.21). **PASS** — `test_even_path_count_median_is_the_mean_of_the_two_middle_values`.
+7. Tek path dağılım değildir: exact hata (§17.2.22 adım 2). **PASS** — `test_a_single_path_is_not_a_distribution`.
+8. Tip, path sırası ve path uzunluğu exact mesajlarla (§17.2.22). **PASS** — `test_invalid_summary_inputs_have_exact_messages`.
+9. Ambient context etkisiz; deterministik; girdi değişmez (§17.2.21). **PASS** — `test_summary_is_context_independent_deterministic_and_pure`.
+10. Model purging iddiasını ve sonlu olmayan değerleri reddeder (§17.2.21). **PASS** — `test_summary_model_refuses_a_purging_claim_and_non_finite_values`.
+
+**CPCV path distribution summary acceptance count: 10 / 10 implementation/test exercised.** Bu, label/outcome-horizon purging'in, istatistiksel çıkarımın, eşiğin, "CPCV bütünü"nün, FAZ6C'nin veya Faz 6'nın tamamlandığı anlamına GELMEZ.
 
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 

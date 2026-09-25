@@ -226,3 +226,118 @@ def compute_cpcv_paths(
         splits=tuple(split_results),
         paths=tuple(path_results),
     )
+
+
+# ---------------------------------------------------------------- path distribution summary
+
+DIAGNOSTIC_SCOPE = (
+    "offline research diagnostic: descriptive summary of CPCV path Sharpe ratios; the paths "
+    "reuse the same matrix observations (they are NOT independent samples); purging is "
+    "window-level embargo only and no label/outcome-horizon purging is applied; no threshold, "
+    "p-value or pass/fail; not a full CPCV validation and not a live strategy approval"
+)
+
+
+@_dataclass(frozen=True, slots=True)
+class CpcvPathSummary:
+    """Deterministic description of a `CpcvResult`'s path Sharpe ratios (Bölüm 17.2.20-17.2.24).
+
+    `path_sharpe_ratios` follow `path_index`; `sorted_path_indices` are ascending
+    by Sharpe ratio, equal values keeping path order. Mean, median and the
+    sample (n - 1) standard deviation are computed in the fixed 28-digit
+    Stage-2/PBO context.
+    """
+
+    diagnostic_scope: str
+    path_count: int
+    observations_per_path: int
+    path_sharpe_ratios: tuple[_Decimal, ...]
+    sorted_path_indices: tuple[int, ...]
+    minimum_sharpe_ratio: _Decimal
+    maximum_sharpe_ratio: _Decimal
+    mean_sharpe_ratio: _Decimal
+    median_sharpe_ratio: _Decimal
+    sample_stdev_sharpe_ratio: _Decimal
+    tie_averaged_path_count: int
+    rows_identical_on_all_paths: int
+    paths_share_observations: bool
+    label_horizon_purging_applied: bool
+
+    def __post_init__(self) -> None:
+        for name in (
+            "path_count",
+            "observations_per_path",
+            "tie_averaged_path_count",
+            "rows_identical_on_all_paths",
+        ):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TypeError(f"{name} must be an int, got {type(value).__name__}")
+        for name in ("path_sharpe_ratios", "sorted_path_indices"):
+            value = getattr(self, name)
+            if not isinstance(value, tuple):
+                raise TypeError(f"{name} must be a tuple, got {type(value).__name__}")
+        for name in (
+            "minimum_sharpe_ratio",
+            "maximum_sharpe_ratio",
+            "mean_sharpe_ratio",
+            "median_sharpe_ratio",
+            "sample_stdev_sharpe_ratio",
+        ):
+            value = getattr(self, name)
+            if not isinstance(value, _Decimal) or not value.is_finite():
+                raise ValueError(f"{name} must be a finite Decimal, got {value!r}")
+        if self.label_horizon_purging_applied is not False:
+            raise ValueError("label/outcome-horizon purging is not implemented (Bölüm 17.1.13)")
+
+
+def summarize_cpcv_paths(result: CpcvResult) -> CpcvPathSummary:
+    """Describe the path Sharpe distribution of `result` (Bölüm 17.2.20-17.2.24)."""
+    if not isinstance(result, CpcvResult):
+        raise TypeError(f"result must be a CpcvResult, got {type(result).__name__}")
+    paths = result.paths
+    if len(paths) < 2:
+        raise ValueError(
+            f"a path distribution needs at least 2 paths, got {len(paths)} "
+            "(test_group_count = 1 is plain K-fold with a single path)"
+        )
+    if tuple(path.path_index for path in paths) != tuple(range(len(paths))):
+        raise ValueError("paths must be ordered by path_index 0..P-1")
+    row_count = len(result.row_groups)
+    for path in paths:
+        if len(path.returns) != row_count:
+            raise ValueError(
+                f"path {path.path_index} has {len(path.returns)} returns, expected {row_count} "
+                "(one per matrix row)"
+            )
+    sharpes = [path.sharpe_ratio for path in paths]
+    order = sorted(range(len(sharpes)), key=lambda index: sharpes[index])  # stable on ties
+    ordered = [sharpes[index] for index in order]
+    count = len(sharpes)
+    with _localcontext(_pbo_context()):
+        mean = sum(sharpes, _Decimal(0)) / _Decimal(count)
+        middle = count // 2
+        if count % 2:
+            median = ordered[middle]
+        else:
+            median = (ordered[middle - 1] + ordered[middle]) / _Decimal(2)
+        squared = sum(((value - mean) * (value - mean) for value in sharpes), _Decimal(0))
+        stdev = (squared / _Decimal(count - 1)).sqrt()
+    return CpcvPathSummary(
+        diagnostic_scope=DIAGNOSTIC_SCOPE,
+        path_count=count,
+        observations_per_path=row_count,
+        path_sharpe_ratios=tuple(sharpes),
+        sorted_path_indices=tuple(order),
+        minimum_sharpe_ratio=ordered[0],
+        maximum_sharpe_ratio=ordered[-1],
+        mean_sharpe_ratio=mean,
+        median_sharpe_ratio=median,
+        sample_stdev_sharpe_ratio=stdev,
+        tie_averaged_path_count=sum(1 for path in paths if path.tie_averaged_groups),
+        rows_identical_on_all_paths=sum(
+            1 for row in range(row_count) if len({path.returns[row] for path in paths}) == 1
+        ),
+        paths_share_observations=True,  # every path covers every matrix row
+        label_horizon_purging_applied=False,
+    )
