@@ -17,7 +17,11 @@ from crypto_quant_lab.validation.candidate import Candidate, Trial
 from crypto_quant_lab.validation.metrics import compute_stage2_metrics
 from crypto_quant_lab.validation.parameter_stability import (
     MAP_SCOPE,
+    STABILITY_SCOPE,
+    CandidateNeighborhood,
     ParameterNeighbor,
+    ParameterNeighborhoodMap,
+    describe_neighborhood_stability,
     map_parameter_neighborhoods,
 )
 from crypto_quant_lab.validation.rolling import run_rolling_backtest_from_store
@@ -154,3 +158,74 @@ def test_deterministic_and_selects_nothing(store):
     import crypto_quant_lab.validation.parameter_stability as module
 
     assert not {"select", "best", "rank", "score", "optimize"} & {n.lower() for n in dir(module)}
+
+
+# ================================================================ stability measures (a) + (c)
+
+
+def _neighbor(cid, sharpe, direction="upper"):
+    return ParameterNeighbor("k", direction, cid, 1, Decimal(sharpe))
+
+
+def _map(*candidates):
+    return ParameterNeighborhoodMap("scope", ("k",), (), tuple(
+        CandidateNeighborhood(cid, (("k", i),), Decimal(sharpe), tuple(neighbors))
+        for i, (cid, sharpe, neighbors) in enumerate(candidates)))  # fmt: skip
+
+
+def test_hand_cases_gap_and_sign_consistency():
+    measures = {m.candidate_id: m for m in describe_neighborhood_stability(_map(
+        ("mid", "0.30", [_neighbor("lo", "0.10", "lower"), _neighbor("hi", "0.25")]),
+        ("neg", "-0.20", [_neighbor("a", "-0.50"), _neighbor("b", "0.05", "lower")]),
+        ("zero", "0", [_neighbor("z", "0"), _neighbor("p", "0.01", "lower")]),
+        ("tie", "0.40", [_neighbor("t", "0.40")]),
+        ("alone", "0.90", []),
+    ))}  # fmt: skip
+    mid = measures["mid"]  # 0.30 - min(0.10, 0.25) = 0.20; both neighbors positive
+    assert (mid.sharpe_minus_min_neighbor, mid.sign, mid.sign_consistent) == (
+        Decimal("0.20"),
+        1,
+        True,
+    )
+    neg = measures["neg"]  # -0.20 - (-0.50) = 0.30; one negative, one positive neighbor
+    assert neg.sharpe_minus_min_neighbor == Decimal("0.30") and neg.sign == -1
+    assert (neg.same_sign_neighbor_count, neg.different_sign_neighbor_count) == (1, 1)
+    assert neg.sign_consistent is False
+    zero = measures["zero"]  # 0 matches only an exactly-zero neighbor
+    assert (zero.sign, zero.same_sign_neighbor_count, zero.different_sign_neighbor_count) == (
+        0,
+        1,
+        1,
+    )
+    assert zero.sharpe_minus_min_neighbor == 0 and zero.sign_consistent is False
+    tie = measures["tie"]  # equal values: gap exactly 0, consistent
+    assert (tie.sharpe_minus_min_neighbor, tie.sign_consistent) == (Decimal(0), True)
+    alone = measures["alone"]  # no neighbor: undefined, never 0 or True
+    assert (alone.neighbor_count, alone.sharpe_minus_min_neighbor, alone.sign_consistent) == (
+        0,
+        None,
+        None,
+    )
+    assert "undefined" in alone.note
+    assert "not a stability verdict" in STABILITY_SCOPE and "pass/fail" in STABILITY_SCOPE
+
+
+def test_gap_is_exact_for_long_decimals():
+    long_a = "0.1234567890123456789012345678"
+    long_b = "-0.9876543210987654321098765432"
+    (m,) = describe_neighborhood_stability(_map(("x", long_a, [_neighbor("y", long_b)])))
+    assert m.sharpe_minus_min_neighbor == Decimal("1.1111111101111111110111111110")
+
+
+def test_measures_on_the_real_parametric_family(store):
+    grid = [(0, LONG), (3, LONG), (5, LONG), (0, SHORT), (5, SHORT)]
+    group = TrialGroup(group_id="momentum", trials=tuple(trial(store, t, s) for t, s in grid))
+    neighborhood = map_parameter_neighborhoods(group)
+    measures = describe_neighborhood_stability(neighborhood)
+    assert [m.candidate_id for m in measures] == [c.candidate_id for c in neighborhood.candidates]
+    for m, c in zip(measures, neighborhood.candidates, strict=True):
+        worst = min(n.sharpe_ratio for n in c.neighbors)
+        assert m.sharpe_minus_min_neighbor == c.sharpe_ratio - worst
+        assert m.neighbor_count == len(c.neighbors) >= 1
+    with pytest.raises(TypeError, match="neighborhood_map must be a ParameterNeighborhoodMap"):
+        describe_neighborhood_stability(group)

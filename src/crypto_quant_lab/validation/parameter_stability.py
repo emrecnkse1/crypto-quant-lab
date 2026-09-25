@@ -21,7 +21,9 @@ or selection — the stability METRIC is an open decision (§17.7.8).
 """
 
 from dataclasses import dataclass as _dataclass
+from decimal import Context as _Context
 from decimal import Decimal as _Decimal
+from decimal import localcontext as _localcontext
 
 from crypto_quant_lab.validation.metrics import compute_stage2_metrics as _compute_stage2_metrics
 from crypto_quant_lab.validation.trial_group import TrialGroup as _TrialGroup
@@ -155,3 +157,83 @@ def map_parameter_neighborhoods(
         categorical_parameters=categorical,
         candidates=tuple(candidates),
     )
+
+
+# ---------------------------------------------------------------- descriptive stability measures
+
+STABILITY_SCOPE = (
+    "descriptive, threshold-free neighbor measures (user decision §17.7.8: (a) Sharpe minus the "
+    "lowest neighbor Sharpe, (c) sign consistency with the neighbors); not a stability verdict, "
+    "risk score, selection or pass/fail"
+)
+
+
+@_dataclass(frozen=True, slots=True)
+class CandidateStability:
+    """(a) `sharpe_minus_min_neighbor` and (c) sign counts; None / no neighbors when isolated.
+
+    Signs are -1, 0 or +1 (`Decimal` comparison with 0): a zero Sharpe ratio is
+    its own sign class and matches only an exactly-zero neighbor.
+    """
+
+    candidate_id: str
+    sharpe_ratio: _Decimal
+    sign: int
+    neighbor_count: int
+    sharpe_minus_min_neighbor: _Decimal | None
+    same_sign_neighbor_count: int
+    different_sign_neighbor_count: int
+    sign_consistent: bool | None
+    note: str
+
+
+def _sign(value: _Decimal) -> int:
+    return (value > 0) - (value < 0)
+
+
+def describe_neighborhood_stability(
+    neighborhood_map: ParameterNeighborhoodMap,
+) -> tuple[CandidateStability, ...]:
+    """Measures (a) and (c) for every candidate of the map, in map order (Bölüm 17.7.9-17.7.12)."""
+    if not isinstance(neighborhood_map, ParameterNeighborhoodMap):
+        raise TypeError(
+            "neighborhood_map must be a ParameterNeighborhoodMap, got "
+            f"{type(neighborhood_map).__name__}"
+        )
+    measures = []
+    for candidate in neighborhood_map.candidates:
+        own = candidate.sharpe_ratio
+        sign = _sign(own)
+        neighbor_sharpes = [n.sharpe_ratio for n in candidate.neighbors]
+        if not neighbor_sharpes:
+            measures.append(
+                CandidateStability(
+                    candidate_id=candidate.candidate_id,
+                    sharpe_ratio=own,
+                    sign=sign,
+                    neighbor_count=0,
+                    sharpe_minus_min_neighbor=None,
+                    same_sign_neighbor_count=0,
+                    different_sign_neighbor_count=0,
+                    sign_consistent=None,
+                    note="no evaluated neighbor: both measures are undefined",
+                )
+            )
+            continue
+        with _localcontext(_Context(prec=80)):  # exact for two 28-digit operands
+            gap = own - min(neighbor_sharpes)
+        same = sum(1 for value in neighbor_sharpes if _sign(value) == sign)
+        measures.append(
+            CandidateStability(
+                candidate_id=candidate.candidate_id,
+                sharpe_ratio=own,
+                sign=sign,
+                neighbor_count=len(neighbor_sharpes),
+                sharpe_minus_min_neighbor=gap,
+                same_sign_neighbor_count=same,
+                different_sign_neighbor_count=len(neighbor_sharpes) - same,
+                sign_consistent=same == len(neighbor_sharpes),
+                note="measured over the evaluated neighbors only",
+            )
+        )
+    return tuple(measures)
