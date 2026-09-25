@@ -58,9 +58,13 @@ Doğrulanan bulgu: `data_quality/ingestion.py::ingest_binance_historical_range` 
 
 | Paket | Durum |
 |---|---|
-| A — sözleşme | IN PROGRESS (kanıt tablosu spec §19.13'e yazılacak) |
+| A — sözleşme | VERIFIED — kanıt tablosu ve kapsam FUNDING_RESEARCH_SPEC §19.13.1–19.13.2 |
 | B — spot provenance | VERIFIED — additive `ingest_binance_spot_klines_with_provenance` + `binance_spot_trade_dataset`; eski fonksiyon değişmedi; `tests/test_spot_provenance_ingestion.py` 8 test; tam suite 2599 passed |
 | C — salt okunur store runner | VERIFIED — `research/multileg_store.py` (`run_store_backed_multileg_replay`) |
 | D — parity/ret/snapshot testleri | VERIFIED — `tests/test_research_multileg_store.py` 21 test öğesi (ST1–ST11 + demo); tam suite 2620 passed |
 | E — store üzerinden offline gösterim | VERIFIED — `python -m crypto_quant_lab.research.multileg_store_demo --output <yeni dizin>`; PowerShell'de exit 0 (`%TEMP%\cql\multileg-store-demo-1`) |
-| F — denetim + docs | NOT STARTED |
+| F — denetim + docs | VERIFIED — ayrı denetim turu (§19.13.7): kod hatası bulunmadı; 4 açık bulgu kaydedildi (offline_fixture'ın Binance etiketi, USDⓈ-M ingestion'da sentetik kaynak parametresi yok, funding şemasında kaynak yok, spot adaptöründe HTTPError retry'ı) |
+
+Kod checkpoint'leri: `5e76ba8` (spot provenance) · `ab73f49` (store runner + demo + testler) · denetim/dokümanlar: bu dosyayı içeren commit (hash `git log` ile doğrulanır).
+
+Sonraki tek kontrollü iş önerisi: `research/offline_fixture.py`'nin sentetik perpetual/index verisini Binance kaynak etiketiyle yazma sorununu, USDⓈ-M ingestion'a spot'takine eşdeğer açık `source` parametresi ekleyerek düzeltmek (rapor fingerprint'leri değişeceği için kullanıcı onayı gerekir).

@@ -1687,3 +1687,153 @@ Açık kalan: E1'in replace ile elle kurulan state'e karşı sınırı; O(k)
 ```
 
 Durumlar: Multi-leg accounting first slice IMPLEMENTED + TESTED · E1 ordered-events extension IMPLEMENTED + TESTED · Legacy accounting compatibility VERIFIED · In-memory multi-leg replay IMPLEMENTED + TESTED · Synthetic offline demo VERIFIED · Store-backed multi-leg runner NOT IMPLEMENTED · Partial fill/legging PENDING · Margin/liquidation NOT MODELED · Basis/carry strategy evaluation PENDING · Faz 7 NOT COMPLETE · FAZ6C NOT COMPLETE · FAZ6D NOT STARTED.
+
+### 19.13 Spot provenance + salt okunur store-backed çok bacaklı replay — IMPLEMENTED + TESTED (2026-09-25)
+
+Yalnız bu dilim uygulanmış ve SENTETİK store'larla test edilmiştir; gerçek piyasa verisiyle KOŞULMADI. Strateji, basis/carry değerlendirmesi veya kârlılık kanıtı değildir; intent'ler scripted'dır. §19 genel olarak DRAFT kalır.
+
+#### 19.13.1 Başlangıç bulgusu (koddan)
+
+```
+data_quality/ingestion.py::ingest_binance_historical_range spot mumlarını yalnız
+store.write_batch ile yazar: candle_datasets provenance'ı ve candle_coverage
+YAZILMAZ; boş yanıtta hiçbir şey yazılmaz (erken return). Eksik olan: metadata
+yazımı + coverage kanıtı. Okuyucu tarafı (query_dataset / query_coverage) ve
+atomik yazım yolu (write_ingestion_batch) §10'dan beri vardı.
+Funding store şemasında (historical_funding_events / _coverage) KAYNAK ALANI
+YOKTUR: yalnız partition (exchange, market_type, symbol) + coverage.
+```
+
+#### 19.13.2 Kanıt tablosu
+
+```
+Veri      Gerekli kanıt              Mevcut temsil                  Doğrulama                     Ret nedeni
+spot      kimlik + kaynak etiketi    candle_datasets (price_kind    registered == beklenen        missing_provenance /
+          + tam pencere coverage     spot_trade, source)            (kaynak etiketi dahil)        provenance_mismatch
+          + her grid mumu            candle_coverage                coverage_contains [s, e)      incomplete_coverage
+                                     historical_candles             satır sayısı == slot sayısı   missing_data
+perp      aynı (contract_trade)      aynı tablolar                  aynı                          aynı
+funding   partition + tam pencere    historical_funding_coverage    kalite raporu PASS [s, e)     incomplete_coverage
+          coverage; olay değerleri   historical_funding_events      olaylar kanonik sırada;       (replay: duplicate/
+                                     (KAYNAK YOK)                   replay doğrulaması            sıra/aralık hataları)
+Kimlik ≠ içerik fingerprint'i ≠ coverage ≠ kaynak erişim kanıtı. Bugün hesaplanan
+satır hash'i geçmişte hangi endpoint'ten alındığını kanıtlamaz; ham yanıt arşivi
+veya fetched_at alanı YOKTUR ve uydurulmaz. Kaynak etiketi, yazan ingestion
+yolunun beyanıdır.
+Doğrulanmış boş funding coverage'ı = gerçek sıfır funding penceresi; coverage
+yoksa (toplanmamış) ret — asla sıfır funding sayılmaz.
+```
+
+#### 19.13.3 Spot provenance eklemesi (additive)
+
+```
+storage/datasets.py: BINANCE_SPOT_KLINES_SOURCE =
+  "binance:GET https://data-api.binance.vision/api/v3/klines" (mevcut spot
+  adaptörünün gerçekten çağırdığı uç nokta); binance_spot_trade_dataset(symbol, tf)
+data_quality/ingestion.py: ingest_binance_spot_klines_with_provenance(store, *,
+  symbol, timeframe, requested_start, requested_end, as_of_time,
+  fetch_page=None, source=None, max_attempts=3) -> UsdmKlineIngestionResult
+  - mevcut atomik yol (usdm_ingestion._ingest) yeniden kullanılır: tüm sayfalar
+    alınıp doğrulanmadan hiçbir şey yazılmaz; mumlar + provenance + coverage TEK
+    write_ingestion_batch transaction'ında
+  - gerçek adaptörde source sabittir (verilemez); değiştirilmiş transport
+    (fetch_page) kendi source etiketini beyan ETMEK ZORUNDADIR — sentetik veri
+    Binance diye etiketlenemez
+  - boş ama tam aralık: provenance + coverage, sıfır mum (yetkili yokluk)
+  - aynı içerikle tekrar idempotent; çelişkili içerik / farklı kaynak
+    DataConflictError; provenance'sız eski satırlar asla yeniden etiketlenmez;
+    kayıtlı namespace'e eski write_batch yolu StorageError
+  - ingest_binance_historical_range DEĞİŞMEDİ (hâlâ provenance'sız).
+Şema/migration değişikliği yok.
+```
+
+#### 19.13.4 Salt okunur store-backed runner
+
+```
+research/multileg_store.py
+  CandleStoreSource(path, expected_source)
+  StoreBackedMultiLegRequest(pair, timeframe, run_start, run_end, as_of_time,
+      spot, perpetual, funding_path, intents, spot_cash, perpetual_collateral,
+      spot_cost_model, perpetual_cost_model, funding_model, decimal_context)
+  default_request(**fields)  # sıfır maliyet, LinearFundingModel, belgelenmiş Decimal varsayılanı
+  run_store_backed_multileg_replay(request) -> StoreBackedMultiLegRun(request,
+      spot, perpetual: CandleEvidence, funding: FundingEvidence,
+      replay_input_sha256, result: MultiLegReplayResult, snapshot_scope)
+  StoreInputError(reason ∈ {invalid_request, missing_provenance,
+      provenance_mismatch, incomplete_coverage, missing_data})
+  describe_cost_model / describe_funding_model
+Akış: istek doğrulama -> her store open_read_only (dosya/tablo/migration
+  yaratılmaz) -> her store kendi read_snapshot'ı içinde provenance + coverage +
+  satırlar (store başına tek sorgu turu) -> kimlik/coverage/grid/funding
+  denetimi -> LegCandles + HistoricalFundingEvent -> explicit Decimal context
+  altında değişmemiş run_multileg_replay. Herhangi bir denetim başarısızsa
+  replay ÇAĞRILMAZ. Kaynak store'lara hiçbir şey yazılmaz.
+Snapshot kapsamı: her store'un satırları, provenance'ı ve coverage'ı tek commit
+  durumundan gelir; store'lar sırayla okunur — store'lar arası atomik snapshot
+  YOKTUR (sonuçta snapshot_scope alanı).
+Fingerprint'ler: replay_input_sha256 = tüketilen mum/funding değerleri, pencere,
+  as_of, intent'ler, cüzdanlar, maliyet/funding model parametreleri, Decimal
+  context; parametreleri tanımlanamayan model varsa None (yalnız sınıf adıyla
+  tekrar-üretilebilirlik iddia edilmez). store_provenance_sha256 = kimlik +
+  coverage (ayrı alan). Sorgulanmayan satır replay girdisini değiştirmez.
+```
+
+#### 19.13.5 Kabul kanıtı (tests/test_research_multileg_store.py, 21 öğe; tests/test_spot_provenance_ingestion.py, 8)
+
+```
+ST1  store yolu == aynı girdilerle in-memory yol (5 konfigürasyon; tüm sonuç nesnesi)
+ST2  N-fixture değerleri kabul dosyasından import edilerek store yolundan:
+     N1 400/401/402/402 (201 + 201) · N2 402.0101 · N3 402.01515 · N5 401.7101 ·
+     N7 açık, realized 0 + 0, unrealized 1 + 1, 402
+ST3  oransal (0.001 / 0.0005) 401.7076 ile sabit (0.10 / 0.05) 401.7101 ayrı;
+     sabit test modeli için replay_input_sha256 None
+ST4  provenance'sız spot, yanlış kaynak, mark_price namespace'i, kısmi coverage,
+     yarım/başarısız ingestion -> belirli ret; store'lar değişmez, etiketlenmez
+ST5  coverage içinde eksik mum (missing_data), 4h isteği, hizasız pencere,
+     as_of < run_end; +03:00 eşdeğer anlar aynı sonuç
+ST6  doğrulanmış boş funding = sıfır; toplanmamış / yarım / başka pair coverage'ı
+     -> incomplete_coverage; FLAT ve FLAT_CLOSED sıfır kayıtları store'dan
+ST7  olmayan yol yaratılmaz; başarı ve hata sonrası kaynak dosyalar bayt+mtime
+     aynı, -wal/-shm/-journal yok
+ST8  WAL modunda okuma sırasında deterministik biçimde commit edilen eşzamanlı
+     güncelleme snapshot içinde görünmez (sonra görünür); hata sonrası
+     bağlantılar serbest (Windows'ta dosya taşınabildi); store başına tek sorgu;
+     snapshot_scope "no atomic snapshot across stores"
+ST9  aynı girdi aynı fingerprint; intent/maliyet/cüzdan/Decimal/funding store/fiyat
+     değişimi fingerprint'i değiştirir; pencere dışı satır değiştirmez
+ST10 düşmanca ortam context'inde aynı sonuç ve fingerprint; global context
+     değişmez; ağ çağrıları yasaklıyken çalışır
+ST11 geçersiz store girdisinde replay spy'ı hiç çağrılmaz (intent script'i
+     doğrulaması replay'in kendi etkisiz ön denetimidir)
+ST12 tam suite 2620 passed; §19.10.1'in 22 testi ve gece testleri değişmedi
+Demo: iki temiz dizinde aynı deterministic_sha256; doğrulanamayan kaynakla failed paket.
+```
+
+#### 19.13.6 Offline store demosu
+
+`python -m crypto_quant_lab.research.multileg_store_demo --output <YENİ dizin>` — `<çıktı>\fixture\` altında gerçek yazıcılarla sentetik store'lar (spot: provenance'lı spot ingestion + sahte transport; perpetual: candle store `write_ingestion_batch`, çünkü USDⓈ-M ingestion fonksiyonu her zaman Binance uç noktasını yazar; funding: funding store `write_ingestion_batch`), yazıcılar kapatıldıktan sonra salt okunur runner ile dört senaryo, rapor v2. Eski `multileg_offline` komutu değişmedi ve çalışıyor.
+
+#### 19.13.7 Denetim (ayrı tur, harici reviewer yok)
+
+```
+Aranan ve testle bağlanan riskler: kaynak kanıtı uydurma (source etiketi yazan
+yolun beyanı; sentetik transport Binance etiketi alamaz), eksik coverage'ı
+tam sayma (coverage_contains + slot sayısı), boş funding ile toplanmamış
+funding'i karıştırma (ST6), okuma sırasında DB yazımı (ST7, read-only
+bağlantı), yanlış snapshot iddiası (per-store kapsam, ST8), yanlış price_kind
+(ST4), N+1 sızıntısı (replay değişmedi; gece D4 testleri), funding/ücret çift
+sayımı (ST1 parity + ST2/ST3 elle değerler), eksik fingerprint (ST9), açık
+pozisyonun sahte kapanışı (ST2 N7), yalnız aynı kodun iki kez karşılaştırılması
+(ST2/ST3 elle türetilmiş sabitlerle desteklendi).
+Açık bulgular (bu dilimde değiştirilmedi):
+- research/offline_fixture.py (gece paketi) sentetik perpetual/index verisini
+  USDⓈ-M ingestion ile yazdığı için Binance kaynak etiketi taşır; bu yeni runner
+  onu "Binance" diye doğrulamaz ama etiket yanıltıcıdır. Düzeltme ayrı karar.
+- USDⓈ-M ingestion fonksiyonları sentetik kaynak etiketi kabul etmez (spot'taki
+  source parametresinin eşdeğeri yok).
+- Funding kaynağı şemada yok; eklenmesi şema/migration kararıdır.
+- Mevcut spot HTTP adaptörü HTTPError'ı da ConnectionError'a çevirir (retry
+  edilir); bu dilimde değiştirilmedi.
+```
+
+Durumlar: Multi-leg accounting first slice IMPLEMENTED + TESTED · E1 IMPLEMENTED + TESTED · In-memory multi-leg replay IMPLEMENTED + TESTED · Synthetic offline demo VERIFIED · Spot provenance ingestion IMPLEMENTED + TESTED · Read-only store-backed multi-leg replay IMPLEMENTED + TESTED (yalnız sentetik store'larla) · Real-market store-backed run NOT PERFORMED · Partial fill/legging PENDING · Margin/liquidation NOT MODELED · Basis/carry strategy evaluation PENDING · Faz 7 NOT COMPLETE · FAZ6C NOT COMPLETE · FAZ6D NOT STARTED.
