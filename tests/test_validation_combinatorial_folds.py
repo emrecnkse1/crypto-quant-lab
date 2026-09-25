@@ -74,7 +74,7 @@ def test_import_direction_and_no_package_root_export():
         if path.name != "combinatorial_folds.py"
         and "combinatorial_folds" in path.read_text(encoding="utf-8")
     }
-    assert importers == {"cpcv.py"}  # the §17.2.11 CPCV consumer only
+    assert importers == {"cpcv.py", "cpcv_study.py"}  # §17.2.11 / §17.2.31 consumers
 
 
 # ================================================================ splits and paths (hand-derived)

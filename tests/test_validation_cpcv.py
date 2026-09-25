@@ -105,9 +105,12 @@ def test_import_direction_and_no_package_root_export():
                         "crypto_quant_lab.validation.pbo",
                         "crypto_quant_lab.validation.return_matrix"}  # fmt: skip
     assert not hasattr(validation_package, "compute_cpcv_paths")
-    for path in Path(cpcv.__file__).parent.rglob("*.py"):
-        if path.name != "cpcv.py":
-            assert "validation.cpcv" not in path.read_text(encoding="utf-8"), path
+    importers = {
+        path.name
+        for path in Path(cpcv.__file__).parent.rglob("*.py")
+        if path.name != "cpcv.py" and "validation.cpcv import" in path.read_text(encoding="utf-8")
+    }
+    assert importers == {"cpcv_study.py"}  # the §17.2.31 study is the only consumer
 
 
 # ================================================================ hand-derived selections and paths
