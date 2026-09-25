@@ -244,6 +244,7 @@ def run_backtest_from_store(
     funding_store: HistoricalFundingStore | None = None,
     funding_model: FundingModel | None = None,
     evaluation_start: datetime | None = None,
+    position_observer: object | None = None,
 ) -> BacktestResult:
     """Run a deterministic backtest over `store`'s quality-gated data for `[requested_start, requested_end)`.
 
@@ -309,4 +310,5 @@ def run_backtest_from_store(
         funding_events=funding_events,
         funding_model=funding_model,
         evaluation_start=evaluation_start,
+        position_observer=position_observer,
     )

@@ -292,6 +292,7 @@ def run_backtest_replay(
     funding_events: Sequence[HistoricalFundingEvent] = (),
     funding_model: FundingModel | None = None,
     evaluation_start: datetime | None = None,
+    position_observer: object | None = None,
 ) -> BacktestResult:
     """Run a deterministic, bar-by-bar backtest replay over `candles`.
 
@@ -341,8 +342,17 @@ def run_backtest_replay(
     funding store itself uses). Supplying a non-empty `funding_events`
     without a `funding_model` is rejected before any candle is processed —
     funding history is never silently treated as zero cost.
+
+    `position_observer` is additive, keyword-only, `None` by default
+    (BACKTEST_SPEC.md Bölüm 36): when supplied, its `on_fill(fill_time=,
+    old_quantity=, new_quantity=)` is called after every fill that changes
+    the position quantity, with `fill_time = candles[i + 1].open_time`. It is
+    read-only provenance: state, costs and the returned `BacktestResult` are
+    identical with or without it.
     """
     datetime_to_epoch_us(as_of_time)
+    if position_observer is not None and not callable(getattr(position_observer, "on_fill", None)):
+        raise TypeError("position_observer must provide a callable on_fill")
     if not isinstance(config, BacktestConfig):
         raise TypeError(f"config must be a BacktestConfig, got {type(config).__name__}")
     _validate_dataset(candles, as_of_time=as_of_time)
@@ -420,6 +430,15 @@ def run_backtest_replay(
             trade_count += trade_count_for_transition(
                 old_state.position_quantity, state.position_quantity
             )
+            if (
+                position_observer is not None
+                and old_state.position_quantity != state.position_quantity
+            ):
+                position_observer.on_fill(
+                    fill_time=candles[i + 1].open_time,
+                    old_quantity=old_state.position_quantity,
+                    new_quantity=state.position_quantity,
+                )
 
     assert state is not None, (
         "state is guaranteed non-None: _resolve_evaluation_start_us already proved at least "

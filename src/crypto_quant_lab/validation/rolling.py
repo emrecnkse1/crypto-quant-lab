@@ -36,6 +36,7 @@ from datetime import datetime
 from crypto_quant_lab.backtest.costs import CostModel
 from crypto_quant_lab.backtest.models import BacktestConfig, BacktestResult
 from crypto_quant_lab.backtest.policy import BacktestPolicy
+from crypto_quant_lab.backtest.position_log import PositionInterval, PositionIntervalRecorder
 from crypto_quant_lab.backtest.store_runner import run_backtest_from_store
 from crypto_quant_lab.funding.calculator import FundingModel
 from crypto_quant_lab.funding.store import HistoricalFundingStore
@@ -165,6 +166,8 @@ def _execute_windows(
     funding_required: bool,
     funding_store: HistoricalFundingStore | None,
     funding_model: FundingModel | None,
+    observer_factory: Callable[[], object] | None = None,
+    observers: list | None = None,
 ) -> tuple[WindowResult, ...]:
     """Shared per-window execution loop for both rolling orchestrators (VALIDATION_SPEC.md Bölüm 8.3.6, 8.3.16).
 
@@ -208,6 +211,10 @@ def _execute_windows(
                 )
         seen_policies.append(policy)
 
+        observer = None
+        if observer_factory is not None:
+            observer = observer_factory()
+            observers.append(observer)
         result = run_backtest_from_store(
             store,
             exchange=exchange,
@@ -224,6 +231,7 @@ def _execute_windows(
             funding_store=funding_store,
             funding_model=funding_model,
             evaluation_start=evaluation_start,
+            position_observer=observer,
         )
 
         window_results.append(WindowResult(window=result_window, result=result))
@@ -342,6 +350,99 @@ def run_context_aware_rolling_backtest_from_store(
     )
 
     return _execute_windows(
+        store,
+        boundaries,
+        policy_factory=policy_factory,
+        exchange=exchange,
+        market_type=market_type,
+        symbol=symbol,
+        timeframe=timeframe,
+        as_of_time=as_of_time,
+        config=config,
+        cost_model=cost_model,
+        funding_required=funding_required,
+        funding_store=funding_store,
+        funding_model=funding_model,
+    )
+
+
+# ---------------------------------------------------------------- additive position provenance
+
+
+def _run_with_positions(store, boundaries, **kwargs):
+    recorders: list[PositionIntervalRecorder] = []
+    results = _execute_windows(
+        store, boundaries, observer_factory=PositionIntervalRecorder, observers=recorders, **kwargs
+    )
+    return results, tuple(recorder.intervals for recorder in recorders)
+
+
+def run_rolling_backtest_with_positions_from_store(
+    store: HistoricalCandleStore,
+    windows: tuple[TemporalWindow, ...],
+    *,
+    policy_factory: Callable[[], BacktestPolicy],
+    exchange: str,
+    market_type: str,
+    symbol: str,
+    timeframe: str,
+    as_of_time: datetime,
+    config: BacktestConfig,
+    cost_model: CostModel,
+    funding_required: bool = False,
+    funding_store: HistoricalFundingStore | None = None,
+    funding_model: FundingModel | None = None,
+) -> tuple[tuple[WindowResult, ...], tuple[tuple[PositionInterval, ...], ...]]:
+    """`run_rolling_backtest_from_store` plus each window's recorded position intervals.
+
+    Additive provenance (VALIDATION_SPEC.md Bölüm 17.2.34, BACKTEST_SPEC.md Bölüm
+    36): the WindowResults are exactly those `run_rolling_backtest_from_store`
+    returns for the same inputs; `intervals[i]` belongs to `windows[i]`.
+    """
+    _require_windows_tuple(windows)
+    _require_callable_policy_factory(policy_factory)
+    boundaries = tuple((window.start, window.end, window.start, window) for window in windows)
+    return _run_with_positions(
+        store,
+        boundaries,
+        policy_factory=policy_factory,
+        exchange=exchange,
+        market_type=market_type,
+        symbol=symbol,
+        timeframe=timeframe,
+        as_of_time=as_of_time,
+        config=config,
+        cost_model=cost_model,
+        funding_required=funding_required,
+        funding_store=funding_store,
+        funding_model=funding_model,
+    )
+
+
+def run_context_aware_rolling_backtest_with_positions_from_store(
+    store: HistoricalCandleStore,
+    windows: tuple[ContextAwareWindow, ...],
+    *,
+    policy_factory: Callable[[], BacktestPolicy],
+    exchange: str,
+    market_type: str,
+    symbol: str,
+    timeframe: str,
+    as_of_time: datetime,
+    config: BacktestConfig,
+    cost_model: CostModel,
+    funding_required: bool = False,
+    funding_store: HistoricalFundingStore | None = None,
+    funding_model: FundingModel | None = None,
+) -> tuple[tuple[WindowResult, ...], tuple[tuple[PositionInterval, ...], ...]]:
+    """Context-aware counterpart of `run_rolling_backtest_with_positions_from_store`."""
+    _require_context_aware_windows_tuple(windows)
+    _require_callable_policy_factory(policy_factory)
+    boundaries = tuple(
+        (window.context_start, window.evaluation.end, window.evaluation.start, window.evaluation)
+        for window in windows
+    )
+    return _run_with_positions(
         store,
         boundaries,
         policy_factory=policy_factory,
