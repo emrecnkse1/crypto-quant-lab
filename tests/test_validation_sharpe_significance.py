@@ -21,8 +21,11 @@ from crypto_quant_lab.validation.sharpe_significance import (
     ASSUMPTION,
     FAMILY_SCOPE,
     SharpeSignificance,
+    compute_hac_sharpe_significance,
     compute_sharpe_significance,
+    evaluate_hac_sharpe_family,
     evaluate_sharpe_family,
+    newey_west_default_lag,
 )
 from crypto_quant_lab.validation.trial_group import TrialGroup
 from crypto_quant_lab.validation.windows import TemporalWindow
@@ -158,5 +161,125 @@ def test_real_rolling_group_family(tmp_path):
         adjusted = [h.adjusted_p_value for h in family.holm.hypotheses]
         assert all(a >= r.p_value for a, r in zip(adjusted, family.results, strict=True))
         assert evaluate_sharpe_family(real, significance_level=Decimal("0.05")) == family
+    finally:
+        store.close()
+
+
+# ================================================================ HAC (Lo 2002 + Newey-West), Bölüm 17.6.19-17.6.24
+
+# returns +0.03, -0.01 repeated (T = 6): mean 0.01, population variance 0.0004, SR_pop = 1/2,
+# deviations +-0.02 so (r - mu)^2 - sigma^2 = 0 and only Gamma_11 matters
+SIX = ["1030", "1019.7", "1050.291", "1039.78809", "1070.9817327", "1060.271915373"]
+
+
+def phi(x):
+    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+
+
+def test_hac_lag_zero_reduces_to_the_iid_variance_term():
+    (result,) = compute_hac_sharpe_significance(group({"a": SIX}), lag=0)
+    # V = 1 - skew*SR + (kurt - 1)/4 * SR^2 = 1 (skew 0, kurt 1); z = SR sqrt(T) = sqrt(6)/2
+    assert result.status == "evaluated" and result.lag == 0
+    assert abs(result.variance - 1) <= Decimal("1e-26")
+    assert abs(result.sharpe_ratio - Decimal("0.5")) <= Decimal("1e-26")
+    assert abs(float(result.p_value) - (1 - phi(math.sqrt(6) / 2))) < 1e-15
+
+
+def test_hac_lag_one_hand_case_negative_autocorrelation_shrinks_the_variance():
+    (result,) = compute_hac_sharpe_significance(group({"a": SIX}), lag=1)
+    # Gamma_1 = 5 * (-0.0004) / 6; Sigma_11 = 0.0004 + 2 * (1/2) * Gamma_1 = 0.0004 / 6
+    # V = Sigma_11 / sigma^2 = 1/6; z = (1/2) * sqrt(6) / sqrt(1/6) = 3
+    assert abs(result.variance - Decimal(1) / 6) <= Decimal("1e-26")
+    assert abs(result.z_statistic - 3) <= Decimal("1e-25")
+    assert abs(float(result.p_value) - (1 - phi(3.0))) < 1e-15
+
+
+def test_hac_asymmetric_series_matches_an_independent_fraction_computation():
+    from fractions import Fraction
+
+    curve = ["1010", "1040.3", "1029.897", "1060.79391", "1071.4018491", "1060.687830609"]
+    returns = [Fraction(1, 100), Fraction(3, 100), Fraction(-1, 100), Fraction(3, 100),
+               Fraction(1, 100), Fraction(-1, 100)]  # fmt: skip
+    (result,) = compute_hac_sharpe_significance(group({"a": curve}), lag=1)
+    n = len(returns)
+    mu = sum(returns) / n
+    var = sum((r - mu) ** 2 for r in returns) / n
+    h = [(r - mu, (r - mu) ** 2 - var) for r in returns]
+
+    def gamma(j):
+        return [[sum(h[t][a] * h[t - j][b] for t in range(j, n)) / n for b in (0, 1)]
+                for a in (0, 1)]  # fmt: skip
+
+    s = gamma(0)
+    for j in (1,):
+        w, g = 1 - Fraction(j, 2), gamma(j)
+        s = [[s[a][b] + w * (g[a][b] + g[b][a]) for b in (0, 1)] for a in (0, 1)]
+    with localcontext(Context(prec=60)):
+        sigma = (Decimal(var.numerator) / Decimal(var.denominator)).sqrt()
+        sr = (Decimal(mu.numerator) / Decimal(mu.denominator)) / sigma
+        d1, d2 = 1 / sigma, -sr / (2 * Decimal(var.numerator) / Decimal(var.denominator))
+
+        def dec(f):
+            return Decimal(f.numerator) / Decimal(f.denominator)
+
+        expected = (d1 * d1 * dec(s[0][0]) + d1 * d2 * (dec(s[0][1]) + dec(s[1][0]))
+                    + d2 * d2 * dec(s[1][1]))  # fmt: skip
+    assert abs(result.variance - expected) <= Decimal("1e-24")
+
+
+def test_hac_pools_windows_without_crossing_their_boundary():
+    (result,) = compute_hac_sharpe_significance(group({"a": SIX}, windows_per_trial=2), lag=1)
+    # T = 12, ten within-window lag-1 pairs: Gamma_1 = 10 * (-0.0004) / 12 -> V = 1/6
+    # (including the boundary pair would give eleven pairs and V = 1/12)
+    assert (result.sample_length, result.window_count) == (12, 2)
+    assert abs(result.variance - Decimal(1) / 6) <= Decimal("1e-26")
+
+
+def test_hac_not_evaluated_is_explicit_and_blocks_the_family():
+    (short,) = compute_hac_sharpe_significance(group({"a": ALTERNATING}))  # T = 4, lag 1
+    assert (short.status, short.p_value, short.lag) == ("not_evaluated", None, 1)
+    assert short.reason.startswith("T = 4 is not larger than 2 (lag + 1) = 4")
+    constant = ["1010", "1020.1", "1030.301", "1040.60401", "1051.0100501", "1061.520150601"]
+    (flat,) = compute_hac_sharpe_significance(group({"c": constant}), lag=0)
+    assert flat.status == "not_evaluated" and "not positive" in flat.reason
+    family = evaluate_hac_sharpe_family(group({"a": SIX, "b": ALTERNATING}),
+                                        significance_level=Decimal("0.05"))  # fmt: skip
+    assert (family.status, family.holm) == ("not_evaluated", None)
+    assert "partial family would understate" in family.reason
+    evaluated = evaluate_hac_sharpe_family(group({"a": SIX}), significance_level=Decimal("0.05"),
+                                           lag=1)  # fmt: skip
+    assert evaluated.status == "evaluated" and evaluated.holm.hypotheses[0].rejected is True
+    assert "small-sample accuracy is not guaranteed" in evaluated.assumption
+
+
+def test_hac_argument_validation_and_default_lag_rule():
+    with pytest.raises(ValueError, match="lag must be None or an integer >= 0"):
+        compute_hac_sharpe_significance(group({"a": SIX}), lag=-1)
+    with pytest.raises(ValueError, match="lag must be None or an integer >= 0"):
+        compute_hac_sharpe_significance(group({"a": SIX}), lag=True)
+    with pytest.raises(TypeError, match="group must be a TrialGroup"):
+        compute_hac_sharpe_significance("g")
+    # floor(4 (T/100)^(2/9)): 4*0.04^(2/9) = 1.96 -> 1; T=100 -> 4; 4*10^(2/9) = 6.67 -> 6
+    assert [newey_west_default_lag(t) for t in (4, 100, 1000)] == [1, 4, 6]
+
+
+def test_hac_real_rolling_group_is_internally_consistent(tmp_path):
+    import test_validation_pbo as base
+
+    store = base.SQLiteHistoricalCandleStore(tmp_path / "candles.db")
+    try:
+        store.write_batch([base._candle(h, p) for h, p in enumerate(base.PRICES)])
+        windows = (TemporalWindow(start=base.START, end=base.START + base.HOUR * 8),
+                   TemporalWindow(start=base.START + base.HOUR * 8,
+                                  end=base.START + base.HOUR * 16))  # fmt: skip
+        real = base._rolling_group(store, windows, base.POLICIES)
+        results = compute_hac_sharpe_significance(real)
+        for r in results:
+            assert (r.sample_length, r.window_count) == (16, 2)
+            if r.status == "evaluated":
+                with localcontext(Context(prec=50)):
+                    z = r.sharpe_ratio * Decimal(16).sqrt() / r.variance.sqrt()
+                assert abs(z - r.z_statistic) <= Decimal("1e-24")
+        assert compute_hac_sharpe_significance(real) == results
     finally:
         store.close()
