@@ -3,8 +3,9 @@
     python -m crypto_quant_lab.research <command> ...
 
 Commands (offline unless stated): `doctor`, `inspect`, `basis-report`,
-`funding-research`, `offline-smoke`, and the explicitly opt-in network
-command `public-smoke --allow-network`. Every command only orchestrates
+`funding-research`, `offline-smoke`, `multileg-replay` / `multileg-example`
+(research/multileg_config.py), and the explicitly opt-in network command
+`public-smoke --allow-network`. Every command only orchestrates
 production APIs — no formula, accounting or strategy logic lives here.
 
 Input databases are opened through `open_read_only` (a `mode=ro` SQLite
@@ -1168,7 +1169,34 @@ def build_parser() -> argparse.ArgumentParser:
         choices=PUBLIC_SMOKE_SYMBOLS,
         help="repeatable; default BTCUSDT",
     )
+    p = sub.add_parser(
+        "multileg-replay", help="config-driven multi-leg replay over existing stores (read-only)"
+    )
+    p.add_argument("--config", type=Path, required=True)
+    p.add_argument("--output", type=Path, required=True, help="NEW directory for the bundle")
+    p = sub.add_parser(
+        "multileg-example", help="write NEW synthetic stores plus an example multileg config"
+    )
+    p.add_argument("--output", type=Path, required=True, help="NEW directory for the example")
     return parser
+
+
+def _multileg_replay_builder(config_path: Path):
+    from crypto_quant_lab.research.multileg_config import multileg_replay_builder
+
+    return multileg_replay_builder(config_path)
+
+
+def _multileg_example(output: Path) -> int:
+    from crypto_quant_lab.research.multileg_config import write_example
+
+    try:
+        config_path = write_example(output)
+    except (FileExistsError, FileNotFoundError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"example written (SYNTHETIC stores, closed writers): {config_path}")
+    return 0
 
 
 def _now() -> datetime:
@@ -1189,6 +1217,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.command == "public-smoke":
         from crypto_quant_lab.research.public_smoke import public_smoke_builder
+    if args.command == "multileg-example":
+        return _multileg_example(args.output)
 
     builders = {
         "inspect": lambda: _config_builder(args.config, inspect_section),
@@ -1196,6 +1226,7 @@ def main(argv: list[str] | None = None) -> int:
         "funding-research": lambda: _config_builder(args.config, funding_section),
         "offline-smoke": lambda: offline_smoke_builder,
         "public-smoke": lambda: public_smoke_builder(tuple(args.symbol or ["BTCUSDT"]), _now),
+        "multileg-replay": lambda: _multileg_replay_builder(args.config),
     }
     try:
         path, report = run_to_bundle(args.command, args.output, builders[args.command]())
