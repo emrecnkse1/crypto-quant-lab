@@ -28,6 +28,7 @@ from crypto_quant_lab.validation.return_matrix import build_trial_return_matrix
 from crypto_quant_lab.validation.rolling import (
     ContextAwareWindow,
     run_context_aware_rolling_backtest_from_store,
+    run_rolling_backtest_with_positions_from_store,
 )
 from crypto_quant_lab.validation.windows import TemporalWindow
 
@@ -266,3 +267,80 @@ def test_module_is_offline_and_not_exported():
     source = cpcv_study.__loader__.get_source(cpcv_study.__name__)
     for forbidden in ("urllib", "socket", "requests", "random", "float("):
         assert forbidden not in source
+
+
+# ================================================================ recorded position intervals (§17.2.35)
+
+
+def positions_group(store, ws):
+    trials, intervals = [], {}
+    for candidate_id, policy in base.POLICIES:
+        results, per_window = run_rolling_backtest_with_positions_from_store(
+            store, ws, policy_factory=policy, exchange=base.EXCHANGE,
+            market_type=base.MARKET_TYPE, symbol=base.SYMBOL, timeframe=base.TIMEFRAME,
+            as_of_time=base.AS_OF_TIME, config=CONFIG, cost_model=ZeroCostModel(),
+        )  # fmt: skip
+        trials.append(Trial(candidate=Candidate(candidate_id=candidate_id, parameters=()),
+                            results=results, exchange=base.EXCHANGE,
+                            market_type=base.MARKET_TYPE, symbol=base.SYMBOL,
+                            timeframe=base.TIMEFRAME, as_of_time=base.AS_OF_TIME,
+                            config=CONFIG))  # fmt: skip
+        intervals[candidate_id] = per_window
+    return base.TrialGroup(group_id="positions", trials=tuple(trials)), intervals
+
+
+def independent_purge(matrix, model, intervals, split):
+    """Test-side re-derivation of the observation-level purge rule."""
+    owners = [next(g for g, w in enumerate(model.groups) if w.start < t <= w.end)
+              for t in matrix.observation_times]  # fmt: skip
+    purged = 0
+    for row, t in enumerate(matrix.observation_times):
+        if owners[row] not in split.train_groups:
+            continue
+        block = matrix.window_indices[row]
+        marks = [matrix.observation_times[r] for r in range(len(owners))
+                 if matrix.window_indices[r] == block]  # fmt: skip
+        hit = False
+        for per_window in intervals.values():
+            for interval in per_window[block]:
+                held = [m for m in marks if interval.entry_time < m
+                        and (interval.exit_time is None or m <= interval.exit_time)]  # fmt: skip
+                if t in held and any(model.groups[g].start < m <= model.groups[g].end
+                                     for m in held for g in split.test_groups):  # fmt: skip
+                    hit = True
+        purged += hit
+    return purged
+
+
+def test_recorded_intervals_purge_the_real_chain_more_finely_than_the_window_purge(store):
+    group, intervals = positions_group(store, FOUR)
+    by_intervals = run_cpcv_study(group, test_group_count=2, fold_groups=HALVES,
+                                  lookback_windows=zero_context(FOUR),
+                                  position_intervals=intervals)  # fmt: skip
+    assert statuses(by_intervals) == dict.fromkeys(
+        CHECKS + ("outcome_horizon.position_intervals",), "passed")  # fmt: skip
+    by_window = run_cpcv_study(group, test_group_count=2, fold_groups=HALVES,
+                               lookback_windows=zero_context(FOUR),
+                               purge_shared_backtest_windows=True)  # fmt: skip
+    finer = 0
+    for fine, coarse, split in zip(by_intervals.result.splits, by_window.result.splits,
+                                   by_intervals.fold_model.splits, strict=True):  # fmt: skip
+        assert fine.purged_train_row_count == independent_purge(
+            by_intervals.matrix, by_intervals.fold_model, intervals, split
+        )
+        assert fine.purged_train_row_count <= coarse.purged_train_row_count
+        finer += fine.purged_train_row_count < coarse.purged_train_row_count
+    assert finer > 0 and by_intervals.summary.path_count == 7
+
+
+def test_intervals_that_do_not_reproduce_the_trade_count_fail(store):
+    group, intervals = positions_group(store, FOUR)
+    tampered = dict(intervals)
+    tampered["alternating"] = (intervals["alternating"][0][1:],) + intervals["alternating"][1:]
+    study = run_cpcv_study(group, test_group_count=2, fold_groups=HALVES,
+                           lookback_windows=zero_context(FOUR),
+                           position_intervals=tampered)  # fmt: skip
+    check = study.assessment.checks[-1]
+    assert (check.name, check.status) == ("outcome_horizon.position_intervals", "failed")
+    assert check.detail.startswith("alternating window 0: intervals imply ")
+    assert study.result is None

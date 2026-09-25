@@ -143,6 +143,7 @@ def assess_cpcv_inputs(
     evaluation_windows: tuple[_TemporalWindow, ...],
     lookback_windows: tuple[_ContextAwareWindow, ...] | None = None,
     purge_shared_backtest_windows: bool = False,
+    position_intervals_supplied: bool = False,
 ) -> CpcvInputAssessment:
     """Eligibility of (matrix, fold model) for CPCV (Bölüm 17.2.27-17.2.30)."""
     if not isinstance(matrix, _TrialReturnMatrix):
@@ -231,6 +232,16 @@ def assess_cpcv_inputs(
                 "independent backtest starting flat, so no outcome can cross a fold boundary",
             )
         )
+    elif position_intervals_supplied:
+        checks.append(
+            CpcvInputCheck(
+                names[2],
+                "passed",
+                f"fold boundaries fall inside backtest window(s) {split_windows}; recorded "
+                "position intervals drive observation-level purging: a training row is dropped "
+                "when a position producing its return also produces a return in a test group",
+            )
+        )
     elif purge_shared_backtest_windows:
         checks.append(
             CpcvInputCheck(
@@ -316,6 +327,39 @@ def assess_cpcv_inputs(
     return CpcvInputAssessment(tuple(checks))
 
 
+def _interval_provenance(group: _TrialGroup, position_intervals: object) -> CpcvInputCheck:
+    """Recorded intervals must reproduce every trial's recorded trade_count, window by window."""
+    name = "outcome_horizon.position_intervals"
+    ids = [trial.candidate.candidate_id for trial in group.trials]
+    if not isinstance(position_intervals, dict) or set(position_intervals) != set(ids):
+        return CpcvInputCheck(
+            name, "failed", "position intervals must be keyed by every candidate id"
+        )
+    for trial in group.trials:
+        per_window = position_intervals[trial.candidate.candidate_id]
+        if not isinstance(per_window, tuple) or len(per_window) != len(trial.results):
+            return CpcvInputCheck(
+                name, "failed",
+                f"{trial.candidate.candidate_id}: one interval tuple per window is required",
+            )  # fmt: skip
+        for index, (window_result, intervals) in enumerate(
+            zip(trial.results, per_window, strict=True)
+        ):
+            transitions = sum(1 if i.exit_time is None else 2 for i in intervals)
+            if transitions != window_result.result.trade_count:
+                return CpcvInputCheck(
+                    name,
+                    "failed",
+                    f"{trial.candidate.candidate_id} window {index}: intervals imply {transitions} "
+                    f"trade transitions, the backtest recorded {window_result.result.trade_count}",
+                )
+    return CpcvInputCheck(
+        name,
+        "passed",
+        "recorded position intervals reproduce every trial's trade_count in every window",
+    )
+
+
 def run_cpcv_study(
     group: _TrialGroup,
     *,
@@ -325,6 +369,7 @@ def run_cpcv_study(
     fold_groups: tuple[_TemporalWindow, ...] | None = None,
     risk_free_per_period: _Decimal = _Decimal(0),
     purge_shared_backtest_windows: bool = False,
+    position_intervals: dict | None = None,
 ) -> CpcvStudy:
     """TrialGroup -> matrix -> fold model -> assessment -> CPCV paths -> summary (Bölüm 17.2.31)."""
     if not isinstance(group, _TrialGroup):
@@ -341,7 +386,12 @@ def run_cpcv_study(
         evaluation_windows=evaluation_windows,
         lookback_windows=lookback_windows,
         purge_shared_backtest_windows=purge_shared_backtest_windows,
+        position_intervals_supplied=position_intervals is not None,
     )
+    if position_intervals is not None:
+        assessment = CpcvInputAssessment(
+            assessment.checks + (_interval_provenance(group, position_intervals),)
+        )
     result = summary = None
     if assessment.runnable:
         try:
@@ -350,6 +400,7 @@ def run_cpcv_study(
                 fold_model,
                 risk_free_per_period=risk_free_per_period,
                 purge_shared_backtest_windows=purge_shared_backtest_windows,
+                position_intervals=position_intervals,
             )
             if len(result.paths) >= 2:
                 summary = _summarize_cpcv_paths(result)

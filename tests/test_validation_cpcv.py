@@ -89,7 +89,8 @@ def test_public_api_and_reuse_of_the_pbo_rules():
                       "CpcvPathSummary", "summarize_cpcv_paths", "DIAGNOSTIC_SCOPE"}  # fmt: skip
     signature = inspect.signature(compute_cpcv_paths)
     assert list(signature.parameters) == [
-        "matrix", "fold_model", "risk_free_per_period", "purge_shared_backtest_windows"]  # fmt: skip
+        "matrix", "fold_model", "risk_free_per_period", "purge_shared_backtest_windows",
+        "position_intervals"]  # fmt: skip
     assert signature.parameters["purge_shared_backtest_windows"].default is False
     assert signature.parameters["risk_free_per_period"].kind is inspect.Parameter.KEYWORD_ONLY
     assert signature.parameters["risk_free_per_period"].default == Decimal(0)
@@ -101,7 +102,8 @@ def test_public_api_and_reuse_of_the_pbo_rules():
 def test_import_direction_and_no_package_root_export():
     tree = ast.parse(Path(cpcv.__file__).read_text(encoding="utf-8"))
     imported = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
-    assert imported == {"dataclasses", "decimal", "crypto_quant_lab.validation.combinatorial_folds",
+    assert imported == {"dataclasses", "decimal", "crypto_quant_lab.backtest.position_log",
+                        "crypto_quant_lab.validation.combinatorial_folds",
                         "crypto_quant_lab.validation.pbo",
                         "crypto_quant_lab.validation.return_matrix"}  # fmt: skip
     assert not hasattr(validation_package, "compute_cpcv_paths")
@@ -541,3 +543,47 @@ def test_summary_model_refuses_a_purging_claim_and_non_finite_values():
         CpcvPathSummary(**fields | {"label_horizon_purging_applied": True})
     with pytest.raises(ValueError, match="^mean_sharpe_ratio must be a finite Decimal"):
         CpcvPathSummary(**fields | {"mean_sharpe_ratio": Decimal("NaN")})
+
+
+# ================================================================ observation-level purge (§17.2.35)
+
+
+def test_recorded_position_intervals_purge_exactly_the_overlapping_training_rows():
+    from crypto_quant_lab.backtest.position_log import PositionInterval
+
+    columns = {"A": (1, 2, 3, 4, 5, 6, 7, 9), "B": (2, 1, 4, 3, 6, 5, 8, 7)}
+    # 4 groups x 2 rows (marks every 30 min), one backtest block; A holds a position from the
+    # mark at 1h to the mark at 3h -> it produces the returns at 1.5h, 2h (group 1) and
+    # 2.5h, 3h (group 2). A training row is purged when that position also touches a test group:
+    # (0,1): train g2,g3 -> 2.5h, 3h purged (touch test g1) = 2   (0,2): g1 rows purged = 2
+    # (0,3): position touches neither test group = 0           (1,2): no training row touched = 0
+    # (1,3): g2 rows purged (touch test g1) = 2                (2,3): g1 rows purged = 2
+    intervals = {"A": ((PositionInterval("LONG", Decimal(1), T0 + H, T0 + 3 * H),),), "B": ((),)}
+    model = build_combinatorial_fold_model(groups(4), test_group_count=2)
+    result = compute_cpcv_paths(matrix(columns, rows_per_group=2), model,
+                                position_intervals=intervals)  # fmt: skip
+    assert [s.purged_train_row_count for s in result.splits] == [2, 2, 0, 0, 2, 2]
+    assert [s.train_row_count for s in result.splits] == [2, 2, 4, 4, 2, 2]
+    # the coarser shared-window purge empties every split of this single-block matrix
+    with pytest.raises(ValueError, match="split 0 has 0 training row"):
+        compute_cpcv_paths(matrix(columns, rows_per_group=2), model,
+                           purge_shared_backtest_windows=True)  # fmt: skip
+
+
+def test_position_interval_provenance_is_checked():
+    from crypto_quant_lab.backtest.position_log import PositionInterval
+
+    columns = {"A": (1, 2, 3, 4, 5, 6, 7, 9), "B": (2, 1, 4, 3, 6, 5, 8, 7)}
+    model = build_combinatorial_fold_model(groups(4), test_group_count=2)
+    m = matrix(columns, rows_per_group=2)
+    off_grid = PositionInterval("LONG", Decimal(1), T0 + H / 4, None)
+    with pytest.raises(
+        ValueError, match=r"entry/exit time is not an equity mark of window block 0"
+    ):
+        compute_cpcv_paths(m, model, position_intervals={"A": ((off_grid,),), "B": ((),)})
+    with pytest.raises(ValueError, match="exactly the matrix candidate ids"):
+        compute_cpcv_paths(m, model, position_intervals={"A": ((),)})
+    with pytest.raises(ValueError, match="tuple of 1 per-window interval tuples"):
+        compute_cpcv_paths(m, model, position_intervals={"A": ((), ()), "B": ((),)})
+    with pytest.raises(TypeError, match="position_intervals must be a dict"):
+        compute_cpcv_paths(m, model, position_intervals=[])
