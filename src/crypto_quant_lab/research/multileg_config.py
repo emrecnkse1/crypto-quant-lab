@@ -728,12 +728,37 @@ def example_config() -> dict:
     }
 
 
+class ExampleWriteError(RuntimeError):
+    """Writing the example failed after the output step (not an --output usage error)."""
+
+    def __init__(self, directory: Path, cause: BaseException) -> None:
+        super().__init__(f"{type(cause).__name__}: {cause}")
+        self.directory = directory
+
+
+def _is_output_error(exc: OSError, directory: Path) -> bool:
+    """True only for the creation of `directory` itself (exists / parent missing)."""
+    return exc.filename is not None and Path(exc.filename) == directory
+
+
 def write_example(directory: Path) -> Path:
-    """NEW directory: synthetic stores (real writers, closed) + `config.json` next to them."""
+    """NEW directory: synthetic stores (real writers, closed) + `config.json` next to them.
+
+    FileExistsError / FileNotFoundError about `directory` itself (the `--output`
+    step) propagate unchanged; any failure after that is an ExampleWriteError.
+    The directory is never deleted or repaired; `config.json` is written last.
+    """
     directory = Path(directory)
-    demo.build_store_fixture(directory)
-    path = directory / EXAMPLE_CONFIG_NAME
-    temporary = directory / f".{EXAMPLE_CONFIG_NAME}.tmp"
-    temporary.write_text(json.dumps(example_config(), indent=2) + "\n", encoding="utf-8")
-    os.replace(temporary, path)  # the config appears only after every store was written
+    try:
+        demo.build_store_fixture(directory)  # its first action creates `directory`
+        path = directory / EXAMPLE_CONFIG_NAME
+        temporary = directory / f".{EXAMPLE_CONFIG_NAME}.tmp"
+        temporary.write_text(json.dumps(example_config(), indent=2) + "\n", encoding="utf-8")
+        os.replace(temporary, path)  # the config appears only after every store was written
+    except (FileExistsError, FileNotFoundError) as exc:
+        if _is_output_error(exc, directory):
+            raise
+        raise ExampleWriteError(directory, exc) from exc
+    except Exception as exc:
+        raise ExampleWriteError(directory, exc) from exc
     return path

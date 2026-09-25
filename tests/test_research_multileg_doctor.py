@@ -430,3 +430,38 @@ def test_e_failed_example_is_reported_and_never_announced(tmp_path, monkeypatch,
     assert not list(target.glob(".*.tmp"))
     os.replace(target, tmp_path / "moved")  # every writer was closed
     assert cli.main(["multileg-example", "--output", str(tmp_path / "moved")]) == 2
+
+
+def test_e_file_not_found_while_writing_is_exit_1_not_an_output_error(
+    tmp_path, monkeypatch, capsys
+):
+    target = tmp_path / "example"
+
+    def missing(self, *args, **kwargs):
+        raise FileNotFoundError(2, "No such file or directory", str(target / "funding_none.db"))
+
+    monkeypatch.setattr(SQLiteHistoricalFundingStore, "write_ingestion_batch", missing)
+    assert cli.main(["multileg-example", "--output", str(target)]) == 1
+    out, err = capsys.readouterr()
+    assert "example written" not in out
+    assert "example NOT written (FileNotFoundError:" in err
+    assert "the new directory example is incomplete, has no config and is left as is" in err
+    assert target.is_dir() and not (target / "config.json").exists()
+    assert not list(target.glob(".*.tmp"))
+    os.replace(target, tmp_path / "moved")  # writers closed; nothing deleted or repaired
+    assert (tmp_path / "moved" / "spot.db").is_file()
+
+
+def test_e_output_path_errors_keep_exit_2_and_touch_nothing(tmp_path, capsys):
+    existing = tmp_path / "existing"
+    existing.mkdir()
+    (existing / "user.txt").write_text("keep", encoding="utf-8")
+    before = files(existing)
+    assert cli.main(["multileg-example", "--output", str(existing)]) == 2
+    assert files(existing) == before
+    missing_parent = tmp_path / "no-parent" / "example"
+    assert cli.main(["multileg-example", "--output", str(missing_parent)]) == 2
+    assert not (tmp_path / "no-parent").exists()
+    err = capsys.readouterr().err
+    assert err.count("error: ") == 2  # one plain output error per call
+    assert "example NOT written" not in err

@@ -1201,19 +1201,22 @@ def _multileg_doctor_builder(config_path: Path):
 
 
 def _multileg_example(output: Path) -> int:
-    from crypto_quant_lab.research.multileg_config import write_example
+    from crypto_quant_lab.research.multileg_config import ExampleWriteError, write_example
 
     try:
         config_path = write_example(output)
-    except (FileExistsError, FileNotFoundError) as exc:
+    except (FileExistsError, FileNotFoundError) as exc:  # the --output path itself
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    except Exception as exc:  # noqa: BLE001 - reported; the new directory is NOT an example
-        print(
-            f"error: example NOT written ({type(exc).__name__}: {_sanitize(str(exc))}); the new "
-            f"directory {Path(output).name} is incomplete, has no config and is left as is",
-            file=sys.stderr,
-        )
+    except ExampleWriteError as exc:  # reported; the directory is NOT a usable example
+        if exc.directory.is_dir():
+            state = (
+                f"the new directory {exc.directory.name} is incomplete, has no config and is "
+                "left as is"
+            )
+        else:
+            state = "no example directory exists"
+        print(f"error: example NOT written ({_sanitize(str(exc))}); {state}", file=sys.stderr)
         return 1
     print(f"example written (SYNTHETIC stores, closed writers): {config_path}")
     return 0
