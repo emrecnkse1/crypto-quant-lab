@@ -1979,3 +1979,135 @@ source'suz enjekte USDⓈ-M transport'unun legacy kanonik etiketi.
 ```
 
 Durumlar: USD-M source support IMPLEMENTED + TESTED · Synthetic offline fixture source fix IMPLEMENTED + TESTED · Real-market run NOT PERFORMED · Faz 7 NOT COMPLETE · FAZ6C NOT COMPLETE · FAZ6D NOT STARTED.
+
+### 19.15 Config tabanlı çok bacaklı araştırma çalıştırıcısı — IMPLEMENTED + TESTED (2026-09-25; yalnız sentetik store'larla)
+
+Kapsam: config → mevcut salt okunur store runner (§19.13.4) → değişmemiş `run_multileg_replay` → rapor v2. Muhasebe, E1, replay, store runner, store şeması, HTTP adaptörü, retry ve USDⓈ-M legacy davranışı DEĞİŞMEDİ. Gerçek piyasa verisiyle koşulmadı; strateji/sinyal yoktur.
+
+#### 19.15.1 Giriş noktaları (research CLI'ya additive)
+
+```
+python -m crypto_quant_lab.research multileg-replay --config <dosya> --output <YENİ dizin>
+python -m crypto_quant_lab.research multileg-example --output <YENİ dizin>
+research/multileg_config.py
+  load_multileg_config(path) -> MultilegConfig(raw, sha256, stores, decimal_context, request)
+  parse_multileg_config(raw, base_dir) ; multileg_section(config) -> Section
+  multileg_replay_builder(path) ; example_config() ; write_example(directory)
+Rapor: mevcut run_to_bundle (report v2 zarfı, OutputBundle, _sanitize). Exit
+kodları mevcut sözleşme: 0 succeeded (warning sayılır), 1 failed, 2 çıktı
+dizini var/üst dizin yok. Yeni exit-code ailesi yok.
+```
+
+#### 19.15.2 Config şeması ve parser kuralları
+
+Şema: docs/RESEARCH_RUNBOOK.md §6d. Hiçbir ekonomik alan varsayılanla doldurulmaz (pair, pencere, store'lar, kaynak etiketleri, cüzdanlar, maliyet modelleri, funding modeli, intent script'i zorunlu); yalnız `decimal_context` belgelenmiş varsayılana düşer ve rapora çözülmüş yazılır. Hedge oranı yapılandırılamaz (1:1, §19.10.1 sınırı). Ret (ConfigError, alan adıyla, herhangi bir store açılmadan): bilinmeyen alan/sürüm/tür, tekrarlanan anahtar, kesirli/üslü JSON sayısı, NaN/Infinity, null/boolean, geçersiz ondalık/zaman, hizasız pencere, `as_of < run_end`, eksik `sources`, `sources.funding`, desteklenmeyen maliyet/funding modeli ve parametresi, iç içe composite, `warmup`, desteklenmeyen intent script'i (çakışan/ters sıralı/ikinci lifecycle/kısmi kapanış/ızgara dışı/pencere dışı zaman, ≤ 0 miktar), aynı dosyayı gösteren roller (yol veya hard link). Store yolları config dosyasına göredir (cwd'ye değil). Test-only `FixedCost` production'a taşınmadı.
+
+#### 19.15.3 Sonuç ve durum sözleşmesi
+
+```
+results: result_view (§19.12 demo görünümü: final wallets, realized/unrealized,
+  costs, funding_paid, final_equity, fills, funding_records, pre-fill equity
+  zaman çizelgesi, unexecuted_intents, trace, scope) + initial_wallets,
+  intent_count, paired_fill_count, no_trade_explanation, identity_scope
+checks: inputs.provenance_and_coverage (passed; aksi hâlde runner ret eder),
+  identity.replay_input (fingerprint yoksa FAILED), intents.execution
+  (gerçekleşmeyen intent -> WARNING), position.at_end (açık pozisyon -> WARNING)
+Boş intent listesi: FLAT, 0 işlem, succeeded, açıklama "scripts no intents ...
+  not a data error". Son mum intent'i: unexecuted + warning, dolmuş gibi
+  gösterilmez. Veri/provenance/coverage hatası: failed, results null, hata
+  StoreInputError nedeniyle ([provenance_mismatch] vb.). Accounting reddi
+  (ör. yetersiz nakit): failed, "ValueError: insufficient spot cash ...".
+```
+
+#### 19.15.4 Kimlikler
+
+```
+config_sha256       config dosyası yazıldığı gibi (kanonik JSON); koşu kimliği DEĞİL
+replay_input_sha256 runner tanımı (§19.13.4): tüketilen mum/funding değerleri,
+                    pencere, as_of, intent'ler, cüzdanlar, maliyet/funding
+                    parametreleri, Decimal context; kaynak etiketleri HARİÇ
+run_input_sha256    etkin config (store dosya adları, beyan edilen kaynaklar,
+                    çözülmüş Decimal context) + her girdinin mantıksal
+                    fingerprint'i (spot, perpetual, funding, replay_input)
+deterministic_sha256 raporun deterministik ÇIKTI yükü
+Çıktı yolu, cwd ve oluşturma saati bunların hiçbirini değiştirmez (saat ve git
+durumu run_metadata'da). Tanımlanamayan model: programatik yol None'ı korur;
+config yolu bilinmeyen modeli reddeder; runner None dönerse veya fingerprint
+hata verirse koşu FAILED olur (yanlış tekrar-üretilebilir başarı yok).
+```
+
+#### 19.15.5 Kabul kanıtı (tests/test_research_multileg_config.py, 97 öğe)
+
+```
+C1  multileg-example -> multileg-replay: runner, iki candle open_read_only
+    (spot.db, perpetual.db), bir funding open_read_only ve replay tam birer kez
+    çağrılır; kontrollü config değişikliği (CLOSE yok -> 401.8591; perpetual
+    maliyeti zero -> 401.8091) ve store içeriği değişikliği (son spot close
+    103 -> 404) sonucu elle türetilmiş değere taşır
+C2  7 konfigürasyonda config yolu == bağımsız kurulan programatik istek:
+    MultiLegReplayResult'ın tamamı (fills, funding, equity, final state,
+    unexecuted, trace), replay_input_sha256 ve rapor results görünümü
+C3  config yolunda: N1 402 · N2 402.0101 · N3 402.01515 · N7 açık 402 ·
+    oransal 401.7076 (equity dizileriyle). N5 401.7101 (FixedCost) yalnız
+    programatik yolda (ST2/ST3); config'te "fixed" reddedilir
+C4  34 alan ihlali + 7 JSON düzeyi ihlali belirli mesajla; erken retlerde
+    runner ve open_read_only spy'ları hiç çağrılmaz; eksik config dosyası failed
+C5  yanlış/boşluklu kaynak, index_price namespace, provenance'sız spot,
+    kapsam dışı pencere, eksik mum, toplanmamış/yarım/başka partition funding
+    -> belirli StoreInputError; doğrulanmış boş funding = sıfır; raporda
+    yerel yol yok
+C6  15 intent ihlali reddi; boş liste FLAT/0 işlem/açıklama; son mum intent'i
+    unexecuted + warning; CLOSE son mumda -> açık 402, unrealized 1 + 1;
+    accounting reddi failed
+C7  farklı cwd + göreli config yolu ve farklı çıktı yolu aynı deterministic ve
+    run_input; taşınmış fixture aynı; gerçekten değişen kaynak etiketi
+    ekonomiyi değil run_input/deterministic'i değiştirir
+C8  funding değeri, intent zamanı, miktar, cüzdan, maliyet parametresi, as_of,
+    Decimal context, tüketilen fiyat -> replay_input ve run_input değişir;
+    kaynak etiketi -> yalnız run_input; pencere dışı satır ve çıktı yolu ->
+    tüketilen kimlikler aynı
+C9  programatik bilinmeyen model None; describe None enjeksiyonu -> failed;
+    fingerprint hatası -> failed
+C10 başarı/hata sonrası store'lar + config bayt/mtime aynı, -wal/-shm yok,
+    bağlantılar serbest; eksik store oluşturulmaz; çıktı ezilmez (exit 2);
+    yol ve hard-link alias'ı reddedilir
+C11 ağ yasakken çalışır; düşmanca ortam context'inde aynı deterministic;
+    hata dahil global context değişmez; import yan etkisiz
+C12 mevcut komutlar kayıtlı; tam suite 2768 passed (öncesi 2671)
+Offline kanıt: iki temiz çıktı dizini (ve ayrı bir örnek fixture dizini) aynı
+deterministic 2f8dbf4f…, config 986af995…, run_input b8b11c30…,
+replay_input 6448d759…; açık-final varyantı 401.8591, 1 warning.
+```
+
+#### 19.15.6 Elle türetilmiş örnek değerleri
+
+```
+Örnek (oransal 0.001 / 0.0005, funding 0.0001 @T3, ref 101):
+OPEN @T1 dolum spot 100 / perp 102; maliyet 0.1 + 0.051
+T2: 99.9 + 101 + 199.949 + 0 = 400.849
+T3: funding short'a +0.0101; perp PnL +1 -> 401.8591
+CLOSE @T3 dolum 101 / 101; maliyet 0.101 + 0.0505 -> 401.7076
+CLOSE kaldırılırsa: 401.8591 (kapanış maliyeti yok, son close 101/101)
+Perpetual maliyeti zero: 402.0101 - 0.1 - 0.101 = 401.8091
+```
+
+#### 19.15.7 Denetim (ayrı tur, harici reviewer yok)
+
+```
+Parser: ekonomik varsayılan uydurmuyor, girdi düşürmüyor (bilinmeyen alan
+reddi); kaynak/funding provenance için yalnız beyan + coverage iddiası
+(limitations); config hash'i koşu kimliği diye sunulmuyor (identity_scope);
+bilinmeyen model/None başarıya dönmüyor (C9); açık pozisyon ve pre-fill mark
+result_view'den (C6); eski config/API/hash'ler değişmedi (cli.py yalnız
+additive; research config v1 kuralları aynı); alias/yol ile girdi yazımı yok
+(C10); testler aynı kodu iki kez karşılaştırmakla yetinmiyor (C1/C3 elle
+değerler). Denetimde eklenen: accounting reddinin veri hatasından ayrı
+raporlandığını bağlayan test.
+Açık sınırlar: funding store'da kaynak kolonu yok; store'lar arası atomik
+snapshot yok; hedge oranı 1:1; mark-price serisi, liquidation, legging,
+partial fill, borrow, lot/tick, wallet transfer modellenmez; config'te
+warmup yok; multileg config için ayrı `doctor` yok; example dizini yarıda
+kalan bir yazımda kısmi kalabilir (yeni dizin; kaynak store'lara dokunmaz).
+```
+
+Durumlar: Config-driven multi-leg research runner IMPLEMENTED + TESTED (yalnız sentetik store'larla) · Real-market run NOT PERFORMED · Multi-leg strategy NOT IMPLEMENTED · Faz 7 NOT COMPLETE · FAZ6C NOT COMPLETE · FAZ6D NOT STARTED.

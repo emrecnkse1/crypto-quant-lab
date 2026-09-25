@@ -114,6 +114,45 @@ SENTETİK VERİ · SCRIPTED INTENT · STRATEJİ DEĞİL. Dört sabit senaryoyu (
 
 SENTETİK VERİ · GERÇEK PİYASA VERİSİ YOK · SCRIPTED INTENT · STRATEJİ DEĞİL. Çıktı dizininin `fixture\` alt klasörüne gerçek yazıcılarla yeni sentetik store'lar yazar (spot: provenance'lı spot ingestion + sahte transport, kaynak etiketi `synthetic:...`; perpetual: candle store `write_ingestion_batch`; funding: funding store `write_ingestion_batch`), yazıcıları kapatır, sonra bu store'ları **salt okunur** açıp provenance/coverage doğrulamasıyla `run_multileg_replay`'e verir (dört `multileg_offline` senaryosu). Var olan hiçbir DB açılmaz; var olan çıktı dizini ezilmez (exit 2); doğrulanamayan kaynakta rapor `failed` (exit 1). Store'lar arası atomik snapshot yoktur (her store kendi okuma işleminde). Programatik kullanım: `crypto_quant_lab.research.multileg_store.run_store_backed_multileg_replay`. Ayrıntı: FUNDING_RESEARCH_SPEC.md §19.13.
 
+## 6d. Config tabanlı çok bacaklı replay (offline, mevcut store'lar)
+
+İki adım: önce örnek store'lar + örnek config yazılır, sonra AYRI bir komut config'i okuyup store'ları salt okunur açar. Aşağıdaki komutlar bu depoda PowerShell'de çalıştırıldı (2026-09-25; exit 0, 0, 0; aynı çıktı dizinine ikinci kez yazma exit 2).
+
+```powershell
+.\.venv\Scripts\python.exe -m crypto_quant_lab.research multileg-example --output "$env:TEMP\cql\multileg-example-1"
+.\.venv\Scripts\python.exe -m crypto_quant_lab.research multileg-replay --config "$env:TEMP\cql\multileg-example-1\config.json" --output "$env:TEMP\cql\multileg-run-1"
+```
+
+`multileg-example` yeni dizine gerçek yazıcılarla SENTETİK store'lar (`spot.db`, `perpetual.db`, `funding_none.db`, `funding_t3.db`; kaynak etiketleri `synthetic:multileg-store-demo/...`) ve yanına `config.json` yazar; yazıcılar kapatılır. Bu store'lar olmadan örnek config çalışmaz — önce bu adım gerekir. Örnek config oransal maliyet senaryosudur: beklenen final equity `401.7076` (elle türetilmiş, FUNDING_RESEARCH_SPEC §19.15.6).
+
+Kontrollü değişiklik örneği (kapanış intent'ini kaldır → açık final durum, beklenen `401.8591`, `position.at_end` warning):
+
+```powershell
+$c = Get-Content "$env:TEMP\cql\multileg-example-1\config.json" -Raw | ConvertFrom-Json
+$c.intents = @($c.intents[0])
+$c | ConvertTo-Json -Depth 10 | Out-File -Encoding utf8 "$env:TEMP\cql\multileg-example-1\config_open_end.json"
+.\.venv\Scripts\python.exe -m crypto_quant_lab.research multileg-replay --config "$env:TEMP\cql\multileg-example-1\config_open_end.json" --output "$env:TEMP\cql\multileg-run-open-end-1"
+```
+
+(`-Depth 10` gereklidir; PowerShell 5.1'in `Out-File -Encoding utf8` ile yazdığı BOM kabul edilir.) Kendi store'larınızla: config'teki `stores` yollarını (config dosyasına göre göreli) ve `sources` etiketlerini store'ların kayıtlı provenance'ına göre yazın; önceden `doctor` yoktur — hata raporu hangi alanın/kaynağın neden reddedildiğini söyler. Exit: 0 succeeded (warning'ler sayılır ve yazdırılır), 1 failed (rapor yine yazılır), 2 çıktı dizini var / üst dizin yok. SCRIPTED INTENTS · STRATEJİ DEĞİL · gerçek piyasa verisi indirilmez.
+
+### Config şeması (`multileg_replay`, sürüm 1)
+
+| Alan | Kural |
+|---|---|
+| `config_kind`, `config_version` | tam olarak `"multileg_replay"` ve tam sayı `1` |
+| `pair` | `pair_id`, `exchange`, `spot_symbol`, `perpetual_symbol`, `quote_asset` (boş olmayan string); hedge oranı sabit 1:1 |
+| `timeframe`, `run_start`, `run_end`, `as_of` | açık offset'li ISO-8601; pencere ızgaraya hizalı; `as_of >= run_end` |
+| `stores.spot` / `.perpetual` / `.funding` | config dosyasına göre göreli ya da mutlak yol; üç rol ayrı fiziksel dosya olmalı; dosya yoksa oluşturulmaz, run failed |
+| `sources.spot` / `.perpetual` | ZORUNLU; store'da kayıtlı kaynak etiketiyle birebir karşılaştırılır. `sources.funding` reddedilir (funding store kaynak kaydetmez) |
+| `wallets.spot_cash`, `wallets.perpetual_collateral` | ondalık string, ≥ 0 |
+| `costs.spot` / `costs.perpetual` | `{"model": "zero"}`, `proportional_commission` (`rate`), `proportional_spread` (`half_spread_rate`), `proportional_slippage` (`rate`), `composite` (`components`: bu modellerin listesi) |
+| `funding_model` | `{"model": "linear"}` |
+| `intents` | `[]`, `[OPEN]` veya `[OPEN, CLOSE]`; her biri `action`, `decision_time` (mum kullanılabilirlik anı, `(run_start, run_end]`), `quantity` (> 0 string); CLOSE miktarı OPEN'a eşit |
+| `decimal_context` (opsiyonel) | §7'deki kurallar; yoksa belgelenmiş varsayılan, rapora çözülmüş hâli yazılır |
+
+Reddedilir: bilinmeyen alan (ör. `warmup`), tekrarlanan JSON anahtarı, kesirli/üslü JSON sayısı, NaN/Infinity, beklenen yerde null/boolean, geçersiz ondalık/zaman, desteklenmeyen model.
+
 ## 7. Config şeması (v1)
 
 `research/offline_fixture.py` içindeki `fixture_config()` tam bir örnektir; `offline-smoke` onu `fixture\config.json` olarak yazar.

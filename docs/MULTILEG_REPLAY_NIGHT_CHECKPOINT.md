@@ -85,3 +85,18 @@ Başlangıç: HEAD `6758b4d` (origin 0/0), `pytest -q` 2620 passed, ruff/format 
 Önceki bölümdeki "Sonraki tek kontrollü iş önerisi" (offline_fixture Binance etiketi) [2026-09-25 notu: bu bölümde uygulandı].
 
 Kod checkpoint'i: `6bdec88` (kod + testler) · dokümanlar: bu satırı içeren commit (hash `git log` ile doğrulanır).
+
+## Config tabanlı çok bacaklı araştırma çalıştırıcısı (2026-09-25)
+
+Başlangıç: HEAD `16e539d` (origin 0/0, `master`), son tam suite bu revizyonda 2671 passed, `AGENTS.md` hash `c88c11fd…25b05`, `pyproject.toml` `36e3ea27…e30a`.
+
+| Paket | Durum |
+|---|---|
+| A — başlangıç denetimi / sözleşme | VERIFIED — replay (boş intent listesi destekli; son mum intent'i unexecuted), store runner (StoreInputError nedenleri, replay_input None kuralı), rapor v2 (warning sayılır, exit 0/1/2) koddan okundu |
+| B — config şeması + sıkı parser | IMPLEMENTED — `research/multileg_config.py` |
+| C — config → salt okunur runner → replay → rapor komutu | IMPLEMENTED — `multileg-replay`, `multileg-example` (cli.py additive); örnek 401.7076, varyant 401.8591 elle doğrulandı |
+| D — C1–C12 testleri | VERIFIED — `tests/test_research_multileg_config.py` 97 öğe (FUNDING_RESEARCH_SPEC §19.15.5); tam suite 2768 passed |
+| E — offline örnek + runbook | VERIFIED — runbook §6d PowerShell komutları çalıştırıldı (`%TEMP%\cql\multileg-example-1`, `multileg-run-1`, `multileg-run-2`, `multileg-run-open-end-1`); iki temiz dizinde aynı deterministic `2f8dbf4f…` / run_input `b8b11c30…`; varyant 401.8591 |
+| F — denetim + docs + commit/push | VERIFIED — ayrı denetim turu §19.15.7 (harici reviewer yok); commit hash'leri `git log` ile doğrulanır |
+
+Kod checkpoint'i: `29ac181` (config komutu + testler) · dokümanlar: bu satırı içeren commit (hash `git log` ile doğrulanır). Sonraki tek kontrollü iş önerisi: multileg config için salt okunur `doctor` eşdeğeri (config + store provenance ön kontrolü, replay çalıştırmadan).
