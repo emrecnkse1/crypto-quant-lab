@@ -59,6 +59,9 @@ EXTRA_RESULT_KEYS = {
     "paired_fill_count",
     "no_trade_explanation",
     "identity_scope",
+    "resolved_config",
+    "input_evidence",
+    "multileg_input_sha256",
 }
 
 
@@ -662,7 +665,11 @@ def test_c7_moved_fixture_gives_the_same_result_and_real_source_changes_are_kept
     config_other = config | {"sources": {"spot": "synthetic:other/spot", "perpetual": PERP_SRC}}
     _, other = run_config(relabeled, config_other, tmp_path / "c")
     a, b = original["deterministic"], other["deterministic"]
-    assert b["results"] == a["results"]  # same economics
+    provenance_keys = {"resolved_config", "input_evidence", "multileg_input_sha256"}
+    for key in provenance_keys:  # the relabeled provenance is kept, never hidden
+        assert b["results"][key] != a["results"][key], key
+    economics = {k: v for k, v in a["results"].items() if k not in provenance_keys}
+    assert {k: v for k, v in b["results"].items() if k not in provenance_keys} == economics
     assert inputs(other)["spot"]["registered_dataset"]["source"] == "synthetic:other/spot"
     assert b["run_input_sha256"] != a["run_input_sha256"]
     assert other["deterministic_sha256"] != original["deterministic_sha256"]
@@ -860,7 +867,8 @@ def test_c11_import_has_no_side_effects(tmp_path, monkeypatch):
 def test_c12_existing_commands_are_still_registered():
     commands = cli.build_parser()._subparsers._group_actions[0].choices
     assert {"doctor", "inspect", "basis-report", "funding-research", "offline-smoke",
-            "public-smoke", "multileg-replay", "multileg-example"} == set(commands)  # fmt: skip
+            "public-smoke", "multileg-replay", "multileg-example",
+            "multileg-doctor"} == set(commands)  # fmt: skip
 
 
 def test_c6_accounting_rejection_is_a_failed_run_not_a_data_or_no_trade_result(tmp_path, fx):

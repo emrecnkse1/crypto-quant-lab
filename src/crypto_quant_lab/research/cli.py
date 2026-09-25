@@ -3,7 +3,8 @@
     python -m crypto_quant_lab.research <command> ...
 
 Commands (offline unless stated): `doctor`, `inspect`, `basis-report`,
-`funding-research`, `offline-smoke`, `multileg-replay` / `multileg-example`
+`funding-research`, `offline-smoke`, `multileg-replay` / `multileg-doctor` /
+`multileg-example`
 (research/multileg_config.py), and the explicitly opt-in network command
 `public-smoke --allow-network`. Every command only orchestrates
 production APIs — no formula, accounting or strategy logic lives here.
@@ -1175,6 +1176,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--config", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True, help="NEW directory for the bundle")
     p = sub.add_parser(
+        "multileg-doctor",
+        help="OPTIONAL replay-free check of a multileg config and its stores (read-only)",
+    )
+    p.add_argument("--config", type=Path, required=True)
+    p.add_argument("--output", type=Path, required=True, help="NEW directory for the bundle")
+    p = sub.add_parser(
         "multileg-example", help="write NEW synthetic stores plus an example multileg config"
     )
     p.add_argument("--output", type=Path, required=True, help="NEW directory for the example")
@@ -1187,6 +1194,12 @@ def _multileg_replay_builder(config_path: Path):
     return multileg_replay_builder(config_path)
 
 
+def _multileg_doctor_builder(config_path: Path):
+    from crypto_quant_lab.research.multileg_config import multileg_doctor_builder
+
+    return multileg_doctor_builder(config_path)
+
+
 def _multileg_example(output: Path) -> int:
     from crypto_quant_lab.research.multileg_config import write_example
 
@@ -1195,6 +1208,13 @@ def _multileg_example(output: Path) -> int:
     except (FileExistsError, FileNotFoundError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    except Exception as exc:  # noqa: BLE001 - reported; the new directory is NOT an example
+        print(
+            f"error: example NOT written ({type(exc).__name__}: {_sanitize(str(exc))}); the new "
+            f"directory {Path(output).name} is incomplete, has no config and is left as is",
+            file=sys.stderr,
+        )
+        return 1
     print(f"example written (SYNTHETIC stores, closed writers): {config_path}")
     return 0
 
@@ -1227,6 +1247,7 @@ def main(argv: list[str] | None = None) -> int:
         "offline-smoke": lambda: offline_smoke_builder,
         "public-smoke": lambda: public_smoke_builder(tuple(args.symbol or ["BTCUSDT"]), _now),
         "multileg-replay": lambda: _multileg_replay_builder(args.config),
+        "multileg-doctor": lambda: _multileg_doctor_builder(args.config),
     }
     try:
         path, report = run_to_bundle(args.command, args.output, builders[args.command]())

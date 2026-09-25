@@ -365,8 +365,28 @@ def replay_input_fingerprint(request, decimal_context, spot, perpetual, events) 
     )
 
 
-def run_store_backed_multileg_replay(request: StoreBackedMultiLegRequest) -> StoreBackedMultiLegRun:
-    """Validate, load read-only, replay; raises StoreInputError before any replay on bad input."""
+@dataclass(frozen=True, slots=True)
+class PreparedStoreInputs:
+    """Validated request + the data each store yielded inside its own read snapshot (no replay)."""
+
+    request: StoreBackedMultiLegRequest
+    decimal_context: dict
+    spot: LegCandles
+    perpetual: LegCandles
+    funding_events: tuple
+    spot_evidence: CandleEvidence
+    perpetual_evidence: CandleEvidence
+    funding_evidence: FundingEvidence
+
+
+def prepare_store_backed_inputs(request: StoreBackedMultiLegRequest) -> PreparedStoreInputs:
+    """Validate the request and load every store read-only (one snapshot per store).
+
+    Shared by the replay runner and the replay-free `multileg-doctor`: raises
+    StoreInputError (or FileNotFoundError for an absent store) on bad input;
+    all connections are closed before it returns. It never replays, fills,
+    marks or settles anything.
+    """
     decimal_context = _validate_request(request)
     pair = request.pair
     with ExitStack() as stack:
@@ -387,9 +407,26 @@ def run_store_backed_multileg_replay(request: StoreBackedMultiLegRequest) -> Sto
             request,
         )
         events, funding_evidence = _load_funding(stack, request)
+    return PreparedStoreInputs(
+        request=request,
+        decimal_context=decimal_context,
+        spot=spot,
+        perpetual=perpetual,
+        funding_events=events,
+        spot_evidence=spot_evidence,
+        perpetual_evidence=perpetual_evidence,
+        funding_evidence=funding_evidence,
+    )
+
+
+def run_store_backed_multileg_replay(request: StoreBackedMultiLegRequest) -> StoreBackedMultiLegRun:
+    """Validate, load read-only, replay; raises StoreInputError before any replay on bad input."""
+    prepared = prepare_store_backed_inputs(request)
+    decimal_context = prepared.decimal_context
+    spot, perpetual, events = prepared.spot, prepared.perpetual, prepared.funding_events
     with localcontext(build_context(decimal_context)):
         result = run_multileg_replay(
-            pair=pair,
+            pair=request.pair,
             spot=spot,
             perpetual=perpetual,
             funding_events=events,
@@ -406,9 +443,9 @@ def run_store_backed_multileg_replay(request: StoreBackedMultiLegRequest) -> Sto
         )
     return StoreBackedMultiLegRun(
         request=request,
-        spot=spot_evidence,
-        perpetual=perpetual_evidence,
-        funding=funding_evidence,
+        spot=prepared.spot_evidence,
+        perpetual=prepared.perpetual_evidence,
+        funding=prepared.funding_evidence,
         replay_input_sha256=fingerprint_value,
         result=result,
     )

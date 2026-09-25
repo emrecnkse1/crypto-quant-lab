@@ -2,6 +2,7 @@
 
     python -m crypto_quant_lab.research multileg-example --output <NEW directory>
     python -m crypto_quant_lab.research multileg-replay --config <file> --output <NEW directory>
+    python -m crypto_quant_lab.research multileg-doctor --config <file> --output <NEW directory>
 
 `multileg-replay` reads ONE strict JSON config, builds a
 `StoreBackedMultiLegRequest` from it and hands it to the existing read-only
@@ -19,6 +20,11 @@ a fraction/exponent, NaN/Infinity, null or booleans where a string/number is
 expected, non-decimal strings, naive timestamps and unsupported models are
 refused. Store paths are relative to the config file (never to the cwd).
 
+`multileg-doctor` (optional, never required by `multileg-replay`) parses the
+same config and runs the same read-only store preparation
+(`multileg_store.prepare_store_backed_inputs`) WITHOUT the replay or the
+accounting; solvency and the replay's own checks are reported NOT_EVALUATED.
+
 `multileg-example` writes NEW synthetic stores through the real writers
 (research/multileg_store_demo.py) plus an example config next to them; it
 is only a starting point — the replay command never uses built-in scenarios.
@@ -28,6 +34,7 @@ lot/tick or wallet-transfer model (see the report's limitations).
 """
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, localcontext
@@ -59,11 +66,12 @@ from crypto_quant_lab.research.cli import (
 )
 from crypto_quant_lab.research.decimal_policy import build_context, normalize_decimal_context
 from crypto_quant_lab.research.multileg_offline import result_view
-from crypto_quant_lab.research.report import canonical_json, check, sha256_hex
+from crypto_quant_lab.research.report import canonical_json, check, fingerprint, sha256_hex
 
 CONFIG_KIND = "multileg_replay"
 CONFIG_VERSION = 1
 EXAMPLE_CONFIG_NAME = "config.json"
+INPUT_IDENTITY_SCHEME = "multileg-input/v1"
 _STORE_ROLES = ("spot", "perpetual", "funding")
 _SOURCE_ROLES = ("spot", "perpetual")
 _COST_FIELDS = {
@@ -74,7 +82,10 @@ _COST_FIELDS = {
     "composite": ("components",),
 }
 IDENTITY_SCOPE = {
-    "config_sha256": "the config file exactly as written (canonical JSON); NOT the run identity",
+    "config_sha256": (
+        "SHA-256 of the canonical JSON of the PARSED config (key order, whitespace and a UTF-8 "
+        "BOM do not change it; not a raw-byte file hash); NOT the run identity"
+    ),
     "replay_input_sha256": (
         "consumed candle and funding values, window, as_of, intents, wallets, cost and funding "
         "model parameters and the Decimal context (runner-defined); source labels excluded"
@@ -82,6 +93,13 @@ IDENTITY_SCOPE = {
     "run_input_sha256": (
         "effective config (store file names, declared sources, resolved Decimal context) plus "
         "each input's logical fingerprint, including replay_input_sha256"
+    ),
+    "multileg_input_sha256": (
+        "scheme multileg-input/v1: replay_input_sha256 + config kind/version + per leg the "
+        "registered dataset identity (source included), coverage, candle count, consumed and "
+        "store-provenance fingerprints + funding partition, coverage quality, gap/event counts "
+        "and consumed fingerprint (the funding store records no source); None when "
+        "replay_input_sha256 is None"
     ),
     "deterministic_sha256": "the deterministic OUTPUT payload of this report",
 }
@@ -344,22 +362,15 @@ def load_multileg_config(path: Path) -> MultilegConfig:
     return parse_multileg_config(raw, base_dir=path.resolve().parent)
 
 
-# ---------------------------------------------------------------- run
+# ---------------------------------------------------------------- shared evidence / identity
 
 
-def _no_trade_explanation(run: multileg_store.StoreBackedMultiLegRun) -> str | None:
-    result = run.result
-    if result.paired_fills:
-        return None
-    if not run.request.intents:
-        return (
-            "the config scripts no intents: the pair stays FLAT for the whole window; zero "
-            "trades is the valid outcome of this script, not a data error (the replay ran)"
-        )
-    return (
-        "every scripted intent fell on the last candle's availability instant; with no next "
-        "candle it is reported as unexecuted and never filled"
-    )
+def _require_store_files(config: MultilegConfig) -> None:
+    for role, path in config.stores.items():
+        if not path.is_file():
+            raise ConfigError(
+                f"stores.{role}: file not found: {path.name} (read-only runs never create stores)"
+            )
 
 
 def _candle_input(evidence: multileg_store.CandleEvidence) -> dict:
@@ -382,17 +393,130 @@ def _candle_input(evidence: multileg_store.CandleEvidence) -> dict:
     }
 
 
+def _funding_input(evidence: multileg_store.FundingEvidence) -> dict:
+    return {
+        "role": "funding",
+        "file_name": evidence.file_name,
+        "partition": list(evidence.partition),
+        "quality_status": evidence.quality_status,
+        "coverage_gap_count": evidence.coverage_gap_count,
+        "event_count": evidence.event_count,
+        "source_recorded": evidence.source_recorded,
+        "logical_fingerprint_sha256": evidence.consumed_sha256,
+    }
+
+
+def _report_inputs(spot, perpetual, funding, replay_input: str | None) -> list:
+    return [
+        _candle_input(spot),
+        _candle_input(perpetual),
+        _funding_input(funding),
+        {"role": "replay_input", "logical_fingerprint_sha256": replay_input},
+    ]
+
+
+def _input_evidence(config: MultilegConfig, spot, perpetual, funding) -> dict:
+    """Readable input summary (rendered in report.md through `results`)."""
+    request = config.request
+    return {
+        "requested": {
+            "timeframe": request.timeframe,
+            "run_start": request.run_start,
+            "run_end": request.run_end,
+            "as_of": request.as_of_time,
+        },
+        "declared_sources": {
+            "spot": request.spot.expected_source,
+            "perpetual": request.perpetual.expected_source,
+        },
+        "spot": _candle_input(spot),
+        "perpetual": _candle_input(perpetual),
+        "funding": _funding_input(funding),
+    }
+
+
+def multileg_input_fingerprint(spot, perpetual, funding, replay_input: str | None) -> str | None:
+    """INPUT_IDENTITY_SCHEME identity; None when the replay input itself is unidentifiable."""
+    if replay_input is None:
+        return None
+    return fingerprint(
+        {
+            "scheme": INPUT_IDENTITY_SCHEME,
+            "config": [CONFIG_KIND, CONFIG_VERSION],
+            "replay_input_sha256": replay_input,
+            "legs": [
+                {
+                    key: value
+                    for key, value in _candle_input(leg).items()
+                    if key not in ("file_name", "role")
+                }
+                | {"role": leg.role}
+                for leg in (spot, perpetual)
+            ],
+            "funding": {
+                key: value for key, value in _funding_input(funding).items() if key != "file_name"
+            },
+        }
+    )
+
+
+def _provenance_check(spot, perpetual, funding) -> dict:
+    return check(
+        "inputs.provenance_and_coverage",
+        "passed",
+        f"spot/perpetual provenance equal the declared sources "
+        f"({spot.dataset.source}, {perpetual.dataset.source}); coverage contains "
+        f"[run_start, run_end) and every grid slot holds a candle; funding coverage "
+        f"{funding.quality_status} for partition {list(funding.partition)} "
+        "(the funding store records no source)",
+        category="data_integrity",
+    )
+
+
+def _identity_check(replay_input: str | None) -> dict:
+    return check(
+        "identity.replay_input",
+        "passed" if replay_input else "failed",
+        "replay input fingerprint computed"
+        if replay_input
+        else "the runner could not identify the replay inputs; the run is not reproducible",
+        category="execution",
+    )
+
+
+_COMMON_LIMITATIONS = [
+    multileg_store.SNAPSHOT_SCOPE,
+    (
+        "source labels are the writers' declarations, compared exactly; they are not "
+        "proof of endpoint access; the funding store records no source"
+    ),
+]
+
+
+# ---------------------------------------------------------------- run
+
+
+def _no_trade_explanation(run: multileg_store.StoreBackedMultiLegRun) -> str | None:
+    result = run.result
+    if result.paired_fills:
+        return None
+    if not run.request.intents:
+        return (
+            "the config scripts no intents: the pair stays FLAT for the whole window; zero "
+            "trades is the valid outcome of this script, not a data error (the replay ran)"
+        )
+    return (
+        "every scripted intent fell on the last candle's availability instant; with no next "
+        "candle it is reported as unexecuted and never filled"
+    )
+
+
 def multileg_section(config: MultilegConfig) -> Section:
     """Run the store-backed replay for one parsed config (inside the caller's Decimal context)."""
-    for role, path in config.stores.items():
-        if not path.is_file():
-            raise ConfigError(
-                f"stores.{role}: file not found: {path.name} (read-only runs never create stores)"
-            )
+    _require_store_files(config)
     run = multileg_store.run_store_backed_multileg_replay(config.request)
     result = run.result
     initial = result.initial_state
-    funding = run.funding
     results = result_view(result) | {
         "initial_wallets": {
             "spot_cash": initial.spot.cash,
@@ -402,6 +526,11 @@ def multileg_section(config: MultilegConfig) -> Section:
         "paired_fill_count": len(result.paired_fills),
         "no_trade_explanation": _no_trade_explanation(run),
         "identity_scope": IDENTITY_SCOPE,
+        "resolved_config": config.effective(),
+        "input_evidence": _input_evidence(config, run.spot, run.perpetual, run.funding),
+        "multileg_input_sha256": multileg_input_fingerprint(
+            run.spot, run.perpetual, run.funding, run.replay_input_sha256
+        ),
     }
     unexecuted = result.unexecuted_intents
     if unexecuted:
@@ -422,24 +551,8 @@ def multileg_section(config: MultilegConfig) -> Section:
     else:
         position_detail = f"lifecycle at end: {result.final_state.lifecycle.value}"
     checks = [
-        check(
-            "inputs.provenance_and_coverage",
-            "passed",
-            f"spot/perpetual provenance equal the declared sources "
-            f"({run.spot.dataset.source}, {run.perpetual.dataset.source}); coverage contains "
-            f"[run_start, run_end) and every grid slot holds a candle; funding coverage "
-            f"{funding.quality_status} for partition {list(funding.partition)} "
-            "(the funding store records no source)",
-            category="data_integrity",
-        ),
-        check(
-            "identity.replay_input",
-            "passed" if run.replay_input_sha256 else "failed",
-            "replay input fingerprint computed"
-            if run.replay_input_sha256
-            else "the runner could not identify the replay inputs; the run is not reproducible",
-            category="execution",
-        ),
+        _provenance_check(run.spot, run.perpetual, run.funding),
+        _identity_check(run.replay_input_sha256),
         check(
             "intents.execution",
             "warning" if unexecuted else "passed",
@@ -453,32 +566,13 @@ def multileg_section(config: MultilegConfig) -> Section:
             category="execution",
         ),
     ]
-    inputs = [
-        _candle_input(run.spot),
-        _candle_input(run.perpetual),
-        {
-            "role": "funding",
-            "file_name": funding.file_name,
-            "partition": list(funding.partition),
-            "quality_status": funding.quality_status,
-            "coverage_gap_count": funding.coverage_gap_count,
-            "event_count": funding.event_count,
-            "source_recorded": funding.source_recorded,
-            "logical_fingerprint_sha256": funding.consumed_sha256,
-        },
-        {"role": "replay_input", "logical_fingerprint_sha256": run.replay_input_sha256},
-    ]
     return Section(
         results=results,
         checks=checks,
-        inputs=inputs,
+        inputs=_report_inputs(run.spot, run.perpetual, run.funding, run.replay_input_sha256),
         limitations=[
             "SCRIPTED intents from the config; NOT A STRATEGY; no signal or opportunity selection",
-            run.snapshot_scope,
-            (
-                "source labels are the writers' declarations, compared exactly; they are not "
-                "proof of endpoint access; the funding store records no source"
-            ),
+            *_COMMON_LIMITATIONS,
             (
                 "valuation at trade CLOSE (no exchange mark-price series); hedge ratio 1:1; no "
                 "warmup; no liquidation, margin, legging, partial fill, borrow, lot/tick rules "
@@ -498,6 +592,103 @@ def multileg_replay_builder(config_path: Path):
         config = load_multileg_config(config_path)
         with localcontext(build_context(config.decimal_context)):
             section = multileg_section(config)
+        return config.effective(), config.sha256, section
+
+    return build
+
+
+# ---------------------------------------------------------------- doctor (no replay)
+
+NOT_EVALUATED = {
+    "economics.solvency": (
+        "whether the wallets can pay the fills (e.g. insufficient spot cash) is decided only by "
+        "the accounting inside a replay"
+    ),
+    "replay.core_validation": (
+        "run_multileg_replay's own checks (leg/instrument match, identical open_time grids, "
+        "funding event identity/order/duplicates and settlement, intents against candle "
+        "availability) run only inside a replay"
+    ),
+    "economics.results": (
+        "fills, marks, funding cashflows, realized/unrealized PnL and final equity: no replay ran"
+    ),
+}
+DOCTOR_SCOPE = (
+    "multileg-doctor parses the config with the multileg-replay parser and runs the SAME "
+    "read-only store preparation as multileg-replay (request checks, provenance, coverage, "
+    "grid, funding coverage) at this read time; it never calls the replay or the accounting"
+)
+
+
+def multileg_doctor_section(config: MultilegConfig) -> Section:
+    """Replay-free check of one parsed config (inside the caller's Decimal context)."""
+    _require_store_files(config)
+    prepared = multileg_store.prepare_store_backed_inputs(config.request)
+    spot, perpetual = prepared.spot_evidence, prepared.perpetual_evidence
+    funding = prepared.funding_evidence
+    replay_input = multileg_store.replay_input_fingerprint(
+        config.request,
+        prepared.decimal_context,
+        prepared.spot,
+        prepared.perpetual,
+        prepared.funding_events,
+    )
+    checks = [
+        check(
+            "config.parse",
+            "passed",
+            "config accepted by the multileg-replay parser",
+            category="data_integrity",
+        ),
+        _provenance_check(spot, perpetual, funding),
+        _identity_check(replay_input),
+        *(
+            check(name, "skipped", f"NOT_EVALUATED: {detail}", category="execution")
+            for name, detail in NOT_EVALUATED.items()
+        ),
+    ]
+    results = {
+        "replay_executed": False,
+        "doctor_scope": DOCTOR_SCOPE,
+        "not_evaluated": NOT_EVALUATED,
+        "resolved_config": config.effective(),
+        "input_evidence": _input_evidence(config, spot, perpetual, funding),
+        "replay_input_sha256": replay_input,
+        "multileg_input_sha256": multileg_input_fingerprint(spot, perpetual, funding, replay_input),
+        "identity_scope": IDENTITY_SCOPE
+        | {
+            "doctor_note": (
+                "the input identities describe what a replay WOULD consume at this read; they do "
+                "not mean a replay ran. A later multileg-replay re-reads and re-validates every "
+                "input and never reads this report"
+            ),
+            "deterministic_sha256": "the deterministic OUTPUT payload of this doctor report",
+        },
+    }
+    return Section(
+        results=results,
+        checks=checks,
+        inputs=_report_inputs(spot, perpetual, funding, replay_input),
+        limitations=[
+            (
+                "a doctor PASS covers only the listed checks at this read time; NOT_EVALUATED "
+                "items were not checked"
+            ),
+            *_COMMON_LIMITATIONS,
+        ],
+        does_not_prove=[
+            "that a replay will succeed (solvency and core replay validation are NOT_EVALUATED)",
+            "that the same data will exist or be unchanged when a replay runs",
+            "profitability or real-exchange feasibility of any basis/carry trade",
+        ],
+    )
+
+
+def multileg_doctor_builder(config_path: Path):
+    def build(bundle):
+        config = load_multileg_config(config_path)
+        with localcontext(build_context(config.decimal_context)):
+            section = multileg_doctor_section(config)
         return config.effective(), config.sha256, section
 
     return build
@@ -542,5 +733,7 @@ def write_example(directory: Path) -> Path:
     directory = Path(directory)
     demo.build_store_fixture(directory)
     path = directory / EXAMPLE_CONFIG_NAME
-    path.write_text(json.dumps(example_config(), indent=2) + "\n", encoding="utf-8")
+    temporary = directory / f".{EXAMPLE_CONFIG_NAME}.tmp"
+    temporary.write_text(json.dumps(example_config(), indent=2) + "\n", encoding="utf-8")
+    os.replace(temporary, path)  # the config appears only after every store was written
     return path
