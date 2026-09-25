@@ -391,6 +391,8 @@ def run_multileg_replay(
                 f"(cost {fill.spot.cost}), perpetual {next_perp.open} (cost {fill.perpetual.cost})",
             )
         )
+    if cursor != len(funding_events):  # every event is < run_end, so all must be consumed
+        raise ValueError(f"{len(funding_events) - cursor} funding event(s) were not settled")
     last_spot, last_perp = spot_candles[-1], perp_candles[-1]
     final_mark = mark_hedged_portfolio(
         state, time=run_end, spot_mark_price=last_spot.close, perpetual_mark_price=last_perp.close

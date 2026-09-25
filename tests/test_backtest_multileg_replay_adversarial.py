@@ -400,3 +400,18 @@ def test_explicit_context_gives_identical_results_under_a_hostile_ambient_contex
                 replay(spot_cash="1")
         assert (getcontext().prec, getcontext().rounding) == (4, ROUND_DOWN)
     assert again == reference
+
+
+def test_duplicates_are_caught_even_while_flat_and_every_event_is_recorded():
+    with pytest.raises(ValueError, match="duplicate funding event"):
+        replay(fundings=[funding(T0, "0.0001"), funding(T0, "0.0001")])  # both before the open
+    events = [funding(T0, "0.0001"), funding(at(2), "0.0001"), funding(at(3) + H / 2, "0.0001")]
+    result = replay(fundings=events)
+    # FLAT zero record, settled on the open short, FLAT_CLOSED zero record
+    assert [r.lifecycle_before.value for r in result.funding_records] == [
+        "FLAT",
+        "HEDGED_OPEN",
+        "FLAT_CLOSED",
+    ]
+    assert [r.signed_cost for r in result.funding_records] == [D(0), D("-0.0101"), D(0)]
+    assert result.final_state.applied_funding_keys == (events[1].canonical_key,)

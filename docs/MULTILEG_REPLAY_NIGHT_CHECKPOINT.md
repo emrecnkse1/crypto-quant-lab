@@ -30,7 +30,7 @@ R1 tam eşit open_time ızgarası · R2 MS9 sırası + E1 (opt-in) · R3 sonda a
 | C — S1–S12 + N1–N7 | VERIFIED — `tests/test_backtest_multileg_replay.py` 23 test fonksiyonu (N1–N7, S1–S12); tam suite 2566 passed |
 | D — adversarial / oracle | VERIFIED — `tests/test_backtest_multileg_replay_adversarial.py` 20 test (seed 20260925, 40 rastgele senaryo bağımsız oracle ile birebir; oracle 3 bilinen kusuru ayırt eder); tam suite 2586 passed |
 | E — offline demo | VERIFIED — `python -m crypto_quant_lab.research.multileg_offline --output <yeni dizin>`; 4 senaryo elle türetilmiş beklentilerle geçti; iki temiz çalıştırmada aynı `deterministic_sha256` ve `run_input_sha256`; var olan çıktı ezilmez (exit 2); `tests/test_research_multileg_offline.py` 4 test; PowerShell'de doğrulandı; tam suite 2590 passed |
-| F — son denetim + docs | NOT STARTED |
+| F — son denetim + docs | VERIFIED — ayrı denetim turu (harici reviewer yok): 2 sertleştirme (funding cursor tamlık denetimi, FLAT duplicate + yaşam döngüsü kayıt testi); ekonomik hata bulunmadı; spec §19.12.8, ROADMAP, runbook güncel; tam suite 2591 passed, ruff/format/diff temiz |
 
 ## Bilinen sınır
 
@@ -38,4 +38,12 @@ R1 tam eşit open_time ızgarası · R2 MS9 sırası + E1 (opt-in) · R3 sonda a
 
 ## Sonraki tek adım
 
-Paket F: bağımsız diff/ekonomik denetim, spec §19.12 + ROADMAP güncellemesi.
+Gece paketi tamamlandı. Sonraki kontrollü görev önerisi: store-backed çok bacaklı runner sözleşmesi (spot_trade + contract_trade store'larından provenance/coverage kontrollü okuma) — kullanıcı onayı gerekir.
+
+## Doğrulanmış kod checkpoint'leri
+
+`7d68102` (E1) · `146775a` (replay + N/S acceptance) · `755ae85` (adversarial/oracle) · `793561a` (offline demo) · son denetim + dokümanlar: bu dosyayı içeren commit (hash'i `git log` ile doğrulanır).
+
+## Çalışma ağacı ayrımı
+
+Bana ait değişiklikler commit edildi; kullanıcıya ait takip dışı `AGENTS.md` dokunulmadan duruyor (hash başlangıçtakiyle aynı).

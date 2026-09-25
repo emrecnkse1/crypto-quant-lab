@@ -1315,6 +1315,8 @@ K7 spot ve perp cüzdanları arası transfer modeli (tek havuz mu, ayrık mı)
 
 ### 19.12 Çok bacaklı replay / event-scheduling sözleşmesi — DRAFT, NOT IMPLEMENTED
 
+[2026-09-25 güncellemesi: bu bölüm genel olarak DRAFT kalır; ilk in-memory replay dilimi, E1 ve sentetik offline demo §19.12.8'de IMPLEMENTED + TESTED. Aşağıdaki 2026-09-24 taslak metni tarihsel olarak korunmuştur.]
+
 **Durum (2026-09-24):** DRAFT. Kod veya test YOKTUR; aşağıdaki kabul matrisi çalıştırılmış test DEĞİLDİR. §19.10.1 (muhasebe ilk dilimi) IMPLEMENTED + TESTED olarak kalır. Hiçbir yeni ekonomik karar burada kilitlenmez; her satırın karar durumu ayrıca yazılmıştır.
 
 #### 19.12.1 Mevcut tek bacaklı zamanlama sözleşmesi (kanıtla)
@@ -1487,6 +1489,8 @@ Sonuç: yalnız scheduler yazmak MS9'un tamamı için YETMEZ; "funding(T) + kapa
 
 #### 19.12.5 Gelecek implementasyon için kabul matrisi (TASLAK — çalıştırılmamış)
 
+[2026-09-25: S1–S12 çalıştırılabilir testlere eşlendi ve geçti; S3 ve S5 için R2 (MS9 + E1) seçildi. Eşleme §19.12.8'de.]
+
 Ortak kurulum (S1–S5): 1h mumlar, t0 = 00:00Z, mum k = [t0 + k·h, t0 + (k+1)·h), k = 0..3; run_end = availability(3) = t0 + 4h. Başlangıç: spot_cash 200, collateral 200, qty 1, sıfır maliyet. Intent'ler: open decision t0+1h (mum 0 kapanışı) -> fill mum 1 OPEN (spot 100, perp 102) @ t0+1h; close decision t0+3h -> fill mum 3 OPEN (spot 101, perp 101) @ t0+3h. Kapanışlar (spot/perp): mum0 100/102, mum1 100.5/101.5, mum2 101/101, mum3 101/101.
 
 ```
@@ -1531,6 +1535,8 @@ S12 lifecycle: ikinci open intent, açılmadan close, 1:1 dışı miktar -> ret
 
 #### 19.12.6 Açık kararlar
 
+[2026-09-25: R1–R5 yalnız ilk replay için kullanıcı tarafından karara bağlandı (§19.12.8); genel tasarım için açık kalırlar.]
+
 ```
 R1 iki serinin kısmi boşlukla çalışması (öneri: tam eşitlik şart; ilk replay'i ENGELLEMEZ)
 R2 MS9 aynı-an sırasının çok bacaklıya uzatılması + E1 (engellemez: onay yoksa
@@ -1556,3 +1562,128 @@ Kabul: §19.12.5 S1–S12 elle türetilmiş Decimal değerlerle; §19.10.1'in 22
 ```
 
 Durumlar: Multi-leg accounting first slice IMPLEMENTED + TESTED · Multi-leg replay contract DRAFT · Multi-leg replay implementation NOT IMPLEMENTED · Partial fill/legging PENDING · Margin/liquidation NOT MODELED · Basis/carry strategy evaluation PENDING · Faz 7 NOT COMPLETE · FAZ6C NOT COMPLETE · FAZ6D NOT STARTED.
+
+#### 19.12.8 İlk in-memory replay dilimi — IMPLEMENTED + TESTED (2026-09-25)
+
+§19 ve §19.12'nin geri kalanı DRAFT kalır. Bu dilim bir strateji, basis/carry değerlendirmesi veya kârlılık kanıtı DEĞİLDİR; intent'ler dışarıdan verilen scripted girdilerdir.
+
+```
+Kullanıcı kararları (yalnız bu ilk replay için; gelecek tasarımı kilitlemez):
+  R1 iki seri aynı timeframe ve birebir aynı open_time ızgarası; her seri tek
+     bacaklı _validate_dataset kurallarını geçer; forward-fill / tolerans /
+     kısmi kesişim YOK -> belirli hata
+  R2 MS9 sırası FUNDING -> EQUITY MARK -> INTENT -> PAIRED FILL, funding
+     pre-fill pozisyonu görür; E1 (aşağıda) ile
+  R3 sonda açık pozisyon açık kalır; son trade CLOSE ile değerlenir; sentetik
+     kapanış ve kapanış maliyeti YOK; kapalı özet üretilmez
+  R4 FLAT / FLAT_CLOSED'da funding sıfır kayıt (FundingModel qty 0 ile 0),
+     accounting API çağrılmaz; global duplicate denetimine dahil
+  R5 warmup / evaluation_start YOK (parametre de yok); tüm run değerlendirilir
+  K1–K7 (§19.10.1) geçici sınırları aynen.
+
+E1 — backtest/multileg.py (additive, commit 7d68102):
+  EventOrdering {STRICT_TIME (varsayılan, §19.10.1 davranışı birebir),
+                 FUNDING_BEFORE_FILL}
+  new_hedged_portfolio(..., event_ordering=EventOrdering.STRICT_TIME)
+  HedgedPortfolioState.event_ordering (varsayılanlı alan, tip doğrulamalı)
+  FUNDING_BEFORE_FILL: anahtar (time_us, faz FUNDING=0 < FILL=1, rate_type)
+    kesin artan; imleç state'in kendi fills + applied_funding_keys kayıtlarından
+    türetilir (çağıran veremez); last_event_time ile tutarsız geçmiş reddedilir.
+  §19.10.1'in 22 testi DEĞİŞTİRİLMEDEN geçer.
+  Bilinen sınır: dataclasses.replace ile elle kurulmuş keyfi state'e karşı tam
+  koruma iddia edilmez (ledger'lar da böyle kurulabilir); mod yalnız
+  constructor'da belirlenir, geçişler korur.
+
+Replay — backtest/multileg_replay.py (commit 146775a, sertleştirme bu commit):
+  HedgeAction {OPEN, CLOSE}; HedgeIntent(action, decision_time, quantity)
+  LegCandles(dataset: CandleDataset, candles: tuple[Candle])
+  run_multileg_replay(*, pair, spot, perpetual, funding_events, intents,
+      spot_cash, perpetual_collateral, spot_cost_model, perpetual_cost_model,
+      funding_model, as_of_time) -> MultiLegReplayResult
+  MultiLegReplayResult: pair, spot/perpetual dataset, run_start, run_end,
+      as_of_time, initial_state, final_state, paired_fills, funding_records
+      (FundingRecord: event, lifecycle_before, pre_fill_perpetual_quantity,
+      signed_cost, applied_to_open_position), equity_points (ReplayEquityPoint,
+      pre_fill=True), trace (TraceEvent: time, kind, detail), unexecuted_intents,
+      final_mark (run_end, son trade CLOSE), closed_summary (yalnız kapalıysa),
+      position_open_at_end, intents_are_exogenous, valuation_source
+      "trade_close", liquidation_not_modeled, legging_not_modeled,
+      warmup_supported False
+  Doğrulama: dataset kimliği pair'e karşı (spot_trade / contract_trade; index
+    ve mark reddedilir), mum sembol/timeframe = dataset, ızgara eşitliği,
+    funding kimliği pair perpetual'ı, duplicate ile çelişkili payload ayrı
+    mesajla, tek bacaklı _validate_funding_events (aralık run_start <= t <
+    run_end, (event_time, rate_type) sırası), intent script'i [] / [OPEN] /
+    [OPEN, CLOSE], kesin artan, decision_time bir mum availability anı,
+    eşit miktar. Döngü sonunda tüm funding olayları tüketilmiş olmalı.
+  Sıra: her mum N için t = availability(N): funding(ler) -> pre-fill mark
+    (iki CLOSE) -> intent -> N+1 OPEN'larında fill (zaman damgası t); son
+    mumun intent'i UNEXECUTED. Funding cursor'ı tek geçiş.
+  "Mark" = trade CLOSE değerlemesi; borsa markPrice serisi DEĞİL.
+  Aritmetik çağıranın Decimal context'inde; araştırma çağrıları decimal_policy.
+
+Kanıt (testler; beklenen değerler elle türetildi):
+  N1–N7  tests/test_backtest_multileg_replay.py::test_n1..test_n7 (N7 iki varyant)
+         N1 400/401/402/402 -> 402 · N2 402.0101 · N3 402.01515 ·
+         N4 400/400.85/401.85/401.70, cüzdanlar 200.80 / 200.90 ·
+         N5 401.7101 · N6 402 (funding sıfır kayıt) · N7 açık, 402, unrealized 1+1
+  S1–S12 aynı dosya test_s1..test_s12
+  E1     tests/test_backtest_multileg_ordering.py (8 test)
+  D      tests/test_backtest_multileg_replay_adversarial.py (20 fonksiyon):
+         bağımsız test-only ledger oracle, seed 20260925, 40 rastgele Decimal
+         senaryo (her equity noktası birebir) + oracle'ın 3 enjekte kusuru
+         (notional sayımı, funding işareti, çift ücret) yakalaması; nedensellik
+         (sonraki HIGH/LOW/CLOSE fill'i ve önceki mark'ları değiştirmez,
+         karar mumunun CLOSE'u fill fiyatı olmaz, sonek öneki değiştirmez);
+         metamorfik (paralel fiyat kayması, maliyet/funding tam etkisi,
+         kapanış sonrası fiyat bağımsızlığı); publication_lag kaydırması yok;
+         düşmanca ortam context'inde açık context ile özdeş sonuç.
+  E      tests/test_research_multileg_offline.py (4 test) + offline demo
+Gözlemsel ölçek smoke'u (test değil): 8760 saatlik mum + 1095 funding tek
+  çalıştırmada ~0.43 sn; final 2009.0494 elle doğrulandı (fiyat -2 +
+  1094 x 0.0101). Not: E1 imleci her funding'de kayıtları tarar (O(k)),
+  çok uzun serilerde karesel büyür; bu ölçekte sorun yok, iyileştirme
+  gerekirse ayrı mikro-adım.
+```
+
+Sentetik offline demo (§19.12.8 kapsamı):
+
+```
+python -m crypto_quant_lab.research.multileg_offline --output <YENİ dizin>
+research/multileg_offline.py — SENTETİK VERİ · SCRIPTED INTENT · STRATEJİ DEĞİL.
+Senaryolar (sürüm multileg-offline/v1): closed_no_funding (402),
+  close_instant_funding (402.0101), proportional_costs_and_funding (spot %0.1,
+  perp %0.05 notional; 400 / 400.8490 / 401.8591 / 401.7076, cüzdanlar
+  200.799 / 200.9086), open_at_end (402, HEDGED_OPEN). Beklentiler modül
+  docstring'inde elle türetildi. Rapor v2 paketi (report.json + report.md):
+  cüzdanlar, fill'ler, funding kayıtları, pre-fill equity zaman çizelgesi,
+  açık/kapalı durum, trace, kapsam bayrakları, config + girdi manifesti,
+  run_input_sha256. Ağ/store/var olan DB yok; var olan dizin ezilmez (exit 2);
+  beklenti tutmazsa veya senaryo hata verirse rapor failed (exit 1).
+  İki temiz dizinde aynı deterministic_sha256 ve run_input_sha256 doğrulandı.
+```
+
+Bağımsız son denetim (aynı oturumda ayrı tur, harici reviewer kullanılmadı):
+
+```
+Kontrol edilen ve testle bağlanan riskler: perp notional'ın nakde/equity'ye
+  girmesi (oracle "count_notional" kusuru + A/N testleri), funding/realized/
+  maliyetin çift sayımı (mark invariant'ı + oracle "double_fee"), kapanış
+  anında funding'in atlanması (N2, S3), açılış anında funding'in yeni
+  pozisyona uygulanması (N6, S4), aynı anlı farklı funding'lerin kaybolması
+  (N3, S5), sıfır kaydın duplicate denetiminden kaçması (yeni regresyon testi),
+  N+1 verisinin karara sızması (D4), pre-fill mark'ın post-fill sanılması
+  (pre_fill bayrağı, N4 T3=401.85), açık pozisyona sahte kapanış (N7), ortam
+  Decimal etkisi (D6), testlerin beklenenleri üretimden alması (elle türetilmiş
+  sabitler + bağımsız oracle).
+Bu turda yapılan düzeltmeler: (1) döngü sonunda tüm funding olaylarının
+  tüketildiği savunmacı denetimi; (2) FLAT anındaki duplicate ve üç yaşam
+  döngüsü fazındaki kayıtlar için regresyon testi. Ekonomik hata bulunmadı;
+  bu "hata yoktur" demek değildir — yalnız listelenen senaryolar ve
+  invariant'lar doğrulandı.
+Açık kalan: E1'in replace ile elle kurulan state'e karşı sınırı; O(k)
+  imleç maliyeti; çok bacaklı store-backed runner, partial fill/legging,
+  margin/liquidation, warmup, metrics adapter'ı.
+```
+
+Durumlar: Multi-leg accounting first slice IMPLEMENTED + TESTED · E1 ordered-events extension IMPLEMENTED + TESTED · Legacy accounting compatibility VERIFIED · In-memory multi-leg replay IMPLEMENTED + TESTED · Synthetic offline demo VERIFIED · Store-backed multi-leg runner NOT IMPLEMENTED · Partial fill/legging PENDING · Margin/liquidation NOT MODELED · Basis/carry strategy evaluation PENDING · Faz 7 NOT COMPLETE · FAZ6C NOT COMPLETE · FAZ6D NOT STARTED.
