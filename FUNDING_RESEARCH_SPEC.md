@@ -2023,6 +2023,8 @@ Boş intent listesi: FLAT, 0 işlem, succeeded, açıklama "scripts no intents .
 
 ```
 config_sha256       config dosyası yazıldığı gibi (kanonik JSON); koşu kimliği DEĞİL
+                    [2026-09-25 notu: teknik olarak ayrıştırılmış config'in kanonik
+                    JSON hash'idir, ham bayt hash'i değil; §19.16.2]
 replay_input_sha256 runner tanımı (§19.13.4): tüketilen mum/funding değerleri,
                     pencere, as_of, intent'ler, cüzdanlar, maliyet/funding
                     parametreleri, Decimal context; kaynak etiketleri HARİÇ
@@ -2111,3 +2113,171 @@ kalan bir yazımda kısmi kalabilir (yeni dizin; kaynak store'lara dokunmaz).
 ```
 
 Durumlar: Config-driven multi-leg research runner IMPLEMENTED + TESTED (yalnız sentetik store'larla) · Real-market run NOT PERFORMED · Multi-leg strategy NOT IMPLEMENTED · Faz 7 NOT COMPLETE · FAZ6C NOT COMPLETE · FAZ6D NOT STARTED.
+
+### 19.16 Tam talimat uzlaştırması + isteğe bağlı `multileg-doctor` — IMPLEMENTED + TESTED (2026-09-25; yalnız sentetik store'larla)
+
+Metin teslimi: §19.15 yazılırken görev metninin 1–8. bölümleri ulaşmamıştı (A–F paketleri o zaman kendimce tanımlanmıştı). Bu bölümde görevin TAM metni (EK A, 12 bölüm) koda karşı eşlendi; eksik talimat bug kanıtı sayılmadı. Kaynak görev dosyası kullanıcıya aittir, depoya eklenmedi.
+
+#### 19.16.1 EK A uzlaştırma tablosu (gruplu)
+
+```
+Gereksinim                                  Kod                                   Test / kanıt                                  Durum
+§4 açık ekonomik alanlar, sürüm, pair       multileg_config.parse_multileg_config  C4 (41 ret), C3/C1 değerleri                  VERIFIED
+§4 sıkı JSON: duplicate/tip/float/bool/null  _no_duplicate_keys, _object, _string,  C4 JSON ve alan retleri; R1 boş ondalık ""   VERIFIED (boş ondalık testi bu turda eklendi)
+   /NaN/Decimal/timestamp                   cli._decimal/_time
+§4 allowlist modeller; bileşen sırası        _cost_model (_COST_FIELDS)            C3 "fixed" ret; R1 composite/spread/slippage  VERIFIED (composite/spread/slippage config
+                                                                                   401.6583 / 401.8985, ters sıra ayrı kimlik     yolu önceden TESTSİZDİ)
+§4 enstrüman "market" alanı                  pair: exchange + iki sembol + quote;  registered_dataset.market_type raporda        IMPLEMENTED — market_type HedgedPair
+                                            market_type sabit (spot/usdm_perp.)                                                 sözleşmesiyle sabit, config alanı değil
+§4 price_kind + source                       runner price_kind'ı sabitler; source  C5 source/price_kind retleri                   VERIFIED
+                                            config'te zorunlu
+§5 ekonomi/replay kuralları (tek pair, 1:1,  değişmemiş run_multileg_replay        C2 tam sonuç parity'si; acceptance N1–N7;      VERIFIED
+   iki cüzdan, tek lifecycle, MS9/E1,                                             C6 son mum / açık pozisyon
+   son açık pozisyon, unexecuted)
+§6 kimlik: bilinmeyen model reddi, legacy    _cost_model; multileg_store None      C9, R12                                       VERIFIED
+   None korunur, eksik kimlik başarı değil
+§6 kimliğin provenance/coverage kapsaması    ÖNCE: run_input_sha256 yalnız config  R1 multileg_input testi                        MISSING -> DÜZELTİLDİ (19.16.2)
+                                            + tüketilen içerik fingerprint'i
+§6/§8 config_sha256 açıklaması               sha256(canonical_json(parsed config)) R1 config_sha256 testi                          CONFLICT (metin) -> DÜZELTİLDİ; hash aynı
+§7 config-relative yol, salt okunur, eksik   parse (base_dir), open_read_only,     C7, C10, R7                                   VERIFIED
+   DB yaratılmaz, bağlantılar kapanır        _require_store_files
+§7 output config/input/alias üzerine yazmaz  OutputBundle (var olan yol = exit 2)  R1 output çakışma testi (config, store,       VERIFIED (test bu turda eklendi)
+                                                                                   hard-link alias, fixture dizini)
+§7 üç rol ayrı dosya                         YALNIZ config parser tercihi          C10 alias testleri                             IMPLEMENTED — programatik runner paylaşılan
+                                                                                                                                dosyayı reddetmez; eski API zorunluluğu değil
+§8 JSON+Markdown: input kaynak/partition/    ÖNCE: report.md config ve inputs'u    R1 markdown testi                              MISSING -> DÜZELTİLDİ (results'a
+   coverage, model parametreleri, Decimal    göstermiyordu (render_markdown yalnız                                                  resolved_config + input_evidence)
+   context                                   results'u basar)
+§8 no-trade / unexecuted / accounting /      multileg_section checks               C6, C5, accounting testi                       VERIFIED
+   veri hatası / warning ayrımı
+§9 C1–C12                                    tests/test_research_multileg_config   97 öğe                                         VERIFIED
+§10 çalışan örnek, iki temiz dizin           multileg-example, runbook §6d         §19.15.5 kanıtı; 19.16.5                       VERIFIED
+§11 kapsam dışı maddeler                     —                                     dokunulmadı                                    OUT_OF_SCOPE
+§12 denetim/checkpoint/commit                —                                     §19.15.7, 19.16.6                              VERIFIED
+```
+
+#### 19.16.2 B düzeltmeleri (her biri: eksik -> test -> değişiklik -> korunan)
+
+```
+1. Kimlik provenance/coverage kapsamıyordu. Test:
+   test_r1_multileg_input_identity_carries_provenance_that_run_input_does_not
+   (aynı mumlar, pencere içi coverage iki aralık olarak kayıtlı: replay_input ve
+   run_input AYNI, yeni multileg_input_sha256 FARKLI). Değişiklik: results'a
+   açıkça adlandırılmış multileg_input_sha256 (şema multileg-input/v1:
+   replay_input_sha256 + config kind/version + her bacak kayıtlı dataset
+   kimliği, pencereyle örtüşen coverage, mum sayısı, tüketilen ve
+   store-provenance fingerprint'leri + funding partition/kalite/gap/olay
+   sayısı/tüketilen fingerprint; replay_input None ise None). Korunan:
+   run_input_sha256 algoritması ve anlamı (cli.run_input_fingerprint) AYNI.
+   Runner'ın sürüm işareti yoktur; uydurulmadı (kod revizyonu run_metadata'da).
+2. identity_scope.config_sha256 metni "exactly as written" diyordu; kod ayrıştırılmış
+   config'in kanonik JSON hash'ini alır (anahtar sırası, boşluk, BOM etkilemez).
+   Test: test_r1_config_sha256_is_the_parsed_canonical_hash_not_a_byte_hash.
+   Yalnız metin düzeltildi; hash sözleşmesi değişmedi.
+3. report.md config/inputs'u göstermiyordu. results'a resolved_config ve
+   input_evidence eklendi (report.py DEĞİŞMEDİ). Test: ..._markdown_shows_...
+4. multileg-example writer hatası yakalanmamış traceback veriyordu (yanlış başarı
+   YOKTU: config en son yazılıyordu). Değişiklik: config geçici dosya + os.replace
+   ile en son görünür; hata exit 1 + "example NOT written ... incomplete, has no
+   config and is left as is" (silme/onarım yok). Test: test_e_failed_example_...
+Deterministik çıktı etkisi (aynı fixture, eski rapor %TEMP%\cql\multileg-run-1
+ile yeni koşu): config, config_sha256, run_input_sha256, inputs, checks, errors,
+limitations, does_not_prove ve bütün mevcut ekonomik results alanları AYNI;
+değişen yalnız identity_scope.config_sha256 metni (+ yeni multileg_input_sha256
+açıklaması) ve eklenen results anahtarları resolved_config, input_evidence,
+multileg_input_sha256 -> deterministic_sha256 2f8dbf4f… -> 12b60e9f…. Eski
+raporlar yeniden yazılmadı. Mevcut testlerde dar güncellemeler: C2
+EXTRA_RESULT_KEYS'e üç yeni anahtar; C7'de kaynak etiketi değişince yeni
+provenance alanlarının da değiştiği açıkça iddia edildi (ekonomi eşitliği aynı);
+C12 komut kümesine multileg-doctor.
+```
+
+#### 19.16.3 `multileg-doctor` (isteğe bağlı, replay'siz)
+
+```
+python -m crypto_quant_lab.research multileg-doctor --config <dosya> --output <YENİ dizin>
+Ortak hazırlık: multileg_store.prepare_store_backed_inputs(request) ->
+  PreparedStoreInputs (istek doğrulama + her store kendi read snapshot'ında
+  provenance/coverage/grid/funding okuması; bağlantılar dönmeden kapanır).
+  run_store_backed_multileg_replay aynı fonksiyonu çağırıp ardından
+  değişmemiş replay'i çağırır; public imza, ekonomi, snapshot kapsamı ve
+  fingerprint anlamları aynı; her store yine tek kez sorgulanır.
+Doctor: aynı parser + _require_store_files + prepare_store_backed_inputs +
+  saf replay_input_fingerprint. run_multileg_replay, runner ve accounting
+  (new_hedged_portfolio, apply_hedged_open/close, apply_perpetual_funding,
+  mark_hedged_portfolio) ÇAĞRILMAZ.
+Rapor (report v2, run_kind multileg-doctor, exit 0/1/2 aynı sözleşme):
+  results.replay_executed=false, doctor_scope, not_evaluated,
+  resolved_config, input_evidence (istenen pencere/timeframe/as_of, beyan
+  edilen ve kayıtlı dataset/source, coverage, sayılar, fingerprint'ler;
+  funding yalnız partition+coverage, source_recorded=false),
+  replay_input_sha256, multileg_input_sha256, identity_scope.
+  Final equity, fill, funding cashflow, realized/unrealized YOK.
+NOT_EVALUATED (status "skipped", detail "NOT_EVALUATED: ..."; yeni status yok):
+  economics.solvency, replay.core_validation (bacak/enstrüman eşleşmesi, özdeş
+  open_time grid'leri, funding olay kimliği/sırası/duplicate ve settlement,
+  intent'lerin mum kullanılabilirliğine göre kontrolü), economics.results.
+Doctor PASS yalnız o okuma anındaki listelenen kontrollerdir; replay doctor
+raporunu okumaz, doctor gerektirmez, girdisini her koşuda yeniden doğrular.
+Store'lar arası atomik snapshot yoktur.
+```
+
+#### 19.16.4 Kabul kanıtı (tests/test_research_multileg_doctor.py, 21 öğe)
+
+```
+R1  B düzeltmeleri + composite 401.6583 (ters sıra: aynı değer, farklı kimlik),
+    perpetual spread 401.8985, boş ondalık reddi, output çakışmaları (replay ve
+    doctor), markdown içeriği, multileg_input kapsamı
+R2  gerçek store'lar (spot.db, perp.db, f_t3.db açıldı); replay/runner/accounting
+    sentinel çağrı listesi BOŞ; results'ta replay-only alan yok; doctor ve
+    replay aynı replay_input/multileg_input, farklı deterministic
+R3  8 bozuk girdi (kaynak, index_price, kapsam dışı, eksik mum, toplanmamış ve
+    başka partition funding, eksik DB, desteklenmeyen model) -> iki komutta
+    birebir aynı hata; doğrulanmış boş funding ikisinde de geçer
+R4  3 birim (300 > 200 nakit): doctor succeeded + solvency NOT_EVALUATED,
+    replay "ValueError: insufficient spot cash"
+R5  doctor hiç koşmadan replay N2 402.0101; sorgular ["spot","usdm_perpetual"],
+    open_read_only ["spot.db","perp.db"] (iki kez okuma yok)
+R6  doctor PASS sonrası spot.db değişince replay_input farklı; perp.db başka
+    kaynakla değişince replay provenance_mismatch
+R7  başarı/hata sonrası bayt+mtime aynı, -wal/-shm yok, bağlantılar serbest
+R8  farklı cwd + göreli config, düşmanca Decimal ortamı, ağ engeli, alias reddi
+R9  iki çıktı dizininde aynı doctor deterministic; funding değeri değişince
+    replay_input ve multileg_input değişir
+R10 ekonomik değerler mevcut testlerde (N1–N7, 401.7076, 401.8591) değişmeden geçer
+R11 22 accounting + 97 config + replay/store/source testleri; tam suite 2789 passed
+R12 import yan etkisiz (ayrı süreç); describe None / fingerprint hatası iki
+    komutta da failed, multileg_input None
+E   enjekte writer hatası: exit 1, "example written" yok, config yok, writer'lar
+    kapalı (dizin taşınabildi)
+```
+
+#### 19.16.5 Offline gösterim (PowerShell, 2026-09-25)
+
+```
+multileg-example -> %TEMP%\cql\multileg-example-2 (exit 0)
+multileg-doctor  -> %TEMP%\cql\multileg-doctor-2 (exit 0; replay_executed=false;
+                    deterministic c83bb396…, scratchpad'deki ayrı fixture ile aynı)
+multileg-replay  -> %TEMP%\cql\multileg-run-3 (exit 0; 401.7076; multileg_input
+                    39a36796…, doctor ile aynı)
+CLOSE kaldırılmış -> %TEMP%\cql\multileg-run-open-end-2 (exit 0, 1 warning, 401.8591)
+yanlış perpetual kaynağı -> multileg-doctor-bad-2 ve multileg-run-bad-2: ikisi de
+                    exit 1, aynı [provenance_mismatch] hatası
+```
+
+#### 19.16.6 Denetim (ayrı öz-denetim turu, harici reviewer yok)
+
+```
+Arananlar: kaynak kanıtı uydurma (yok: kayıtlı dataset store'dan, funding
+source_recorded=false), doctor'ın gizlice replay çağırması (R2 sentinel),
+iki validator'ın ayrışması (tek parser + tek hazırlık; R3 birebir hata),
+eski doctor sonucuna güvenme (R6), eksik kimliğin başarı sayılması (R12),
+snapshot kaybı (hazırlık refactor'ı store başına tek snapshot ve aynı kapanma
+anını korur; ST8 testleri geçer), output/input yazımı (R1, R7), aynı kodu iki
+kez karşılaştırma (R2 kimlik eşitliği elle değerlerle birlikte).
+Kalan küçük bulgu: multileg-example yazımı sırasında oluşan bir
+FileNotFoundError (yalnız çıktı dizini değil) exit 2 olarak raporlanır; başarı
+ilan edilmez ve config yazılmaz. Güç kaybı/kill -9 dayanıklılığı kanıtlanmadı.
+```
+
+Durumlar: Config-driven multi-leg research runner IMPLEMENTED + TESTED · Optional multileg-doctor IMPLEMENTED + TESTED (yalnız sentetik store'larla) · Real-market run NOT PERFORMED · Multi-leg strategy NOT IMPLEMENTED · Faz 7 NOT COMPLETE · FAZ6C NOT COMPLETE · FAZ6D NOT STARTED.

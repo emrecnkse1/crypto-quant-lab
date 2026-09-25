@@ -136,6 +136,20 @@ $c | ConvertTo-Json -Depth 10 | Out-File -Encoding utf8 "$env:TEMP\cql\multileg-
 
 (`-Depth 10` gereklidir; PowerShell 5.1'in `Out-File -Encoding utf8` ile yazdığı BOM kabul edilir.) Kendi store'larınızla: config'teki `stores` yollarını (config dosyasına göre göreli) ve `sources` etiketlerini store'ların kayıtlı provenance'ına göre yazın; önceden `doctor` yoktur — hata raporu hangi alanın/kaynağın neden reddedildiğini söyler. Exit: 0 succeeded (warning'ler sayılır ve yazdırılır), 1 failed (rapor yine yazılır), 2 çıktı dizini var / üst dizin yok. SCRIPTED INTENTS · STRATEJİ DEĞİL · gerçek piyasa verisi indirilmez.
 
+İsteğe bağlı ön kontrol (replay ÇALIŞTIRMAZ; `multileg-replay` bunu gerektirmez ve okumaz). Aşağıdaki komutlar 2026-09-25'te çalıştırıldı (exit 0, 0, 0, 0; yanlış kaynaklı config'te doctor ve replay ikisi de exit 1, aynı `[provenance_mismatch]` hatası):
+
+```powershell
+.\.venv\Scripts\python.exe -m crypto_quant_lab.research multileg-example --output "$env:TEMP\cql\multileg-example-2"
+.\.venv\Scripts\python.exe -m crypto_quant_lab.research multileg-doctor --config "$env:TEMP\cql\multileg-example-2\config.json" --output "$env:TEMP\cql\multileg-doctor-2"
+.\.venv\Scripts\python.exe -m crypto_quant_lab.research multileg-replay --config "$env:TEMP\cql\multileg-example-2\config.json" --output "$env:TEMP\cql\multileg-run-3"
+$b = Get-Content "$env:TEMP\cql\multileg-example-2\config.json" -Raw | ConvertFrom-Json
+$b.sources.perpetual = "binance:GET https://fapi.binance.com/fapi/v1/klines"
+$b | ConvertTo-Json -Depth 10 | Out-File -Encoding utf8 "$env:TEMP\cql\multileg-example-2\config_bad_source.json"
+.\.venv\Scripts\python.exe -m crypto_quant_lab.research multileg-doctor --config "$env:TEMP\cql\multileg-example-2\config_bad_source.json" --output "$env:TEMP\cql\multileg-doctor-bad-2"
+```
+
+Doctor aynı parser'ı ve aynı salt okunur store hazırlığını kullanır; raporunda `replay_executed: false`, kontrol edilen girdiler, beyan edilen/kayıtlı kaynaklar, coverage, sayılar ve girdi kimlikleri bulunur. `economics.solvency`, `replay.core_validation` ve `economics.results` `skipped` durumunda ve `NOT_EVALUATED` açıklamasıyla görünür: doctor PASS, yeterli nakit, fill, PnL veya replay başarısı garantisi değildir; sonraki replay girdisini yeniden okur ve doğrular. `multileg-example` bir writer hatasında exit 1 ile "example NOT written" yazar; yeni dizin config'siz ve olduğu gibi kalır (silinmez, onarılmaz).
+
 ### Config şeması (`multileg_replay`, sürüm 1)
 
 | Alan | Kural |

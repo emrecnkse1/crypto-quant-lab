@@ -100,3 +100,19 @@ Başlangıç: HEAD `16e539d` (origin 0/0, `master`), son tam suite bu revizyonda
 | F — denetim + docs + commit/push | VERIFIED — ayrı denetim turu §19.15.7 (harici reviewer yok); commit hash'leri `git log` ile doğrulanır |
 
 Kod checkpoint'i: `29ac181` (config komutu + testler) · dokümanlar: bu satırı içeren commit (hash `git log` ile doğrulanır). Sonraki tek kontrollü iş önerisi: multileg config için salt okunur `doctor` eşdeğeri (config + store provenance ön kontrolü, replay çalıştırmadan).
+
+
+## Tam talimat uzlaştırması + multileg-doctor (2026-09-25) — GÜNCEL DEVAM BÖLÜMÜ
+
+Başlangıç: HEAD `7e9ee4f` (`master`; `git ls-remote` ile origin `7e9ee4f`, 0/0), gerçek baseline 2768 passed, ruff/format (169) temiz, `AGENTS.md` `c88c11fd…25b05`, `pyproject.toml` `36e3ea27…e30a`. Görev dosyası `Crypto_Quant_Lab_Tam_Talimat_Denetimi_ve_Doctor.txt` (kullanıcıya ait, takip dışı; BEGIN/END işaretleri, aktif 1–12 ve EK A 1–12 okundu). Önceki bölümdeki "sonraki iş" (doctor) [2026-09-25 notu: bu bölümde uygulandı].
+
+| Paket | Durum |
+|---|---|
+| A — EK A uzlaştırma | VERIFIED — tablo FUNDING_RESEARCH_SPEC §19.16.1 (metin eksikliği tam metinle kapatıldı) |
+| B — dar düzeltmeler | VERIFIED — multileg_input_sha256, config_sha256 metni, markdown girdileri, example hata yolu + eksik testler (§19.16.2) |
+| C — multileg-doctor | VERIFIED — `prepare_store_backed_inputs` ortak hazırlık; doctor replay/accounting çağırmaz (§19.16.3) |
+| D — R1–R12 | VERIFIED — `tests/test_research_multileg_doctor.py` 21 öğe; tam suite 2789 passed |
+| E — offline gösterim | VERIFIED — runbook §6d doctor komutları çalıştırıldı (`%TEMP%\cql\multileg-example-2`, `multileg-doctor-2`, `multileg-run-3`, `multileg-run-open-end-2`, `multileg-doctor-bad-2`, `multileg-run-bad-2`) |
+| F — denetim + docs + commit/push | VERIFIED — ayrı öz-denetim §19.16.6 (harici reviewer yok); commit hash'leri `git log` ile doğrulanır |
+
+Blocker: yok. Sonraki tek kontrollü iş önerisi: `multileg-example` yazımı sırasındaki `FileNotFoundError`'ın çıktı-dizini hatasından (exit 2) ayrılıp exit 1 olarak raporlanması (dar CLI düzeltmesi + test).
