@@ -3460,7 +3460,7 @@ float expected value KULLANMAZ.
 Label/outcome-horizon'a bağlı klasik purging (per-observation forward-
 looking outcome window overlap'i — bir horizon kavramı icat edilmeden
 implement EDİLEMEZ), CPCV (Bölüm 17.2 — "fold model" prerequisite'i
-hâlâ yok), Deflated Sharpe, PBO, multiple-testing corrections, parameter
+hâlâ yok [2026-09-25 notu: fold modeli §17.2.1–17.2.10'da eklendi; label/outcome-horizon purging hâlâ yok]), Deflated Sharpe, PBO, multiple-testing corrections, parameter
 stability (17.4–17.7), candidate selection/ranking, optimizer/grid/
 random/Bayesian search, final untouched holdout enforcement, cross-
 candidate/cross-window aggregation, reporting/persistence/serialization/
@@ -3469,9 +3469,158 @@ dashboard/CLI output, non-purging backtest davranışı.
 
 Bu maddeler **deferred boundary'ler** olarak kaydedilir — implement edilmiş özellikler DEĞİL. Bu bölümün (17.1) LOCKED olması, FAZ6C'nin veya Faz 6'nın tamamlandığı anlamına GELMEZ (bkz. Bölüm 22, 22.2, 28.I).
 
-### 17.2 CPCV — LATER IN FAZ 6
+### 17.2 CPCV — Fold Model LOCKED VE IMPLEMENTED + TESTED (§17.2.1–17.2.10, §28.O — 17/17); CPCV Değerlendirmesi ve Label/Outcome-Horizon Purging AÇIK
+
+[2026-09-25 notu: aşağıdaki ilk paragraf kilit öncesi tarihsel durumdur. Fold modeli önkoşulu §17.2.1–17.2.10'da kilitlendi ve `src/crypto_quant_lab/validation/combinatorial_folds.py` ile implement edildi. CPCV'nin kendisi (path getirileri/performans dağılımı) ve label/outcome-horizon purging hâlâ YOKTUR.]
 
 Prerequisites: fold model + observation/outcome-horizon contract (17.1) + purge/embargo semantics (17.1) + repeated candidate evaluation (18) + deterministic performance matrix (17.4). Window-level purge/embargo'nun exact kontratı Bölüm 17.1.1–17.1.13'te **LOCKED VE artık İMPLEMENT EDİLMİŞ + TEST EDİLMİŞTİR** (bkz. §28.I — 19/19) — ama bir "fold model" (birden fazla IS/OOS fold'unu bir arada üreten/orkestre eden bir mekanizma) VE label/outcome-horizon'a bağlı klasik purging (17.1.13) HÂLÂ MEVCUT DEĞİLDİR. CPCV, bu kalan prerequisite'ler karşılanana kadar implement edilmez. **Durum güncellemesi:** hizalı gözlem x deneme performans matrisi önkoşulu artık `TrialReturnMatrix` ile karşılanmıştır (§17.5.1–17.5.12, §28.L — 22/22); fold modeli ve label/outcome-horizon purging hâlâ YOKTUR.
+
+**17.2.1 Gereksinim Eşlemesi (FAZ6C — CPCV fold model dilimi, source-preflight)**
+
+```
+Gereksinim (CPCV, López de Prado AFML Bölüm 12)     Durum        Repo kanıtı / karar
+N kronolojik grup, bölünme karıştırılmaz            YENİ         groups: bitişik TemporalWindow tuple'ı (17.2.4)
+k test grubunun C(N, k) kombinasyonu                YENİ         itertools.combinations, leksikografik (17.2.5)
+her grubun C(N-1, k-1) kez test olması, path sayısı YENİ         path_split_indices (17.2.6)
+  φ = k/N · C(N, k) = C(N-1, k-1)
+test sonrası embargo                                 ZATEN VAR    purging.purge_in_sample_windows (17.1.7) aynen
+                                                                  kullanılır; yeni embargo mantığı YOK
+train'in test ile zaman örtüşmesi (window purge)     ZATEN VAR    windows_overlap (17.1.5); bitişik bölmede
+                                                                  yapısal olarak hiç tetiklenmez (17.2.5)
+label/outcome-horizon purging (gözlem düzeyi t1)     UYUMSUZ      repo'da horizon kavramı YOK (17.1.1, 17.1.13);
+                                                                  gruplar gözlem değil penceredir -> DEFERRED
+kombinasyon üretimi                                  ÖRTÜŞEN      PBO/CSCV (17.5.15) da leksikografik
+                                                                  kombinasyon kullanır; farklı yapı (IS/OOS
+                                                                  yarıları, embargo yok) -> pbo.py import
+                                                                  edilmez, kod paylaşılmaz
+performans matrisi                                   ZATEN VAR    TrialReturnMatrix (17.5.1); bu dilim
+                                                                  kullanmaz
+aday/model "eğitimi" train kümesinde                 ÇAKIŞAN      repo'da fitting YOK; sabit aday için her
+                                                                  path aynı OOS getirisini verir; bir seçim
+                                                                  adımı gerekir, o da §17.4.14/§17.5.20'de
+                                                                  kapsam dışı "candidate selection" ->
+                                                                  KULLANICI KARARI (17.2.10)
+path getirileri / CPCV Sharpe dağılımı               AÇIK         17.2.10'daki karara bağlı; implement EDİLMEDİ
+```
+
+Birincil kaynak bu teslimatta yeniden okunmadı; sayılar (C(N, k) bölünme, C(N-1, k-1) path, k/N · C(N, k) eşitliği) kombinatoryal olarak türetildi ve elle hesaplanmış tablolarla test edildi (§28.O). Path atama sırası (her grup için artan split sırasındaki p-inci test kullanımı) belirleyici kanonik atamadır; kaynaktaki şekil numaralandırmasıyla birebir eşleştiği iddia edilmez.
+
+**17.2.2 Kapsam (LOCKED)**
+
+```
+Kapsam İÇİNDE: yalnız fold modeli — bölünmelerin ve path atamasının saf,
+  deterministik üretimi + pencere düzeyi embargo.
+Kapsam DIŞINDA: backtest çalıştırma, getiri/Sharpe hesabı, aday seçimi,
+  path getirisi birleştirme, CPCV istatistikleri, label/outcome-horizon
+  purging, store/rolling/candidate orkestrasyonu, raporlama/CLI.
+```
+
+**17.2.3 Public API (LOCKED)**
+
+```
+Modül: src/crypto_quant_lab/validation/combinatorial_folds.py (YENİ; package
+  root'tan export EDİLMEZ; yalnız stdlib + windows.TemporalWindow +
+  purging.purge_in_sample_windows import eder; hiçbir mevcut modül onu
+  import etmez)
+CombinatorialSplit (frozen, slots): split_index: int, test_groups,
+  train_groups, embargoed_groups: tuple[int, ...] (artan; birlikte tüm grup
+  indekslerini tam bir kez bölerler), test_windows, train_windows:
+  tuple[TemporalWindow, ...]
+CombinatorialFoldModel (frozen, slots): groups, test_group_count, embargo,
+  splits: tuple[CombinatorialSplit, ...], path_split_indices:
+  tuple[tuple[int, ...], ...]; path_count (property)
+build_combinatorial_fold_model(groups, *, test_group_count, embargo=timedelta(0))
+```
+
+**17.2.4 Gruplar (LOCKED)**
+
+```
+N >= 2 TemporalWindow; groups[i].start == groups[i-1].end (bitişik,
+kronolojik, örtüşmesiz, BOŞLUKSUZ bölme). Eşdeğer timezone anları aynı andır.
+Grup genişlikleri eşit olmak zorunda değildir (kaynak "yaklaşık eşit"
+önerir; eşitlik şartı veri kırpma gerektirirdi — kırpma/padding YOK).
+Grup = pencere; gözlem düzeyi bölme bu dilimin konusu değildir.
+```
+
+**17.2.5 Bölünmeler, Purge ve Embargo (LOCKED)**
+
+```
+1 <= k <= N-1 (k = N train bırakmaz). Bölünmeler combinations(range(N), k)
+sırasıyla, split_index 0'dan. Her test dışı grup g için: g, her test grubu t
+için purge_in_sample_windows((groups[g],), out_of_sample=groups[t],
+embargo=embargo) sonucu boş değilse train'dedir; aksi hâlde embargoed_groups'a
+düşer. Bitişik bölmede window purge (doğrudan örtüşme) yapısal olarak hiç
+tetiklenmez; etkili olan yalnız [test.end, test.end + embargo) bölgesidir ve
+bu bölge yalnız testten SONRAKİ grupları etkiler. Embargo 0 -> train = tüm
+test dışı gruplar. Train boş kalırsa (ör. N=3, k=2, embargo >= grup süresi)
+ValueError — eğitimsiz bölünme üretilmez.
+Teknik not (karar değil): bir aday bağlam (lookback) kullanıyorsa, testten
+sonraki grubun bağlamı test verisine uzanır; bunu dışlamak için embargo en az
+lookback süresi kadar seçilmelidir. Süre hiçbir yerden çıkarılmaz (17.1.4 ile
+aynı ilke) — çağıran açıkça verir.
+```
+
+**17.2.6 Path'ler (LOCKED)**
+
+```
+Her grup tam C(N-1, k-1) bölünmede test grubudur. tested_in[g] = g'yi test
+eden split_index'ler (artan). path_split_indices[p][g] = tested_in[g][p],
+p = 0..C(N-1, k-1)-1. Her path her grubu tam bir kez, onu test eden bir
+bölünmeden kapsar; her (grup, bölünme) test kullanımı tam bir path'te yer
+alır. k = 1 -> tek path (klasik K-fold).
+```
+
+**17.2.7 Doğrulama Sırası ve Exact Mesajlar (LOCKED)**
+
+```
+1 groups tuple değil       TypeError "groups must be a tuple, got <tip>"
+2 eleman tipi (global)     TypeError "groups[i] must be a TemporalWindow, got <tip>"
+3 test_group_count int     TypeError "test_group_count must be an int, got <tip>" (bool reddedilir)
+4 embargo tipi             TypeError "embargo must be a timedelta, got <tip>"
+5 embargo < 0              ValueError "embargo must be >= timedelta(0), got <repr>"
+6 N < 2                    ValueError "at least 2 groups are required, got N"
+7 bitişiklik               ValueError "groups[i] must start exactly at groups[i-1].end
+                             (contiguous, chronological, non-overlapping partition; no gaps)"
+8 k aralığı                ValueError "test_group_count must be between 1 and N-1 (N - 1), got k"
+9 C(N, k) > 100000         ValueError "C(N=.., k=..) = .. splits exceeds the limit of 100000;
+                             no sampling is performed" (hiçbir bölünme kurulmadan; sınır dahil)
+10 boş train               ValueError "split s (test groups [..]) has no training group left
+                             after the embargo"
+```
+
+**17.2.8 Saflık ve Determinizm (LOCKED)**
+
+```
+Saf fonksiyon: store, ağ, saat, rastgelelik, Decimal yok. Girdi tuple'ı ve
+pencereler değişmez (model.groups aynı nesnedir). Aynı girdi -> eşit model.
+Değer nesneleri kendi alan tiplerini doğrular.
+```
+
+**17.2.9 Kanıtlamadıkları**
+
+```
+Fold modeli bir CPCV sonucu, performans dağılımı, aşırı uyum ölçüsü veya
+aday seçimi DEĞİLDİR; label/outcome-horizon purging sağlamaz; bağımsızlık,
+holdout koruması veya kârlılık kanıtı değildir. FAZ6C ve Faz 6 NOT COMPLETE.
+```
+
+**17.2.10 Açık Karar — CPCV Değerlendirmesinde Train Kümesinin Rolü (KULLANICI KARARI)**
+
+```
+Repo'daki adaylar sabit politikalardır (fitting yok). Train kümesi hiçbir şey
+etkilemezse her path aynı test getirilerini üretir ve CPCV dağılımı tek
+noktaya çöker. Seçenekler:
+  A) Train'de aday seçimi: her bölünmede train gruplarının getirileriyle en
+     yüksek Stage-2 Sharpe'lı aday(lar) seçilir (PBO §17.5.15.5 ile aynı kural,
+     eşitlikte ağırlık bölüşümü), test gruplarında değerlendirilir; path
+     getirileri seçilenlerin test getirilerinden birleştirilir. Yeni ekonomik
+     varsayım eklemez ama "candidate selection" kapsam dışılığını (§17.4.14,
+     §17.5.20) yalnız araştırma teşhisi olarak gevşetir.
+  B) Seçimsiz: CPCV yalnız çağıranın verdiği bölünme başı test getirilerini
+     path'lere birleştirir; seçim/fitting çağıranın sorumluluğunda kalır.
+  C) Parametre fitting / optimizer: kapsam dışı (§27).
+Öneri: A (PBO ile tutarlı, test edilebilir, yeni varsayım yok).
+```
 
 ### 17.3 Sharpe-Ailesi Metrikler — Aşama 2 (Bölüm 15/16)
 
@@ -6368,7 +6517,7 @@ FAZ 6D — Faz 6 Final Acceptance
 |---|---|---|---|
 | FAZ6A | COMPLETE | temporal window/IS-OOS primitives (§28.A — 22/22), zero-context rolling OOS evaluation (§28.C — 12/12), Stage-1 metrics (§28.D — 18/18) | locked FAZ6A scope içinde yok |
 | FAZ6B | COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 (§8.3.16, §28.F — 22/22, LOCKED VE IMPLEMENTED + TESTED), candidate/trial foundation (§18, §28.G — 25/25, LOCKED VE IMPLEMENTED + TESTED), Annualized Metrics (§15.19–15.33, §28.H — 30/30, LOCKED VE IMPLEMENTED + TESTED) | locked FAZ6B scope içinde yok |
-| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + kaydedilmiş Trial sayısı exact kontratı + implementasyonu (§20.1–20.14, §28.J — 19/19, LOCKED VE IMPLEMENTED + TESTED); Deflated Sharpe exact kontratı + implementasyonu (§17.4.1–17.4.17, §28.K — 27/27, LOCKED VE IMPLEMENTED + TESTED); PBO önkoşulu trial return matrix (§17.5.1–17.5.12, §28.L — 22/22, LOCKED VE IMPLEMENTED + TESTED); PBO/CSCV (§17.5.13–17.5.24, §28.M — 24/24, LOCKED VE IMPLEMENTED + TESTED); Holm düzeltme temeli (§17.6.1–17.6.10, §28.N — 18/18, LOCKED VE IMPLEMENTED + TESTED) | CPCV, multiple-testing p-değeri üretimi/aile kapsamı/seçim politikası, multiple-testing corrections, parameter stability |
+| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + kaydedilmiş Trial sayısı exact kontratı + implementasyonu (§20.1–20.14, §28.J — 19/19, LOCKED VE IMPLEMENTED + TESTED); Deflated Sharpe exact kontratı + implementasyonu (§17.4.1–17.4.17, §28.K — 27/27, LOCKED VE IMPLEMENTED + TESTED); PBO önkoşulu trial return matrix (§17.5.1–17.5.12, §28.L — 22/22, LOCKED VE IMPLEMENTED + TESTED); PBO/CSCV (§17.5.13–17.5.24, §28.M — 24/24, LOCKED VE IMPLEMENTED + TESTED); Holm düzeltme temeli (§17.6.1–17.6.10, §28.N — 18/18, LOCKED VE IMPLEMENTED + TESTED); CPCV fold modeli (§17.2.1–17.2.10, §28.O — 17/17, LOCKED VE IMPLEMENTED + TESTED) | CPCV değerlendirmesi (train rolü kararı §17.2.10) + label/outcome-horizon purging, multiple-testing p-değeri üretimi/aile kapsamı/seçim politikası, multiple-testing corrections, parameter stability |
 | FAZ6D | NOT STARTED | yok | Faz 6 final acceptance audit'i |
 
 Bu tablo, §28.A/B/C/D'nin bağımsız acceptance sayımlarını **birleşik bir yüzdeye veya tek bir sayıya dönüştürmez** — her grup kendi bağımsız kanıtını korur; bu tablo yalnızca hangi grubun hangi alt-fazın kanıtı olduğunu özetler.
@@ -7130,9 +7279,22 @@ TAMAMLANDI (tek combined delivery):
   aile kapsamı ve sonuç seçim politikası AÇIK; multiple-testing başlığı,
   FAZ6C ve Faz 6 NOT COMPLETE kalır.
 
+FAZ6C — CPCV FOLD MODEL (CPCV önkoşulu): SOURCE-PREFLIGHT + CONTRACT +
+IMPLEMENTATION + REGRESSION SUITE — TAMAMLANDI (2026-09-25):
+  §23 sırasındaki bir sonraki madde CPCV'dir; iki önkoşulundan fold modeli
+  en küçük dilim olarak kilitlendi (§17.2.1–17.2.10) ve
+  `src/crypto_quant_lab/validation/combinatorial_folds.py` (YENİ) ile
+  implement edildi: bitişik TemporalWindow grupları, C(N, k) leksikografik
+  bölünme, mevcut purge_in_sample_windows ile test sonrası embargo, C(N-1,
+  k-1) path ataması, bölünme sınırı 100000. Test:
+  `tests/test_validation_combinatorial_folds.py` (YENİ, 30 test, beklenen
+  tablolar elle). §28.O 17/17. CPCV değerlendirmesi, train kümesinin rolü
+  (§17.2.10, KULLANICI KARARI) ve label/outcome-horizon purging AÇIK.
+  FAZ6C ve Faz 6 NOT COMPLETE kalır.
+
 Sonraki (henüz başlanmadı):
-  FAZ6C'nin kalanları: CPCV (17.2 — fold modeli ve label/outcome-
-  horizon purging önkoşulları hâlâ YOK), multiple-testing için geçerli
+  FAZ6C'nin kalanları: CPCV değerlendirmesi (17.2 — fold modeli VAR
+  §17.2; train rolü kararı §17.2.10 ve label/outcome-horizon purging YOK), multiple-testing için geçerli
   p-değeri üretimi + aile kapsamı + sonuç seçim politikası (17.6.10),
   parameter stability (17.7 — Candidate.parameters için parametre
   uzayı/komşuluk tanımı YOK). Deferred: efektif-N estimator'ı (DSR Ek
@@ -7631,6 +7793,30 @@ Bu liste, Bölüm 17.6.1–17.6.10'da LOCKED olan Holm düzeltme temelinin `src/
 18. Determinizm, girdi değişmezliği ve sonuç modellerinin kendi alan doğrulaması (§17.6.3). **PASS** — `test_inputs_are_not_mutated_and_results_are_deterministic`, `test_result_models_validate_their_fields`.
 
 **Holm correction foundation acceptance count: 18 / 18 implementation/test exercised.** Bu, aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: getirilerden geçerli p-değeri üretimi; Sharpe/DSR/PBO'nun p-değerine dönüştürülmesi; test ailesinin araştırma geçmişine göre eksiksiz kapsamı; sonuç seçim/raporlama politikası; Hochberg/Hommel/BH/BY; multiple-testing başlığının, FAZ6C'nin veya Faz 6'nın tamamlanması.
+
+### 28.O — CPCV FOLD MODEL ACCEPTANCE (17/17 IMPLEMENTATION/TEST EXERCISED)
+
+Bu liste, Bölüm 17.2.1–17.2.10'da LOCKED olan CPCV fold modelinin `src/crypto_quant_lab/validation/combinatorial_folds.py` tarafından karşılandığını kaydeder. Kontrat ve implementasyon AYNI delivery'de yapıldı; `tests/test_validation_combinatorial_folds.py`'de 30 test (tümü PASS). Test sayısı (30) ile kriter sayısı (17) ayrı sayımlardır.
+
+1. Public semboller tam olarak `CombinatorialSplit`, `CombinatorialFoldModel`, `build_combinatorial_fold_model`; imza (groups pozisyonel, test_group_count keyword-only, embargo=timedelta(0)); alan sıraları; frozen/slotted (§17.2.3). **PASS** — `test_public_api_and_signature_are_exact`.
+2. Import yönü yalnız stdlib + windows + purging; package-root export yok; hiçbir mevcut modül import etmez (§17.2.3). **PASS** — `test_import_direction_and_no_package_root_export`.
+3. C(N, k) bölünme leksikografik sırada, split_index 0'dan (§17.2.5). **PASS** — `test_six_groups_two_test_groups_splits_and_paths` (15 çift elle).
+4. Path tablosu elle türetilmiş değerlerle eşleşir; path sayısı C(N-1, k-1) = k/N · C(N, k) (§17.2.6). **PASS** — aynı test (N=6, k=2: 5 path, tam tablo).
+5. Her path her grubu tam bir kez, onu test eden bölünmeden kapsar; her test kullanımı tam bir path'te (§17.2.6). **PASS** — `test_every_path_covers_each_group_once_from_a_split_that_tests_it` (5 (N, k) çifti, bölünme ve path sayıları elle).
+6. k = 1 klasik K-fold, tek path (§17.2.6). **PASS** — `test_k_equal_one_is_plain_k_fold_with_a_single_path`.
+7. Pencereler grup indekslerini aynı nesneler olarak izler (§17.2.3). **PASS** — `test_windows_follow_the_group_indices`.
+8. Embargo 0 -> train = tüm test dışı gruplar; window purge bitişik bölmede tetiklenmez (§17.2.5). **PASS** — `test_zero_embargo_trains_on_every_other_group_the_window_purge_never_fires`.
+9. Embargo yalnız [test.end, test.end + embargo) ile örtüşen SONRAKİ grupları çıkarır; sınır: tam grup süresi yalnız bir grup, +1µs iki grup (§17.2.5). **PASS** — `test_embargo_removes_only_groups_starting_inside_the_post_test_zone`.
+10. Birden fazla test grubunun her birinin sonrasına embargo uygulanır; son grup sonrası etkisizdir (§17.2.5). **PASS** — `test_embargo_after_each_of_several_test_groups`.
+11. Embargo mevcut `purge_in_sample_windows` ile uygulanır (yeni embargo mantığı yok) (§17.2.1, 17.2.5). **PASS** — `test_uses_the_existing_window_level_purge` (spy).
+12. Boş train exact ValueError (§17.2.5, 17.2.7 adım 10). **PASS** — `test_empty_training_set_after_embargo_is_an_error`.
+13. Adım 1–8 exact mesajlar (tip, bool k, float k, embargo tipi/negatif, N < 2, k = 0, k = N) (§17.2.7). **PASS** — `test_invalid_inputs_have_exact_messages` (10 durum).
+14. Boşluk, örtüşme ve ters sıra reddedilir; eşdeğer offset tek an; eşit olmayan genişlik serbest (§17.2.4). **PASS** — `test_groups_must_be_a_contiguous_chronological_partition` (3), `test_equivalent_offsets_are_one_instant_and_unequal_widths_are_allowed`.
+15. Doğrulama sırası eşzamanlı ihlallerle (§17.2.7). **PASS** — `test_validation_order`.
+16. Bölünme sınırı hiçbir bölünme kurulmadan uygulanır ve kapsayıcıdır (§17.2.7 adım 9). **PASS** — `test_split_limit_is_checked_before_any_split_is_built` (C(20,10) = 184756), `test_split_limit_is_inclusive`.
+17. Determinizm, girdi değişmezliği, değer nesnesi alan doğrulaması (§17.2.8). **PASS** — `test_deterministic_and_inputs_untouched`, `test_value_objects_validate_their_fields`.
+
+**CPCV fold model acceptance count: 17 / 17 implementation/test exercised.** Bu, aşağıdakilerin HERHANGİ BİRİNİN var olduğu anlamına GELMEZ: CPCV değerlendirmesi, path getirileri veya Sharpe dağılımı; aday seçimi; label/outcome-horizon purging; multiple-testing p-değeri üretimi; parameter stability; FAZ6C'nin veya Faz 6'nın tamamlanması.
 
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
