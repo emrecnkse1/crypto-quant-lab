@@ -28,6 +28,7 @@ from crypto_quant_lab.research.funding_carry import (
     load_funding_signal_history,
 )
 from crypto_quant_lab.research.offline_fixture import (
+    FIXTURE_CONTRACT_SOURCE,
     FIXTURE_START,
     FIXTURE_SYMBOL,
     build_offline_fixture,
@@ -335,7 +336,7 @@ def _trial(fixture_dir, *, windows, max_age=timedelta(hours=9), coverage_start=N
         timeframe="1h", as_of_time=T0 + HOUR * 48,
         config=BacktestConfig(initial_cash=Decimal(1000), position_quantity=Decimal(1)),
         cost_model=ProportionalCommissionModel(rate=Decimal("0.001")),
-        funding_model=LinearFundingModel(),
+        funding_model=LinearFundingModel(), contract_source=FIXTURE_CONTRACT_SOURCE,
     )  # fmt: skip
     return diagnose_funding_research_trial(contract, history, trial), history
 

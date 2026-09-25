@@ -4,9 +4,11 @@ Wraps `evaluate_funding_research_candidate` (unchanged) and refuses to start
 any backtest unless, mechanically:
 - the funding history is Binance `usdm_perpetual` (exchange/market/symbol),
 - the candle store registers the SAME namespace as Binance USDⓈ-M perpetual
-  contract-trade klines from `/fapi/v1/klines` (spot, mark-price, index-price,
-  continuous-contract or unknown-provenance candles are rejected — nothing is
-  guessed from legacy rows),
+  contract-trade klines with EXACTLY the expected source — by default
+  `/fapi/v1/klines`, or an explicit `contract_source` such as a declared
+  synthetic label (Bölüm 19.14) (spot, mark-price, index-price,
+  continuous-contract, other-source or unknown-provenance candles are
+  rejected — nothing is guessed from legacy rows),
 - the candle store's authoritative coverage contains every evaluation window,
 - every decision instant's funding knowledge cutoff lies inside the funding
   history coverage.
@@ -27,6 +29,7 @@ from crypto_quant_lab.research.funding_carry import (
 from crypto_quant_lab.storage.base import HistoricalCandleStore
 from crypto_quant_lab.storage.datasets import (
     BINANCE,
+    BINANCE_USDM_KLINES_SOURCE,
     USDM_PERPETUAL,
     CandleCoverageInterval,
     binance_usdm_perpetual_contract_trade_dataset,
@@ -58,6 +61,7 @@ def evaluate_usdm_perpetual_funding_research(
     config: BacktestConfig,
     cost_model: CostModel,
     funding_model: FundingModel,
+    contract_source: str = BINANCE_USDM_KLINES_SOURCE,
 ) -> Trial:
     """Validate market provenance and coverage, then run the funding research evaluation."""
     if not isinstance(history, FundingSignalHistory):
@@ -79,7 +83,9 @@ def evaluate_usdm_perpetual_funding_research(
                 f"windows[{index}] must be a TemporalWindow, got {type(window).__name__}"
             )
 
-    expected = binance_usdm_perpetual_contract_trade_dataset(history.symbol, timeframe)
+    expected = binance_usdm_perpetual_contract_trade_dataset(
+        history.symbol, timeframe, source=contract_source
+    )
     registered = query_dataset(*expected.namespace)
     if registered is None:
         raise ValueError(

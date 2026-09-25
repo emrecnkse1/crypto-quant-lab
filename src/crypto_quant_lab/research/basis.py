@@ -46,6 +46,8 @@ from crypto_quant_lab.market_data.binance_usdm_basis import (
 from crypto_quant_lab.market_data.timeframes import candle_duration
 from crypto_quant_lab.storage.base import HistoricalCandle
 from crypto_quant_lab.storage.datasets import (
+    BINANCE_USDM_INDEX_PRICE_KLINES_SOURCE,
+    BINANCE_USDM_KLINES_SOURCE,
     CONTRACT_TRADE,
     INDEX_PRICE,
     CandleDataset,
@@ -381,17 +383,23 @@ def load_close_basis_history(
     timeframe: str,
     start_time: datetime,
     end_time: datetime,
+    contract_source: str = BINANCE_USDM_KLINES_SOURCE,
+    index_source: str = BINANCE_USDM_INDEX_PRICE_KLINES_SOURCE,
 ) -> CloseBasisHistory:
     """Load and pair both provenance-registered stores over a fully covered range.
 
-    Each store must register exactly the canonical Binance USDⓈ-M dataset
-    (contract-trade / index-price of `symbol`) and cover all of
+    Each store must register exactly the Binance USDⓈ-M dataset (contract-trade
+    / index-price of `symbol`) with the expected source — by default the
+    canonical endpoints; explicit `contract_source` / `index_source` name a
+    declared (e.g. synthetic) source, compared exactly — and cover all of
     `[start_time, end_time)`; otherwise ValueError before anything is paired.
     """
     if contract_store is index_store:
         raise ValueError("contract-trade and index-price data must come from separate stores")
-    contract_dataset = binance_usdm_perpetual_contract_trade_dataset(symbol, timeframe)
-    index_dataset = binance_usdm_index_price_dataset(symbol, timeframe)
+    contract_dataset = binance_usdm_perpetual_contract_trade_dataset(
+        symbol, timeframe, source=contract_source
+    )
+    index_dataset = binance_usdm_index_price_dataset(symbol, timeframe, source=index_source)
     for name, store, expected in (
         ("contract_store", contract_store, contract_dataset),
         ("index_store", index_store, index_dataset),

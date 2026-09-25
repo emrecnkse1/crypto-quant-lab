@@ -60,6 +60,8 @@ from crypto_quant_lab.research.usdm_perpetual import evaluate_usdm_perpetual_fun
 from crypto_quant_lab.storage.base import DataCorruptionError, StorageError
 from crypto_quant_lab.storage.datasets import (
     BINANCE,
+    BINANCE_USDM_INDEX_PRICE_KLINES_SOURCE,
+    BINANCE_USDM_KLINES_SOURCE,
     USDM_PERPETUAL,
     CandleDataset,
     binance_usdm_index_price_dataset,
@@ -75,6 +77,10 @@ CONFIG_VERSION = 1
 CANDLE_TABLES = ("historical_candles", "candle_datasets", "candle_coverage")
 FUNDING_TABLES = ("historical_funding_events", "historical_funding_coverage")
 PUBLIC_SMOKE_SYMBOLS = ("BTCUSDT", "ETHUSDT")
+CANONICAL_SOURCES = {
+    "contract": BINANCE_USDM_KLINES_SOURCE,
+    "index": BINANCE_USDM_INDEX_PRICE_KLINES_SOURCE,
+}
 _STATS = Context(prec=34, rounding=ROUND_HALF_EVEN)
 
 BASIS_DOES_NOT_PROVE = [
@@ -185,6 +191,19 @@ class ResearchConfig:
     stores: dict[str, Path] = field(default_factory=dict)
     funding: FundingResearchConfig | None = None
     decimal_context: dict = field(default_factory=lambda: normalize_decimal_context(None))
+    sources: dict = field(default_factory=lambda: dict(CANONICAL_SOURCES))
+
+    def expected_dataset(self, role: str) -> CandleDataset:
+        """The exact dataset identity a store role must have registered (source included)."""
+        if role == "contract":
+            return binance_usdm_perpetual_contract_trade_dataset(
+                self.symbol, self.timeframe, source=self.sources["contract"]
+            )
+        if role == "index":
+            return binance_usdm_index_price_dataset(
+                self.symbol, self.timeframe, source=self.sources["index"]
+            )
+        raise ValueError(f"unknown candle role {role!r}")
 
     def effective(self) -> dict:
         """The config as recorded in reports.
@@ -305,7 +324,29 @@ def parse_config(raw: dict, *, base_dir: Path) -> ResearchConfig:
         stores=stores,
         funding=funding,
         decimal_context=decimal_context,
+        sources=_parse_sources(raw.get("sources")),
     )
+
+
+def _parse_sources(raw: object) -> dict:
+    """Optional `sources` {contract?, index?}: expected dataset source labels.
+
+    Omitted roles default to the canonical Binance endpoints (the behavior of
+    configs written before this field existed). Labels are compared exactly by
+    the readers; nothing is normalized or guessed.
+    """
+    sources = dict(CANONICAL_SOURCES)
+    if raw is None:
+        return sources
+    if not isinstance(raw, dict):
+        raise ConfigError('sources must be an object like {"contract": "synthetic:..."}')
+    for role, value in raw.items():
+        if role not in CANONICAL_SOURCES:
+            raise ConfigError(f"sources.{role}: unknown role (use contract, index)")
+        if not isinstance(value, str) or not value.strip():
+            raise ConfigError(f"sources.{role} must be a non-empty string")
+        sources[role] = value
+    return sources
 
 
 def load_config(path: Path) -> ResearchConfig:
@@ -522,10 +563,7 @@ def inspect_section(config: ResearchConfig) -> Section:
             )
         ]
     )
-    expected = {
-        "contract": binance_usdm_perpetual_contract_trade_dataset(config.symbol, config.timeframe),
-        "index": binance_usdm_index_price_dataset(config.symbol, config.timeframe),
-    }
+    expected = {role: config.expected_dataset(role) for role in ("contract", "index")}
     for role in ("contract", "index"):
         if role not in config.stores:
             section.checks.append(check(f"{role}.store", "skipped", f"stores.{role} not set"))
@@ -638,13 +676,13 @@ def basis_history_and_section(config: ResearchConfig) -> tuple[CloseBasisHistory
                 "contract",
                 contract_path,
                 contract,
-                binance_usdm_perpetual_contract_trade_dataset(config.symbol, config.timeframe),
+                config.expected_dataset("contract"),
             ),
             (
                 "index",
                 index_path,
                 index,
-                binance_usdm_index_price_dataset(config.symbol, config.timeframe),
+                config.expected_dataset("index"),
             ),
         ):
             section.inputs.append(
@@ -657,6 +695,8 @@ def basis_history_and_section(config: ResearchConfig) -> tuple[CloseBasisHistory
             timeframe=config.timeframe,
             start_time=config.start,
             end_time=config.end,
+            contract_source=config.sources["contract"],
+            index_source=config.sources["index"],
         )
     section.results = basis_results(history, config.end)
     section.checks.append(
@@ -763,7 +803,7 @@ def funding_section(config: ResearchConfig) -> Section:
                 "contract",
                 contract_path,
                 contract,
-                binance_usdm_perpetual_contract_trade_dataset(config.symbol, config.timeframe),
+                config.expected_dataset("contract"),
                 config.start,
                 config.end,
             )
@@ -808,6 +848,7 @@ def funding_section(config: ResearchConfig) -> Section:
                 ),
                 cost_model=_cost_model(fr),
                 funding_model=LinearFundingModel(),
+                contract_source=config.sources["contract"],
             )
             diagnostics = diagnose_funding_research_trial(contract, history, trial)
             runs[candidate.candidate_id] = {
@@ -1043,10 +1084,7 @@ def doctor(config_path: Path, output: Path | None = None) -> list[tuple[str, str
         for second in paths[i + 1 :]:
             if os.path.samefile(first, second):
                 add("FAIL", "stores.separation", f"{first.name} and {second.name} are one file")
-    expected = {
-        "contract": binance_usdm_perpetual_contract_trade_dataset(config.symbol, config.timeframe),
-        "index": binance_usdm_index_price_dataset(config.symbol, config.timeframe),
-    }
+    expected = {role: config.expected_dataset(role) for role in ("contract", "index")}
     for role, path in existing.items():
         required = FUNDING_TABLES if role == "funding" else CANDLE_TABLES
         try:

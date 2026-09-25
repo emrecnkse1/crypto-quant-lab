@@ -93,19 +93,28 @@ def binance_spot_trade_dataset(symbol: str, timeframe: str) -> CandleDataset:
     )
 
 
-def binance_usdm_perpetual_contract_trade_dataset(symbol: str, timeframe: str) -> CandleDataset:
-    """The canonical identity of Binance USDⓈ-M perpetual contract-trade klines."""
+def binance_usdm_perpetual_contract_trade_dataset(
+    symbol: str, timeframe: str, *, source: str = BINANCE_USDM_KLINES_SOURCE
+) -> CandleDataset:
+    """The identity of Binance USDⓈ-M perpetual contract-trade klines.
+
+    The default `source` is the canonical endpoint of the real adapter; an
+    explicit `source` labels data written through a replaced transport
+    (FUNDING_RESEARCH_SPEC.md Bölüm 19.14).
+    """
     return CandleDataset(
         exchange=BINANCE,
         market_type=USDM_PERPETUAL,
         symbol=symbol,
         timeframe=timeframe,
         price_kind=CONTRACT_TRADE,
-        source=BINANCE_USDM_KLINES_SOURCE,
+        source=source,
     )
 
 
-def binance_usdm_index_price_dataset(pair: str, timeframe: str) -> CandleDataset:
+def binance_usdm_index_price_dataset(
+    pair: str, timeframe: str, *, source: str = BINANCE_USDM_INDEX_PRICE_KLINES_SOURCE
+) -> CandleDataset:
     """The canonical identity of Binance USDⓈ-M index-price klines for `pair`.
 
     The namespace is `("binance", "usdm_perpetual", pair, timeframe)` — the
@@ -122,7 +131,7 @@ def binance_usdm_index_price_dataset(pair: str, timeframe: str) -> CandleDataset
         symbol=pair,
         timeframe=timeframe,
         price_kind=INDEX_PRICE,
-        source=BINANCE_USDM_INDEX_PRICE_KLINES_SOURCE,
+        source=source,
     )
 
 

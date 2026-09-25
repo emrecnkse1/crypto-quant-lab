@@ -2,7 +2,10 @@
 
 Everything is written through the PRODUCTION ingestion paths (contract-trade
 klines, index-price klines, settled funding) with in-memory fake page
-fetchers, so provenance and coverage are registered exactly as for real data.
+fetchers, so provenance and coverage are registered exactly as for real data —
+except the source label: both candle stores declare FIXTURE_CONTRACT_SOURCE /
+FIXTURE_INDEX_SOURCE ("synthetic:...", Bölüm 19.14) and `fixture_config()`
+names the same labels under `sources`, so readers never take them for Binance.
 Nothing touches the network or any existing database: the target directory
 must not exist yet.
 
@@ -53,6 +56,9 @@ FIXTURE_START = datetime(2026, 1, 5, tzinfo=UTC)
 FIXTURE_HOURS = 24
 FIXTURE_AS_OF = FIXTURE_START + timedelta(days=2)
 FIXTURE_MISSING_INDEX_HOUR = 9
+# Declared labels of the fake transports (Bölüm 19.14): the data never came from Binance.
+FIXTURE_CONTRACT_SOURCE = "synthetic:offline-fixture/contract-trade/v1"
+FIXTURE_INDEX_SOURCE = "synthetic:offline-fixture/index-price/v1"
 _HOUR = timedelta(hours=1)
 _HOUR_MS = 3_600_000
 _START_MS = int(FIXTURE_START.timestamp()) * 1000
@@ -166,6 +172,7 @@ def fixture_config() -> dict[str, object]:
         "end": iso(end),
         "as_of": iso(FIXTURE_AS_OF),
         "stores": {"contract": "contract.db", "index": "index.db", "funding": "funding.db"},
+        "sources": {"contract": FIXTURE_CONTRACT_SOURCE, "index": FIXTURE_INDEX_SOURCE},
         "funding_research": {
             "funding_coverage_start": iso(FIXTURE_START - _HOUR * 8),
             "funding_coverage_end": iso(end),
@@ -206,6 +213,7 @@ def build_offline_fixture(directory: Path) -> OfflineFixture:
             requested_end=end,
             as_of_time=FIXTURE_AS_OF,
             fetch_page=_page_fetcher([_contract_row(h) for h in hours], parse_binance_usdm_kline),
+            source=FIXTURE_CONTRACT_SOURCE,
         )
         ingest_binance_usdm_index_price_klines(
             index,
@@ -218,6 +226,7 @@ def build_offline_fixture(directory: Path) -> OfflineFixture:
                 [_index_row(h) for h in hours if h != FIXTURE_MISSING_INDEX_HOUR],
                 parse_binance_usdm_index_price_kline,
             ),
+            source=FIXTURE_INDEX_SOURCE,
         )
         ingest_binance_historical_funding_range(
             funding,

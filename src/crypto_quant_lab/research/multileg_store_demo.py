@@ -6,8 +6,9 @@ SYNTHETIC DATA · SCRIPTED INTENTS · NOT A STRATEGY · NO REAL MARKET DATA.
 1. Writes fresh synthetic stores into `<output>/fixture/` through real writers:
    spot candles via `ingest_binance_spot_klines_with_provenance` over a fake
    transport (source label "synthetic:..."), perpetual candles via the candle
-   store's `write_ingestion_batch` (the USDⓈ-M ingestion function always
-   records the Binance endpoint, so it is not used for synthetic data), and
+   store's `write_ingestion_batch` (written before Bölüm 19.14, when the
+   USDⓈ-M ingestion function could only record the Binance endpoint; kept
+   unchanged since it declares a synthetic label directly), and
    settled funding via the funding store's `write_ingestion_batch`. All
    writers are closed before step 2.
 2. Re-opens those stores read-only through `run_store_backed_multileg_replay`

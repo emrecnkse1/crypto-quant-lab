@@ -29,6 +29,8 @@ from crypto_quant_lab.market_data.binance_usdm import (
 from crypto_quant_lab.market_data.timeframes import candle_duration
 from crypto_quant_lab.storage.base import HistoricalCandle
 from crypto_quant_lab.storage.datasets import (
+    BINANCE_USDM_INDEX_PRICE_KLINES_SOURCE,
+    BINANCE_USDM_KLINES_SOURCE,
     CandleDataset,
     binance_usdm_index_price_dataset,
     binance_usdm_perpetual_contract_trade_dataset,
@@ -73,16 +75,22 @@ def ingest_binance_usdm_perpetual_klines(
     fetch_page: FetchPage | None = None,
     max_attempts: int = 3,
     page_limit: int = _DEFAULT_PAGE_LIMIT,
+    source: str | None = None,
 ) -> UsdmKlineIngestionResult:
     """Ingest finalized USDⓈ-M perpetual contract-trade klines, atomically with provenance.
 
     `store` must provide `write_ingestion_batch` (e.g. `SQLiteHistoricalCandleStore`).
     `fetch_page`, when supplied, replaces the HTTP adapter as the raw (pre-retry)
     page fetcher — used by tests; it receives `start_time_ms`/`end_time_ms`.
+    `source` (Bölüm 19.14): only with `fetch_page`; labels the dataset with the
+    caller's declaration (e.g. "synthetic:..."). See `_source_for` for the
+    legacy rule when it is omitted.
     """
     return _ingest(
         store,
-        dataset=binance_usdm_perpetual_contract_trade_dataset(symbol, timeframe),
+        dataset=binance_usdm_perpetual_contract_trade_dataset(
+            symbol, timeframe, source=_source_for(fetch_page, source, BINANCE_USDM_KLINES_SOURCE)
+        ),
         requested_start=requested_start,
         requested_end=requested_end,
         as_of_time=as_of_time,
@@ -103,6 +111,7 @@ def ingest_binance_usdm_index_price_klines(
     fetch_page: FetchPage | None = None,
     max_attempts: int = 3,
     page_limit: int = _DEFAULT_PAGE_LIMIT,
+    source: str | None = None,
 ) -> UsdmKlineIngestionResult:
     """Ingest finalized USDⓈ-M index-price klines of `pair`, atomically with provenance.
 
@@ -113,7 +122,11 @@ def ingest_binance_usdm_index_price_klines(
     """
     return _ingest(
         store,
-        dataset=binance_usdm_index_price_dataset(pair, timeframe),
+        dataset=binance_usdm_index_price_dataset(
+            pair,
+            timeframe,
+            source=_source_for(fetch_page, source, BINANCE_USDM_INDEX_PRICE_KLINES_SOURCE),
+        ),
         requested_start=requested_start,
         requested_end=requested_end,
         as_of_time=as_of_time,
@@ -121,6 +134,26 @@ def ingest_binance_usdm_index_price_klines(
         or partial(fetch_binance_usdm_index_price_klines, pair, timeframe, limit=page_limit),
         max_attempts=max_attempts,
     )
+
+
+def _source_for(fetch_page: object, source: object, canonical: str) -> str:
+    """Dataset source label (Bölüm 19.14).
+
+    Real adapter (`fetch_page is None`): always `canonical`; an explicit
+    `source` is refused (a declared label cannot describe the real endpoint
+    call). Replaced transport with `source`: the caller's declaration, stored
+    as given (type/emptiness checked by `CandleDataset`). Replaced transport
+    WITHOUT `source`: LEGACY behavior kept for existing callers — the canonical
+    endpoint label is recorded although the data did not come from it; new
+    synthetic writers must pass `source`.
+    """
+    if fetch_page is None:
+        if source is not None:
+            raise ValueError(
+                "source is fixed by the real USDⓈ-M adapter; pass it only with fetch_page"
+            )
+        return canonical
+    return canonical if source is None else source
 
 
 def _ingest(

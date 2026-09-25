@@ -54,7 +54,7 @@ from crypto_quant_lab.research.report import (
     check,
     fingerprint,
 )
-from crypto_quant_lab.storage.datasets import BINANCE_USDM_KLINES_SOURCE, CandleDataset
+from crypto_quant_lab.storage.datasets import CandleDataset
 
 SCENARIO_VERSION = "multileg-offline/v1"
 _T0 = datetime(2026, 1, 1, tzinfo=UTC)
@@ -63,7 +63,7 @@ _SPOT_ROWS = (("100", "100"), ("100", "101"), ("101", "101"), ("101", "101"))
 _PERP_ROWS = (("102", "102"), ("102", "102"), ("102", "101"), ("101", "101"))
 _SPOT_DS = CandleDataset("binance", "spot", "SYNTHUSDT", "1h", "spot_trade", "synthetic:spot")
 _PERP_DS = CandleDataset(
-    "binance", "usdm_perpetual", "SYNTHUSDT", "1h", "contract_trade", BINANCE_USDM_KLINES_SOURCE
+    "binance", "usdm_perpetual", "SYNTHUSDT", "1h", "contract_trade", "synthetic:perpetual"
 )
 _PAIR = HedgedPair(
     "synthetic-spot-perp",
