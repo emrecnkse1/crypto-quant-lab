@@ -47,3 +47,20 @@ Gece paketi tamamlandı. Sonraki kontrollü görev önerisi: store-backed çok b
 ## Çalışma ağacı ayrımı
 
 Bana ait değişiklikler commit edildi; kullanıcıya ait takip dışı `AGENTS.md` dokunulmadan duruyor (hash başlangıçtakiyle aynı).
+
+---
+
+## Store-backed dilim oturumu (2026-09-25, devam)
+
+Başlangıç: HEAD `7fa2775` (origin 0/0), `pytest -q` 2591 passed, ruff/format temiz (162 dosya), `AGENTS.md` hash değişmedi.
+
+Doğrulanan bulgu: `data_quality/ingestion.py::ingest_binance_historical_range` spot mumlarını yalnız `store.write_batch` ile yazar; `candle_datasets` provenance'ı ve `candle_coverage` yazmaz, boş yanıtta hiçbir şey yazmaz (eksik olan metadata yazımı + coverage kanıtı; okuyucu tarafı `query_dataset`/`query_coverage` zaten var). Funding store şemasında kaynak alanı yoktur (yalnız partition + coverage).
+
+| Paket | Durum |
+|---|---|
+| A — sözleşme | IN PROGRESS (kanıt tablosu spec §19.13'e yazılacak) |
+| B — spot provenance | VERIFIED — additive `ingest_binance_spot_klines_with_provenance` + `binance_spot_trade_dataset`; eski fonksiyon değişmedi; `tests/test_spot_provenance_ingestion.py` 8 test; tam suite 2599 passed |
+| C — salt okunur store runner | NOT STARTED |
+| D — parity/ret/snapshot testleri | NOT STARTED |
+| E — store üzerinden offline gösterim | NOT STARTED |
+| F — denetim + docs | NOT STARTED |

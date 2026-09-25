@@ -25,6 +25,8 @@ INDEX_PRICE = "index_price"
 CONTINUOUS_CONTRACT = "continuous_contract"
 
 BINANCE_USDM_KLINES_SOURCE = "binance:GET https://fapi.binance.com/fapi/v1/klines"
+# The endpoint the existing spot HTTP adapter really calls (market_data/binance_public.py).
+BINANCE_SPOT_KLINES_SOURCE = "binance:GET https://data-api.binance.vision/api/v3/klines"
 BINANCE_USDM_INDEX_PRICE_KLINES_SOURCE = (
     "binance:GET https://fapi.binance.com/fapi/v1/indexPriceKlines"
 )
@@ -77,6 +79,18 @@ class CandleCoverageInterval:
                 "start_time must be strictly before end_time, got "
                 f"start_time={self.start_time!r}, end_time={self.end_time!r}"
             )
+
+
+def binance_spot_trade_dataset(symbol: str, timeframe: str) -> CandleDataset:
+    """The canonical identity of Binance spot trade klines fetched by the real spot adapter."""
+    return CandleDataset(
+        exchange=BINANCE,
+        market_type=SPOT,
+        symbol=symbol,
+        timeframe=timeframe,
+        price_kind=SPOT_TRADE,
+        source=BINANCE_SPOT_KLINES_SOURCE,
+    )
 
 
 def binance_usdm_perpetual_contract_trade_dataset(symbol: str, timeframe: str) -> CandleDataset:

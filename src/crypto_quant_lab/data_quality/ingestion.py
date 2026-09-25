@@ -9,6 +9,14 @@ atomic `store.write_batch()` call. No partial historical batch is ever
 written: any failure anywhere in fetch/retry/pagination/finalization leaves
 `store` completely untouched. Quality reporting and gap detection are out of
 scope here (deferred to a later microstep).
+
+`ingest_binance_spot_klines_with_provenance` (FUNDING_RESEARCH_SPEC.md Bölüm
+19.13) is an ADDITIVE sibling: same fetch/pagination/finalization pipeline,
+but it writes candles, the dataset provenance and the authoritative coverage
+interval in ONE `write_ingestion_batch` transaction (the USDⓈ-M ingestion
+contract, reused through `usdm_ingestion._ingest`).
+`ingest_binance_historical_range` is unchanged and still writes
+provenance-less candles through `write_batch`.
 """
 
 from datetime import datetime
@@ -18,9 +26,16 @@ from crypto_quant_lab.data_quality.finalization import is_binance_historical_kli
 from crypto_quant_lab.data_quality.pagination import FetchPage, paginate_historical_klines
 from crypto_quant_lab.data_quality.retry import with_connection_retry
 from crypto_quant_lab.data_quality.time import calculate_effective_end
+from crypto_quant_lab.data_quality.usdm_ingestion import UsdmKlineIngestionResult, _ingest
 from crypto_quant_lab.market_data.binance_historical import BinanceHistoricalKline
 from crypto_quant_lab.market_data.binance_public import fetch_binance_historical_klines
 from crypto_quant_lab.storage.base import HistoricalCandle, HistoricalCandleStore
+from crypto_quant_lab.storage.datasets import (
+    SPOT,
+    SPOT_TRADE,
+    CandleDataset,
+    binance_spot_trade_dataset,
+)
 
 _EXCHANGE = "binance"
 _MARKET_TYPE = "spot"
@@ -91,3 +106,58 @@ def ingest_binance_historical_range(
         return
 
     store.write_batch(records)
+
+
+def ingest_binance_spot_klines_with_provenance(
+    store: object,
+    *,
+    symbol: str,
+    timeframe: str,
+    requested_start: datetime,
+    requested_end: datetime,
+    as_of_time: datetime,
+    fetch_page: FetchPage | None = None,
+    source: str | None = None,
+    max_attempts: int = 3,
+) -> UsdmKlineIngestionResult:
+    """Ingest finalized spot klines with provenance + coverage, atomically.
+
+    With the real adapter (`fetch_page=None`) the dataset source is the
+    endpoint that adapter calls (`BINANCE_SPOT_KLINES_SOURCE`) and `source`
+    must be omitted. A replaced transport (`fetch_page`) must declare its own
+    `source` label (e.g. "synthetic:..."), so fixture data is never recorded
+    as Binance data. Nothing is written unless every page was fetched and
+    validated; an empty but complete range records provenance + coverage with
+    zero candles (authoritative absence). A namespace already holding
+    provenance-less rows is refused (existing rows are never relabeled).
+    """
+    if fetch_page is None:
+        if source is not None:
+            raise ValueError(
+                "source is fixed by the real spot adapter; pass it only with fetch_page"
+            )
+        dataset = binance_spot_trade_dataset(symbol, timeframe)
+        fetch_page = partial(_default_fetch_page, symbol=symbol, timeframe=timeframe)
+    else:
+        if source is None:
+            raise ValueError(
+                "a replaced transport must declare its source label; the Binance endpoint "
+                "label is reserved for the real adapter"
+            )
+        dataset = CandleDataset(
+            exchange=_EXCHANGE,
+            market_type=SPOT,
+            symbol=symbol,
+            timeframe=timeframe,
+            price_kind=SPOT_TRADE,
+            source=source,
+        )
+    return _ingest(
+        store,
+        dataset=dataset,
+        requested_start=requested_start,
+        requested_end=requested_end,
+        as_of_time=as_of_time,
+        fetch_page=fetch_page,
+        max_attempts=max_attempts,
+    )
