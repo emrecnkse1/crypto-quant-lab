@@ -148,7 +148,7 @@ $b | ConvertTo-Json -Depth 10 | Out-File -Encoding utf8 "$env:TEMP\cql\multileg-
 .\.venv\Scripts\python.exe -m crypto_quant_lab.research multileg-doctor --config "$env:TEMP\cql\multileg-example-2\config_bad_source.json" --output "$env:TEMP\cql\multileg-doctor-bad-2"
 ```
 
-Doctor aynı parser'ı ve aynı salt okunur store hazırlığını kullanır; raporunda `replay_executed: false`, kontrol edilen girdiler, beyan edilen/kayıtlı kaynaklar, coverage, sayılar ve girdi kimlikleri bulunur. `economics.solvency`, `replay.core_validation` ve `economics.results` `skipped` durumunda ve `NOT_EVALUATED` açıklamasıyla görünür: doctor PASS, yeterli nakit, fill, PnL veya replay başarısı garantisi değildir; sonraki replay girdisini yeniden okur ve doğrular. `multileg-example` bir writer hatasında exit 1 ile "example NOT written" yazar; yeni dizin config'siz ve olduğu gibi kalır (silinmez, onarılmaz).
+Doctor aynı parser'ı ve aynı salt okunur store hazırlığını kullanır; raporunda `replay_executed: false`, kontrol edilen girdiler, beyan edilen/kayıtlı kaynaklar, coverage, sayılar ve girdi kimlikleri bulunur. `economics.solvency`, `replay.core_validation` ve `economics.results` `skipped` durumunda ve `NOT_EVALUATED` açıklamasıyla görünür: doctor PASS, yeterli nakit, fill, PnL veya replay başarısı garantisi değildir; sonraki replay girdisini yeniden okur ve doğrular. `multileg-example` bir writer hatasında (FileNotFoundError dahil) exit 1 ile "example NOT written" yazar; yeni dizin config'siz ve olduğu gibi kalır (silinmez, onarılmaz). Yalnız `--output` yolunun kendisi (var olan dizin / olmayan üst dizin) exit 2'dir.
 
 ### Config şeması (`multileg_replay`, sürüm 1)
 

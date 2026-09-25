@@ -115,4 +115,23 @@ Başlangıç: HEAD `7e9ee4f` (`master`; `git ls-remote` ile origin `7e9ee4f`, 0/
 | E — offline gösterim | VERIFIED — runbook §6d doctor komutları çalıştırıldı (`%TEMP%\cql\multileg-example-2`, `multileg-doctor-2`, `multileg-run-3`, `multileg-run-open-end-2`, `multileg-doctor-bad-2`, `multileg-run-bad-2`) |
 | F — denetim + docs + commit/push | VERIFIED — ayrı öz-denetim §19.16.6 (harici reviewer yok); commit hash'leri `git log` ile doğrulanır |
 
-Blocker: yok. Sonraki tek kontrollü iş önerisi: `multileg-example` yazımı sırasındaki `FileNotFoundError`'ın çıktı-dizini hatasından (exit 2) ayrılıp exit 1 olarak raporlanması (dar CLI düzeltmesi + test).
+Blocker: yok. Sonraki tek kontrollü iş önerisi: `multileg-example` yazımı sırasındaki `FileNotFoundError`'ın çıktı-dizini hatasından (exit 2) ayrılıp exit 1 olarak raporlanması (dar CLI düzeltmesi + test). [2026-09-25 notu: uygulandı — `8e0ed4c`.]
+
+### Devam (2026-09-25): sıradaki uygulanabilir iş taraması
+
+Başlangıç `92a6056` (origin aynı, `ls-remote` ile). `multileg-example` düzeltmesi `8e0ed4c`. Önceden kararlaştırılmış ve açık tasarım kararı gerektirmeyen başka iş BULUNAMADI:
+
+| Aday | Kaynak | Neden hazır değil |
+|---|---|---|
+| partial fill/legging, margin/liquidation, hedge oranı, spot short, lot/tick, metrik adapter, cüzdan transferi | FUNDING_RESEARCH_SPEC §19.10.1 "Gelecek işler", §19.11 | K1–K7 açık kararları |
+| warmup/evaluation_start (çok bacaklı) | §19.12.8 R5 | yalnız ilk replay için "YOK" kararı; genişletme yeni karar |
+| mark-price ingestion | §19.2, §19.12.3 D | sözleşme/rol (değerleme mi, K1 liquidation mı) tanımlı değil |
+| basis/carry strateji değerlendirmesi, eşik araştırması | ROADMAP Faz 7 "Açık" | strateji/eşik = yeni ekonomik varsayım |
+| çoklu sembol / uzun dönem gerçek veri koşusu | ROADMAP Faz 7 "Açık" | gerçek ağ/veri + sembol/dönem seçimi kullanıcı kararı |
+| CPCV, parameter stability | VALIDATION_SPEC §23, §22.2 | "önkoşulları YOK" / "parametre uzayı tanımı YOK" |
+| p-değeri üretimi, aile kapsamı, seçim politikası | VALIDATION_SPEC §17.6.10 | "AÇIK", yöntem kararı |
+| efektif-N, çok pencereli DSR pooling, PBO §3.2-3.4 | VALIDATION_SPEC §17.4.14, §17.5.20 | "ayrı kontrat" gerektiren deferred maddeler |
+| FAZ6D | §22 | FAZ6C tamamlanmadan başlamaz |
+| risk profili 1–10, 00:00 öneri, no-trade açıklaması | ROADMAP "Planlanan Kullanıcı/Risk Gereksinimleri" | faz ataması kullanıcı kararı |
+
+Sonraki adım: kullanıcının yukarıdaki kararlardan birini (ör. K3 legging politikası veya bir FAZ6C kontratı) vermesi.

@@ -2278,6 +2278,15 @@ kez karşılaştırma (R2 kimlik eşitliği elle değerlerle birlikte).
 Kalan küçük bulgu: multileg-example yazımı sırasında oluşan bir
 FileNotFoundError (yalnız çıktı dizini değil) exit 2 olarak raporlanır; başarı
 ilan edilmez ve config yazılmaz. Güç kaybı/kill -9 dayanıklılığı kanıtlanmadı.
+[2026-09-25 notu: düzeltildi — commit 8e0ed4c. write_example yalnız çıktı
+dizininin kendi oluşturulmasındaki FileExistsError/FileNotFoundError'ı
+(OSError.filename == --output) olduğu gibi yükseltir -> exit 2; sonraki her
+hata ExampleWriteError -> exit 1, "example NOT written (...)" ve dizin durumu,
+başarı satırı yok, silme/onarım yok, config.json yine en son. Testler:
+test_e_file_not_found_while_writing_is_exit_1_not_an_output_error (önce exit 2
+ile KIRMIZI, düzeltmeyle yeşil), test_e_output_path_errors_keep_exit_2_and_touch_nothing
+(var olan dizin baytları aynı, eksik üst dizin yaratılmaz), mevcut
+test_c10_existing_output_is_never_overwritten ve test_e_failed_example_...]
 ```
 
 Durumlar: Config-driven multi-leg research runner IMPLEMENTED + TESTED · Optional multileg-doctor IMPLEMENTED + TESTED (yalnız sentetik store'larla) · Real-market run NOT PERFORMED · Multi-leg strategy NOT IMPLEMENTED · Faz 7 NOT COMPLETE · FAZ6C NOT COMPLETE · FAZ6D NOT STARTED.
