@@ -26,8 +26,8 @@ R1 tam eşit open_time ızgarası · R2 MS9 sırası + E1 (opt-in) · R3 sonda a
 | Paket | Durum |
 |---|---|
 | A — E1 + legacy uyumluluk | VERIFIED — 22 eski test değiştirilmeden geçti; `tests/test_backtest_multileg_ordering.py` 8 test; tam suite 2543 passed |
-| B — in-memory replay | NOT STARTED |
-| C — S1–S12 + N1–N7 | NOT STARTED |
+| B — in-memory replay | VERIFIED — `backtest/multileg_replay.py` (`run_multileg_replay`); eski motor bu modülü import etmez |
+| C — S1–S12 + N1–N7 | VERIFIED — `tests/test_backtest_multileg_replay.py` 23 test fonksiyonu (N1–N7, S1–S12); tam suite 2566 passed |
 | D — adversarial / oracle | NOT STARTED |
 | E — offline demo | NOT STARTED |
 | F — son denetim + docs | NOT STARTED |
@@ -38,4 +38,4 @@ R1 tam eşit open_time ızgarası · R2 MS9 sırası + E1 (opt-in) · R3 sonda a
 
 ## Sonraki tek adım
 
-Paket B: `backtest/multileg_replay.py`.
+Paket D: adversarial/metamorphic testler ve test-only bağımsız ledger oracle'ı.
