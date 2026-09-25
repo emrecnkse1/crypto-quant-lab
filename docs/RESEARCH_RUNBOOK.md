@@ -106,6 +106,14 @@ Resmî kayıt T anındaki snapshot'tır, close basis `[T−1h, T)` kapanışıd�
 
 SENTETİK VERİ · SCRIPTED INTENT · STRATEJİ DEĞİL. Dört sabit senaryoyu (funding'siz kapanış, kapanış anında funding, oransal maliyet + funding, sonda açık pozisyon) üretim `run_multileg_replay` fonksiyonundan geçirir ve modül docstring'indeki elle türetilmiş değerlerle karşılaştırır. Ağ, store veya var olan DB kullanmaz; çıktı yeni bir dizine `report.json` + `report.md` (rapor v2) olarak yazılır, var olan dizin ezilmez (exit 2); beklenti tutmazsa veya senaryo hata verirse rapor `failed`, exit 1. Kapsam ve sınırlar: FUNDING_RESEARCH_SPEC.md §19.12.8.
 
+## 6c. Store üzerinden çok bacaklı replay demosu (offline, sentetik store'lar)
+
+```powershell
+.\.venv\Scripts\python.exe -m crypto_quant_lab.research.multileg_store_demo --output "$env:TEMP\cql\multileg-store-demo-1"
+```
+
+SENTETİK VERİ · GERÇEK PİYASA VERİSİ YOK · SCRIPTED INTENT · STRATEJİ DEĞİL. Çıktı dizininin `fixture\` alt klasörüne gerçek yazıcılarla yeni sentetik store'lar yazar (spot: provenance'lı spot ingestion + sahte transport, kaynak etiketi `synthetic:...`; perpetual: candle store `write_ingestion_batch`; funding: funding store `write_ingestion_batch`), yazıcıları kapatır, sonra bu store'ları **salt okunur** açıp provenance/coverage doğrulamasıyla `run_multileg_replay`'e verir (dört `multileg_offline` senaryosu). Var olan hiçbir DB açılmaz; var olan çıktı dizini ezilmez (exit 2); doğrulanamayan kaynakta rapor `failed` (exit 1). Store'lar arası atomik snapshot yoktur (her store kendi okuma işleminde). Programatik kullanım: `crypto_quant_lab.research.multileg_store.run_store_backed_multileg_replay`. Ayrıntı: FUNDING_RESEARCH_SPEC.md §19.13.
+
 ## 7. Config şeması (v1)
 
 `research/offline_fixture.py` içindeki `fixture_config()` tam bir örnektir; `offline-smoke` onu `fixture\config.json` olarak yazar.

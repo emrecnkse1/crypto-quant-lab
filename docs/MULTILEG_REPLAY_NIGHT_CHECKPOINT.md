@@ -60,7 +60,7 @@ Doğrulanan bulgu: `data_quality/ingestion.py::ingest_binance_historical_range` 
 |---|---|
 | A — sözleşme | IN PROGRESS (kanıt tablosu spec §19.13'e yazılacak) |
 | B — spot provenance | VERIFIED — additive `ingest_binance_spot_klines_with_provenance` + `binance_spot_trade_dataset`; eski fonksiyon değişmedi; `tests/test_spot_provenance_ingestion.py` 8 test; tam suite 2599 passed |
-| C — salt okunur store runner | NOT STARTED |
-| D — parity/ret/snapshot testleri | NOT STARTED |
-| E — store üzerinden offline gösterim | NOT STARTED |
+| C — salt okunur store runner | VERIFIED — `research/multileg_store.py` (`run_store_backed_multileg_replay`) |
+| D — parity/ret/snapshot testleri | VERIFIED — `tests/test_research_multileg_store.py` 21 test öğesi (ST1–ST11 + demo); tam suite 2620 passed |
+| E — store üzerinden offline gösterim | VERIFIED — `python -m crypto_quant_lab.research.multileg_store_demo --output <yeni dizin>`; PowerShell'de exit 0 (`%TEMP%\cql\multileg-store-demo-1`) |
 | F — denetim + docs | NOT STARTED |
