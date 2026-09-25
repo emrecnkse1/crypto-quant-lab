@@ -25,8 +25,12 @@ short only, no lot/tick quantization, two fixed wallets, lifecycle
 FLAT -> HEDGED_OPEN -> FLAT_CLOSED. Funding uses the existing
 `FundingModel` (signed: positive = paid) and applies only while the pair is
 open, once per canonical event key, strictly between open and close times;
-a funding event at the open or close instant is rejected as ambiguous
-(ordering belongs to a future replay contract). Arithmetic runs in the
+with the default `EventOrdering.STRICT_TIME` a funding event at the open or
+close instant is rejected as ambiguous. `EventOrdering.FUNDING_BEFORE_FILL`
+(E1, opt-in at construction, Bölüm 19.12.4) instead orders events by
+(time, phase FUNDING < FILL, funding rate_type) — the locked single-leg MS9
+tie order (FUNDING_SPEC.md Bölüm 12) — derived from the state's own recorded
+fills and funding keys, never from a caller-supplied cursor. Arithmetic runs in the
 caller's Decimal context, like the single-leg engine (COST_MODEL_SPEC.md
 Bölüm 20); research callers pass an explicit context.
 """
@@ -60,6 +64,24 @@ class HedgeLifecycle(Enum):
     FLAT = "FLAT"
     HEDGED_OPEN = "HEDGED_OPEN"
     FLAT_CLOSED = "FLAT_CLOSED"
+
+
+class EventOrdering(Enum):
+    """How state-changing events at one instant are ordered (Bölüm 19.12.4).
+
+    STRICT_TIME (default, the first slice's behavior): every open, funding and
+    close must be strictly later than the previous one.
+    FUNDING_BEFORE_FILL (E1, opt-in): events are ordered by the key
+    (time, phase, rate_type) with phase FUNDING (0) < FILL (1) — several
+    fundings at one instant in ascending rate_type, then at most one fill.
+    """
+
+    STRICT_TIME = "STRICT_TIME"
+    FUNDING_BEFORE_FILL = "FUNDING_BEFORE_FILL"
+
+
+_PHASE_FUNDING = 0
+_PHASE_FILL = 1
 
 
 def _require_str(value: object, name: str) -> None:
@@ -213,6 +235,13 @@ class HedgedPortfolioState:
     fills: tuple[PairedFill, ...]
     applied_funding_keys: tuple[tuple, ...]
     last_event_time: datetime | None
+    event_ordering: EventOrdering = EventOrdering.STRICT_TIME
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.event_ordering, EventOrdering):
+            raise TypeError(
+                f"event_ordering must be an EventOrdering, got {type(self.event_ordering).__name__}"
+            )
 
     @property
     def initial_total_capital(self) -> Decimal:
@@ -268,9 +297,17 @@ class HedgedLifecycleSummary:
 
 
 def new_hedged_portfolio(
-    pair: HedgedPair, *, spot_cash: Decimal, perpetual_collateral: Decimal
+    pair: HedgedPair,
+    *,
+    spot_cash: Decimal,
+    perpetual_collateral: Decimal,
+    event_ordering: EventOrdering = EventOrdering.STRICT_TIME,
 ) -> HedgedPortfolioState:
-    """A FLAT state with two explicitly funded wallets (both >= 0)."""
+    """A FLAT state with two explicitly funded wallets (both >= 0).
+
+    `event_ordering` is fixed for the state's whole life; the default keeps the
+    first slice's strict-time behavior.
+    """
     if not isinstance(pair, HedgedPair):
         raise TypeError(f"pair must be a HedgedPair, got {type(pair).__name__}")
     for name, value in (("spot_cash", spot_cash), ("perpetual_collateral", perpetual_collateral)):
@@ -288,6 +325,7 @@ def new_hedged_portfolio(
         fills=(),
         applied_funding_keys=(),
         last_event_time=None,
+        event_ordering=event_ordering,
     )
 
 
@@ -305,6 +343,40 @@ def _require_after_last_event(state: HedgedPortfolioState, time: datetime, what:
     if state.last_event_time is not None and time_us <= datetime_to_epoch_us(state.last_event_time):
         raise ValueError(
             f"{what} time {time!r} must be strictly after the last event {state.last_event_time!r}"
+        )
+
+
+def _recorded_event_cursor(state: HedgedPortfolioState) -> tuple[int, int, str] | None:
+    """The latest (time_us, phase, rate_type) among the state's OWN recorded events.
+
+    Derived from `fills` and `applied_funding_keys` (canonical_key[3] is the
+    event time, [4] the rate_type), so a caller cannot move it independently.
+    """
+    keys = [(datetime_to_epoch_us(fill.time), _PHASE_FILL, "") for fill in state.fills]
+    keys += [
+        (datetime_to_epoch_us(key[3]), _PHASE_FUNDING, key[4]) for key in state.applied_funding_keys
+    ]
+    return max(keys) if keys else None
+
+
+def _require_in_order(
+    state: HedgedPortfolioState, time: datetime, phase: int, rate_type: str, what: str
+) -> None:
+    if state.event_ordering is EventOrdering.STRICT_TIME:
+        _require_after_last_event(state, time, what)
+        return
+    cursor = _recorded_event_cursor(state)
+    last_us = None if state.last_event_time is None else datetime_to_epoch_us(state.last_event_time)
+    if (cursor is None) != (last_us is None) or (cursor is not None and cursor[0] != last_us):
+        raise ValueError(
+            "event history is inconsistent with last_event_time; same-instant ordering "
+            "cannot be inferred and is refused"
+        )
+    key = (datetime_to_epoch_us(time), phase, rate_type)
+    if cursor is not None and key <= cursor:
+        raise ValueError(
+            f"{what} at {time!r} violates FUNDING_BEFORE_FILL ordering: it must follow the last "
+            "event by (time, phase FUNDING < FILL, rate_type)"
         )
 
 
@@ -369,7 +441,7 @@ def apply_hedged_open(
     spot, perpetual = _validated_pair(
         state, spot, perpetual, spot_side=LegSide.BUY, perpetual_side=LegSide.SELL, action="open"
     )
-    _require_after_last_event(state, spot.time, "open")
+    _require_in_order(state, spot.time, _PHASE_FILL, "", "open")
     spot_cost = _leg_cost(spot_cost_model, spot, "spot")
     perpetual_cost = _leg_cost(perpetual_cost_model, perpetual, "perpetual")
     spot_cash = state.spot.cash - spot.quantity * spot.price - spot_cost
@@ -424,7 +496,7 @@ def apply_hedged_close(
             "close must cover exactly the open quantity (no partial close), open spot "
             f"{state.spot.quantity}, perpetual {state.perpetual.quantity}"
         )
-    _require_after_last_event(state, spot.time, "close")
+    _require_in_order(state, spot.time, _PHASE_FILL, "", "close")
     spot_cost = _leg_cost(spot_cost_model, spot, "spot")
     perpetual_cost = _leg_cost(perpetual_cost_model, perpetual, "perpetual")
     spot_realized = spot.quantity * (spot.price - state.spot.entry_price)
@@ -483,7 +555,9 @@ def apply_perpetual_funding(
         )
     if event.canonical_key in state.applied_funding_keys:
         raise ValueError(f"funding event {event.canonical_key!r} was already applied")
-    _require_after_last_event(state, event.funding.event_time, "funding")
+    _require_in_order(
+        state, event.funding.event_time, _PHASE_FUNDING, event.funding.rate_type, "funding"
+    )
     cost = funding_model.calculate_funding_cost(
         signed_position_quantity=state.perpetual.quantity,
         reference_price=event.funding.reference_price,
