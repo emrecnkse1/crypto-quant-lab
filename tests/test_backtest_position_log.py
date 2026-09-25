@@ -1,4 +1,4 @@
-"""Additive position-interval provenance (BACKTEST_SPEC.md Bölüm 36; VALIDATION_SPEC.md Bölüm 17.2.34).
+"""Additive position-interval provenance (BACKTEST_SPEC.md Bölüm 38; VALIDATION_SPEC.md Bölüm 17.2.34).
 
 The observer must not change any economic result: every run is compared with
 the identical run without an observer. Interval times are derived by hand from

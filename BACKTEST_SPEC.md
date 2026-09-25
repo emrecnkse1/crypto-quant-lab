@@ -680,3 +680,7 @@ Her mikro-adım küçük, bağımsız test edilebilir ve ayrı audit/commit yap�
 - [ ] Symbol/timeframe: tek run içinde tek exchange/market_type/symbol/timeframe
 - [ ] Empty data: açık hata, sessiz no-op/synthetic sonuç yok
 - [ ] NO TRADE: first-class geçerli sonuç
+
+## 38. Pozisyon Aralığı Provenance'ı — Eklemeli Gözlemci (2026-09-25; LOCKED VE IMPLEMENTED + TESTED)
+
+`run_backtest_replay` ve `run_backtest_from_store` keyword-only `position_observer=None` alır. Verilirse pozisyon miktarını değiştiren her fill'den sonra `on_fill(fill_time=candles[i+1].open_time, old_quantity, new_quantity)` çağrılır. Gözlemci salt okunurdur: `AccountState`, maliyetler, `BacktestResult` (Bölüm 27) ve Bölüm 36'daki kabul kriterleri DEĞİŞMEZ; golden regression'lar tam eşitlikle geçer. `backtest/position_log.py`: `PositionInterval(side, quantity, entry_time, exit_time | None)`; t işaretinin getirisi pozisyondan gelir <=> `entry < t <= exit`; sonda açık pozisyon `exit None` (sentetik çıkış yok, Bölüm 11). Aralıkları `BacktestResult`'a alan olarak eklemek bu sözleşmeyi bozacağından yapılmadı (seçenekler: VALIDATION_SPEC §17.2.34). Kullanım: CPCV gözlem düzeyi purge'ü (VALIDATION_SPEC §17.2.35).

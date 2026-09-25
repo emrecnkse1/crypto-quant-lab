@@ -1,4 +1,4 @@
-"""Additive position-interval provenance for the single-leg replay (BACKTEST_SPEC.md Bölüm 36).
+"""Additive position-interval provenance for the single-leg replay (BACKTEST_SPEC.md Bölüm 38).
 
 `run_backtest_replay(..., position_observer=recorder)` calls
 `recorder.on_fill(fill_time=..., old_quantity=..., new_quantity=...)` after

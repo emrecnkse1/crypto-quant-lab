@@ -344,7 +344,7 @@ def run_backtest_replay(
     funding history is never silently treated as zero cost.
 
     `position_observer` is additive, keyword-only, `None` by default
-    (BACKTEST_SPEC.md Bölüm 36): when supplied, its `on_fill(fill_time=,
+    (BACKTEST_SPEC.md Bölüm 38): when supplied, its `on_fill(fill_time=,
     old_quantity=, new_quantity=)` is called after every fill that changes
     the position quantity, with `fill_time = candles[i + 1].open_time`. It is
     read-only provenance: state, costs and the returned `BacktestResult` are

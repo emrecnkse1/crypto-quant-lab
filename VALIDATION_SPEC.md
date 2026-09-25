@@ -3889,7 +3889,7 @@ kontrol embargo'nun yeterli olup olmadığını ölçer.
 
 **17.2.31 Tüketiciler:** `cpcv_study.py`, `cpcv.py` ve `combinatorial_folds.py`'nin tasarlanmış tek tüketicisidir (import yönü testleri bunu listeler).
 
-**17.2.32 Gözlem Düzeyi (t1) Purging İçin Veri Gereksinimi (AÇIK, kod yok)**
+**17.2.32 Gözlem Düzeyi (t1) Purging İçin Veri Gereksinimi** [2026-09-25 notu: gereksinim §17.2.34–17.2.37'de, BacktestResult DEĞİŞTİRİLMEDEN, eklemeli bir gözlemciyle karşılandı; aşağıdaki metin tarihseldir.]
 
 ```
 Klasik gözlem düzeyi purging, her karar/pozisyon için (giriş zamanı, çıkış
@@ -3903,6 +3903,50 @@ pencere purge'ü ile dışlanır; CPCV sonucu "tam doğrulama" DEĞİLDİR.
 ```
 
 **17.2.33 Kanıtlamadıkları:** kârlılık, bağımsızlık, gözlem düzeyi purging, tam CPCV doğrulaması, canlı onay.
+
+**17.2.34 Pozisyon Aralığı Provenance'ı (LOCKED VE IMPLEMENTED + TESTED; §28.X)**
+
+```
+backtest/position_log.py (YENİ): PositionInterval(side LONG|SHORT, quantity,
+  entry_time, exit_time | None); PositionIntervalRecorder.on_fill(...).
+run_backtest_replay / run_backtest_from_store: position_observer=None
+  (keyword-only, eklemeli). Pozisyonu değiştiren her fill'den sonra
+  on_fill(fill_time = sonraki mumun open_time, old_quantity, new_quantity).
+  Salt okunur: AccountState, maliyetler ve BacktestResult gözlemcili ve
+  gözlemcisiz BİREBİR aynıdır (golden regression'lar değişmedi).
+Zamanlama (Faz 4, değişmedi): t anındaki equity işareti bir pozisyonun
+  getirisini taşır <=> entry < t <= exit (çıkış işareti çıkış fill'inden
+  önce alınır); sonda açık pozisyon exit None, sentetik çıkış yok.
+rolling.py: run_rolling_backtest_with_positions_from_store ve context-aware
+  eşi -> (değişmemiş WindowResult'lar, pencere başına aralıklar).
+Çatışma kaydı: aralıkları BacktestResult'a yeni alan olarak eklemek Faz 4
+  sonuç sözleşmesini ve tam eşitlik karşılaştıran golden regression'ları
+  bozardı; bu yüzden YAPILMADI. Seçenekler (kullanıcı kararı gerekirse):
+  (a) mevcut gözlemci yolu (uygulandı), (b) BacktestResult'a alan + golden
+  beklentilerinin güncellenmesi, (c) WindowResult/Trial'a ayrı provenance
+  alanı (Bölüm 21 sözleşmesini değiştirir).
+```
+
+**17.2.35 Gözlem Düzeyi Purge (LOCKED VE IMPLEMENTED + TESTED)**
+
+```
+compute_cpcv_paths(..., position_intervals=None): {candidate_id: (pencere
+  bloğu 0 aralıkları, blok 1, ...)}. Bir train satırı t, herhangi bir adayın
+  t'nin getirisini üreten aralığı bir test grubunda da getiri üretiyorsa
+  düşer (AFML label örtüşmesi; iki yön; adaylar üzerinde birleşim — tüm
+  adaylar aynı satırlarda karşılaştırılır). Aralık giriş/çıkış anları kendi
+  pencere bloğunun equity işaretleri olmalı (aksi hata). Varsayılan None:
+  eski davranış.
+run_cpcv_study(..., position_intervals=None): verilirse outcome kontrolü
+  pencere içi fold sınırlarında passed ("observation-level purging") ve yeni
+  "outcome_horizon.position_intervals" kontrolü: aralıklar her denemenin her
+  penceredeki kayıtlı trade_count'unu yeniden üretmeli (aksi failed).
+Paylaşılan pencere purge'ü (17.2.28) kaba üst sınır olarak kalır.
+```
+
+**17.2.36 Kanıt:** §28.X — elle 2, 2, 0, 0, 2, 2 purge sayımları (aynı vakada pencere purge'ü tüm train'i siler); gerçek zincirde bağımsız yeniden türetmeyle eşit ve pencere purge'ünden daha ince; oynanmış aralıklar provenance'ta reddedilir.
+
+**17.2.37 Sınır:** Aralıklar pozisyon düzeyindedir (tek bacaklı motor); çok bacaklı replay'in aralıkları kapsam dışı. CPCV yine offline araştırma teşhisidir.
 
 ### 17.3 Sharpe-Ailesi Metrikler — Aşama 2 (Bölüm 15/16)
 
@@ -4545,6 +4589,16 @@ backtest_results — 790 test) DEĞİŞMEDEN yeşil; tam suite 2154/2154 PASS
 (2045 önceki + 109 yeni).
 ```
 
+**17.4.18 Efektif-N ve Çok Pencereli DSR — LOCKED VE IMPLEMENTED + TESTED (2026-09-25; §28.U)** [17.4.14'teki iki deferred maddeden ilk ikisi.]
+
+**17.4.19 Efektif-N:** `validation/trial_statistics.py` `estimate_effective_trial_count(matrix)`: DSR makalesi Ek A.3 ortalama-korelasyon interpolasyonu `N_eff = ρ̄ + (1 − ρ̄)·M`, ρ̄ = hizalı TrialReturnMatrix kolonlarının ikili Pearson korelasyonlarının ortalaması (80 basamak). ρ̄ < 0 -> N_eff > M, `exceeds_trial_count` ile işaretlenir, KIRPILMAZ ("kötü koşulluluk" kararı: raporla, düzeltme uydurma). Sıfır varyanslı kolon -> hata. N_eff DSR'ye OTOMATİK verilmez (DSR'nin N'i çağıran beyanı kalır, §17.4.2). Entropi/kümeleme yöntemleri kapsam dışı.
+
+**17.4.20 Çok pencereli DSR:** `compute_pooled_deflated_sharpe_ratio(group, *, selected_candidate_id, independent_trial_count, risk_free_per_period)`: kilitli `_deflated_sharpe_from_statistics` aynen; her denemenin pencereleri periyodik getirileri birleştirilerek havuzlanır (her pencere kendi başlangıç nakdinden başlar: sermaye sıfırlaması getirilerin içindedir); Sharpe = Stage-2-özdeş alt örneklem Sharpe'ı (PBO yardımcısı), momentler DSR'nin popülasyon momentleri; havuzlanmış uzunluklar eşit olmalı. Varsayım DSR ile aynı (i.i.d.), pencere sınırlarına genişletilmiş.
+
+**17.4.21 Kanıt:** §28.U — elle korelasyonlar (N = 2, 1, 3 ve 3 − 2√2/3); tek pencerede kilitli DSR ile BİREBİR; iki pencerede eşdeğer tek pencere kanıtıyla 1e-20 içinde eşit.
+
+**17.4.22 Açık (17.4.14'ten kalan):** Harvey–Liu alternatif eşiği (ayrı yöntem), güven eşiği/geçti-kaldı (risk politikası — kullanıcı kararı), yıllıklandırılmış DSR raporlaması.
+
 ### 17.5 PBO — CSCV Exact Contract LOCKED VE IMPLEMENTED + TESTED (§17.5.13–17.5.24, §28.M — 24/24); Önkoşul Trial Return Matrix (§17.5.1–17.5.12, §28.L — 22/22)
 
 Prerequisites: birden fazla candidate/trial (18) + birden fazla partition + deterministic performance matrix + explicit selection rule. Bölüm 18 artık tek bir candidate'in tek bir trial'ını implement eder (28.G — 25/25); çoklu-candidate/trial karşılaştırma/aggregation ve deterministic performance matrix HENÜZ MEVCUT DEĞİLDİR (§18.9, 18.13) — bu nedenle PBO ilk primitive olarak **anlamlı şekilde implement edilemez** (foundation pre-flight'in kendi bulgusuyla tutarlı).
@@ -5059,6 +5113,20 @@ sınırı büyük S/T/N kombinasyonlarını reddeder (örnekleme yok);
 §3.2-3.4 istatistikleri ve CPCV yapılmadı.
 ```
 
+**17.5.25 PBO Yan İstatistikleri — LOCKED VE IMPLEMENTED + TESTED (2026-09-25; §28.V)**
+
+`validation/pbo_diagnostics.py` `compute_pbo_diagnostics(matrix, *, block_count, risk_free_per_period)`: aynı CSCV kombinasyonları ve IS seçimleri (önce `compute_probability_of_backtest_overfitting` çağrılır; doğrulama ve seçim özdeş).
+
+**17.5.26 Performans bozulması (§3.2):** IS-seçilenin OOS Sharpe'ının IS Sharpe'ına ağırlıklı en küçük kareler doğrusu `OOS = intercept + slope·IS`; eşit IS kazananları kombinasyon ağırlığını paylaşır (§17.5.15.5); sabit IS Sharpe -> eğim/kesişim None (0 değil).
+
+**17.5.27 Kayıp olasılığı (§3.3):** seçilen adayın OOS Sharpe'ı < 0 olan kombinasyonların ağırlık payı, tam kesir.
+
+**17.5.28 Stokastik baskınlık (§3.4):** `not_evaluated` — tanım bu teslimatta birincil kaynaktan doğrulanmadı; uydurulmadı.
+
+**17.5.29 Kanıt:** §28.V — elle eğim −5, kesişim 6√2, P(kayıp) 1/2; eşitlikle 1/4; sabit IS -> None; gerçek rolling grubunda PBO seçimleriyle tutarlı.
+
+**17.5.30 Kanıtlamadıkları:** eşik/geçti-kaldı, seçim, kârlılık.
+
 ### 17.6 Multiple-Testing Corrections — Holm Düzeltme Temeli (§17.6.1–17.6.10, §28.N — 18/18) ve Tek Yönlü Sharpe p-Değerleri + Aile Kapsamı (§17.6.11–17.6.18, §28.S — 9/9) LOCKED VE IMPLEMENTED + TESTED; Sonuç Seçim Politikası AÇIK
 
 Prerequisites: trial-count tracking (18) — candidate/trial foundation'ına bağımlı. Bölüm 18'in kendisi artık IMPLEMENTED + TESTED'dır (28.G), ama trial-count tracking (kaç candidate/trial değerlendirildiğinin kaydı, Bölüm 20) bu foundation'ın kapsamı DIŞINDADIR ve henüz mevcut değildir. **Durum güncellemesi:** tek-grup kapsamlı, ham trial-count kaydının exact kontratı Bölüm 20.1–20.13'te LOCKED'dır VE artık IMPLEMENTED + TESTED'dır (§20.14, §28.J — 19/19); multiple-testing correction'ın kendisi, gruplar-arası sayım ve efektif sayı hâlâ spec-lock edilmemiştir.
@@ -5307,6 +5375,18 @@ geçmişinin gerektireceğinin ALT SINIRIDIR (FAMILY_SCOPE metni sonuçta).
 
 **17.6.18 Açık:** sonuç seçim/raporlama politikası (17.6.10 madde 3); otokorelasyon düzeltmesi (ör. HAC standart hatası) ve çok pencereli birleştirme ayrı kontrat.
 
+**17.6.19 Seri Bağımlılığa Dayanıklı ve Çok Pencereli Sharpe p-Değerleri — LOCKED VE IMPLEMENTED + TESTED (2026-09-25; §28.Y)** [17.6.18'deki otokorelasyon ve çok pencere maddeleri.]
+
+**17.6.20 Yöntem:** `compute_hac_sharpe_significance(group, *, lag=None, risk_free_per_period)`: Lo (2002, "The Statistics of Sharpe Ratios") GMM/delta yöntemi; momentler `(r − μ, (r − μ)² − σ²)`, Newey–West (1987) Bartlett HAC kovaryansı `Σ = Γ0 + Σ_{j≤q} (1 − j/(q+1))(Γj + Γjᵀ)`; `SR = (μ − rf)/σ` (popülasyon σ), `V = ∇g Σ ∇gᵀ`, `z = SR·√T/√V`, `p = 1 − Φ(z)` (DSR'nin Decimal Φ'si), H0: Sharpe ≤ 0, tek yönlü. Varsayılan lag `⌊4(T/100)^(2/9)⌋` (Newey–West 1994), Decimal-only. q = 0'da V, PSR varyans terimine `1 − γ3·SR + (κ−1)/4·SR²` indirgenir.
+
+**17.6.21 Çok pencere:** getiriler pencere sırasıyla birleştirilir; otokovaryans çiftleri pencere sınırını ASLA geçmez.
+
+**17.6.22 Geçerlilik ve "değerlendirilemedi":** varsayımlar (durağan, ergodik, sonlu dördüncü moment, asimptotik) sonuçta yazılıdır. `T ≤ 2(q+1)` veya pozitif olmayan V / sabit getiri -> `status = "not_evaluated"`, neden yazılır, p YOK. `evaluate_hac_sharpe_family`: herhangi bir deneme değerlendirilemezse aile düzeltilmez (`holm = None`, kısmi aile düzeltmeyi küçültürdü). i.i.d. modülü (17.6.11) değişmedi; genel piyasa doğrulaması olarak sunulmaz.
+
+**17.6.23 Kanıt:** §28.Y — q = 0'da V = 1 ve z = √6/2; elle q = 1: V = 1/6, z = 3, p = 1 − Φ(3); asimetrik seri Fraction ile bağımsız hesapla eşleşir; iki pencere: V = 1/6 (sınır çifti dahil olsaydı 1/12); T = 4'te not_evaluated; aile bloklanır.
+
+**17.6.24 Açık:** sonuç seçim/raporlama politikası (17.6.10 madde 3) — kullanıcı kararı.
+
 ### 17.7 Parameter Stability — Betimsel Komşuluk Haritası LOCKED VE IMPLEMENTED + TESTED (§17.7.1–17.7.8, §28.T — 6/6); Stabilite Metriği AÇIK (KULLANICI KARARI)
 
 Prerequisites: parameterized candidate abstraction + komşu parametre konfigürasyonları + stabil bir evaluation metriği. Parameterized candidate abstraction'ın kendisi artık mevcuttur (Bölüm 18 `Candidate`, IMPLEMENTED + TESTED) — ama "komşu parametre konfigürasyonları" üretimi (bir parametre-uzayı arama/iterasyon mekanizması) ve stabilite metriği HENÜZ MEVCUT DEĞİLDİR; mevcut `BacktestPolicy`'ler de parametrik değildir (`BACKTEST_SPEC.md` Bölüm 12: Faz 4 policy'leri kasıtlı olarak trivial/deterministic). Parameter optimizer burada **icat edilmez.**
@@ -5327,7 +5407,16 @@ Prerequisites: parameterized candidate abstraction + komşu parametre konfigüra
 
 **17.7.7 Kanıtlamadıkları:** parametre stabilitesi, plato, aşırı uyumun yokluğu; seçim.
 
-**17.7.8 AÇIK KARAR — Stabilite metriği:** komşuluk üzerinden hangi ölçünün "stabil" sayılacağı (ör. komşu Sharpe'larının en küçüğü/ortalaması ile kendi Sharpe'ı arasındaki fark, göreli düşüş, işaret tutarlılığı, bir tolerans) bir yöntem/kullanıcı kararıdır; eşik de risk politikasıdır. Karar verilene kadar harita yalnız betimseldir.
+**17.7.8 KARAR VERİLDİ (2026-09-25, kullanıcı: (a) + (c), yalnız betimsel ve eşiksiz; §17.7.9–17.7.12) — tarihsel metin: Stabilite metriği:** komşuluk üzerinden hangi ölçünün "stabil" sayılacağı (ör. komşu Sharpe'larının en küçüğü/ortalaması ile kendi Sharpe'ı arasındaki fark, göreli düşüş, işaret tutarlılığı, bir tolerans) bir yöntem/kullanıcı kararıdır; eşik de risk politikasıdır. Karar verilene kadar harita yalnız betimseldir.
+
+
+**17.7.9 Stabilite Ölçüleri (LOCKED VE IMPLEMENTED + TESTED; §28.W):** `describe_neighborhood_stability(neighborhood_map)` her aday için (a) `sharpe_minus_min_neighbor` = kendi Sharpe − değerlendirilmiş komşuların en küçük Sharpe'ı (80 basamak, tam), (c) işaret tutarlılığı (işaret −1/0/+1; sıfır yalnız tam sıfır komşuyla eşleşir; `same_sign_neighbor_count`, `different_sign_neighbor_count`, `sign_consistent`).
+
+**17.7.10 Tanımlar:** komşusuz aday -> iki ölçü de None, not "undefined" (0 veya True DEĞİL); negatif Sharpe aritmetik olarak aynı; eşit değerler -> fark tam 0.
+
+**17.7.11 Kapsam:** betimsel, EŞİKSİZ; stabilite hükmü, risk skoru, seçim, geçti/kaldı YOK (STABILITY_SCOPE metni).
+
+**17.7.12 Kanıt:** §28.W — elle negatif/sıfır/eşit/komşusuz vakalar, uzun Decimal farkının tamlığı, gerçek parametrik ailede uçtan uca.
 
 ## 18. Candidate / Trial Abstraction — Exact Contract (LOCKED — IMPLEMENTED + TESTED)
 
@@ -6862,7 +6951,7 @@ FAZ 6D — Faz 6 Final Acceptance
 |---|---|---|---|
 | FAZ6A | COMPLETE | temporal window/IS-OOS primitives (§28.A — 22/22), zero-context rolling OOS evaluation (§28.C — 12/12), Stage-1 metrics (§28.D — 18/18) | locked FAZ6A scope içinde yok |
 | FAZ6B | COMPLETE | Layer-1 context/evaluation mimarisi (§28.B — 15/15), policy-instance-freshness foundation (§8.3.6), return-series + per-observation Sharpe (§15.9–15.18, §28.E — 29/29, LOCKED VE IMPLEMENTED + TESTED), non-zero-context Layer-2 (§8.3.16, §28.F — 22/22, LOCKED VE IMPLEMENTED + TESTED), candidate/trial foundation (§18, §28.G — 25/25, LOCKED VE IMPLEMENTED + TESTED), Annualized Metrics (§15.19–15.33, §28.H — 30/30, LOCKED VE IMPLEMENTED + TESTED) | locked FAZ6B scope içinde yok |
-| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + kaydedilmiş Trial sayısı exact kontratı + implementasyonu (§20.1–20.14, §28.J — 19/19, LOCKED VE IMPLEMENTED + TESTED); Deflated Sharpe exact kontratı + implementasyonu (§17.4.1–17.4.17, §28.K — 27/27, LOCKED VE IMPLEMENTED + TESTED); PBO önkoşulu trial return matrix (§17.5.1–17.5.12, §28.L — 22/22, LOCKED VE IMPLEMENTED + TESTED); PBO/CSCV (§17.5.13–17.5.24, §28.M — 24/24, LOCKED VE IMPLEMENTED + TESTED); Holm düzeltme temeli (§17.6.1–17.6.10, §28.N — 18/18, LOCKED VE IMPLEMENTED + TESTED); CPCV fold modeli (§17.2.1–17.2.10, §28.O — 17/17, LOCKED VE IMPLEMENTED + TESTED); CPCV train-seçimli path getirileri (§17.2.11–17.2.19, §28.P — 18/18, LOCKED VE IMPLEMENTED + TESTED); CPCV betimsel path dağılımı özeti (§17.2.20–17.2.24, §28.Q — 10/10, LOCKED VE IMPLEMENTED + TESTED); offline CPCV çalışması + girdi uygunluk denetimi + paylaşılan pencere purge'ü (§17.2.26–17.2.33, §28.R — 12/12); tek yönlü Sharpe p-değerleri + aile kapsamı (§17.6.11–17.6.18, §28.S — 9/9); betimsel parametre komşuluk haritası (§17.7.1–17.7.8, §28.T — 6/6) — hepsi LOCKED VE IMPLEMENTED + TESTED | gözlem düzeyi (t1) purging (veri gereksinimi §17.2.32), sonuç seçim politikası (§17.6.18), otokorelasyon düzeltmesi/çok pencereli anlamlılık, stabilite metriği (§17.7.8, kullanıcı kararı), efektif-N, çok pencereli DSR, PBO yan istatistikleri |
+| FAZ6C | NOT COMPLETE | purging/embargo exact kontrat + implementasyonu (§17.1.1–17.1.13, §28.I — 19/19, LOCKED VE IMPLEMENTED + TESTED); trial-group + kaydedilmiş Trial sayısı exact kontratı + implementasyonu (§20.1–20.14, §28.J — 19/19, LOCKED VE IMPLEMENTED + TESTED); Deflated Sharpe exact kontratı + implementasyonu (§17.4.1–17.4.17, §28.K — 27/27, LOCKED VE IMPLEMENTED + TESTED); PBO önkoşulu trial return matrix (§17.5.1–17.5.12, §28.L — 22/22, LOCKED VE IMPLEMENTED + TESTED); PBO/CSCV (§17.5.13–17.5.24, §28.M — 24/24, LOCKED VE IMPLEMENTED + TESTED); Holm düzeltme temeli (§17.6.1–17.6.10, §28.N — 18/18, LOCKED VE IMPLEMENTED + TESTED); CPCV fold modeli (§17.2.1–17.2.10, §28.O — 17/17, LOCKED VE IMPLEMENTED + TESTED); CPCV train-seçimli path getirileri (§17.2.11–17.2.19, §28.P — 18/18, LOCKED VE IMPLEMENTED + TESTED); CPCV betimsel path dağılımı özeti (§17.2.20–17.2.24, §28.Q — 10/10, LOCKED VE IMPLEMENTED + TESTED); offline CPCV çalışması + girdi uygunluk denetimi + paylaşılan pencere purge'ü (§17.2.26–17.2.33, §28.R — 12/12); tek yönlü Sharpe p-değerleri + aile kapsamı (§17.6.11–17.6.18, §28.S — 9/9); betimsel parametre komşuluk haritası (§17.7.1–17.7.8, §28.T — 6/6) — hepsi LOCKED VE IMPLEMENTED + TESTED; gözlem düzeyi purge + pozisyon aralığı provenance'ı (§17.2.34–17.2.37, §28.X), efektif-N + çok pencereli DSR (§17.4.18–17.4.22, §28.U), PBO bozulma + kayıp olasılığı (§17.5.25–17.5.30, §28.V), HAC + çok pencereli Sharpe p-değerleri (§17.6.19–17.6.24, §28.Y), stabilite ölçüleri (§17.7.9–17.7.12, §28.W) — hepsi LOCKED VE IMPLEMENTED + TESTED | sonuç seçim/raporlama politikası (kullanıcı kararı), güven eşiği/geçti-kaldı (risk politikası), PBO stokastik baskınlık (kaynak doğrulaması), Harvey–Liu eşiği ve yıllıklandırılmış DSR (ayrı yöntem), aralıkların BacktestResult'a taşınması (isteğe bağlı sözleşme kararı, §17.2.34); aday seçimi/optimizer/final holdout BAŞLATILMAZ |
 | FAZ6D | NOT STARTED | yok | Faz 6 final acceptance audit'i |
 
 Bu tablo, §28.A/B/C/D'nin bağımsız acceptance sayımlarını **birleşik bir yüzdeye veya tek bir sayıya dönüştürmez** — her grup kendi bağımsız kanıtını korur; bu tablo yalnızca hangi grubun hangi alt-fazın kanıtı olduğunu özetler.
@@ -7671,13 +7760,27 @@ commit'ler 2ce960f, 3bcfdd8, ac13f83, a4d657e):
   test_validation_parameter_stability.py (4). §28.R 12/12, §28.S 9/9,
   §28.T 6/6. FAZ6C ve Faz 6 NOT COMPLETE.
 
+FAZ6C — KALAN BOŞLUKLAR PAKETİ — TAMAMLANDI (2026-09-25; commit'ler
+9379daf, 6d1830d, 432a3b6, eef5ed8, f56768d, ff82b79):
+  stabilite ölçüleri (a)+(c) betimsel; pozisyon aralığı provenance'ı
+  (eklemeli gözlemci, BacktestResult değişmedi) + CPCV gözlem düzeyi purge'ü;
+  Lo (2002)/Newey–West HAC ve çok pencereli Sharpe p-değerleri (kesin
+  not_evaluated); efektif-N (Ek A.3) + çok pencereli DSR; PBO bozulma +
+  kayıp olasılığı. §28.U–§28.Y. FAZ6C ve Faz 6 NOT COMPLETE.
+
+Açık FAZ6C maddeleri (2026-09-25 yeniden sayım, §22.2 + §17.4.14 + §17.5.20
++ §17.6.10):
+  1 sonuç seçim/raporlama politikası (§17.6.24) — KULLANICI KARARI
+  2 güven eşiği / geçti-kaldı (DSR, PBO, p-değerleri) — RİSK POLİTİKASI
+  3 PBO stokastik baskınlık (§17.5.28) — birincil kaynak doğrulaması
+  4 Harvey–Liu eşiği, yıllıklandırılmış DSR raporu (§17.4.22) — ayrı yöntem
+  5 aralıkların sonuç sözleşmesine taşınması (§17.2.34) — isteğe bağlı karar
+  Kapsam dışı (başlatılmaz): aday seçimi, optimizer, final holdout.
+
 Sonraki (henüz başlanmadı):
-  FAZ6C'nin kalanları: gözlem düzeyi (t1) purging — veri gereksinimi
-  §17.2.32 (pozisyon aralığı kaydı, BACKTEST_SPEC kararı); p-değerlerinde
-  otokorelasyon düzeltmesi ve çok pencereli birleştirme, sonuç seçim
-  politikası (§17.6.18); stabilite metriği (§17.7.8, kullanıcı kararı).
-  Deferred: efektif-N estimator'ı (DSR Ek
-  A.3), çok pencereli DSR pooling, PBO'nun §3.2-3.4 yan istatistikleri.
+  FAZ6C'nin kalanları: yukarıdaki 1–5.
+  Deferred (tarihsel liste; 2026-09-25'te efektif-N, çok pencereli DSR
+  ve PBO §3.2–3.3 kapandı): PBO §3.4.
   Candidate selection/ranking, optimizer ve final holdout enforcement
   BAŞLATILMAZ. Ardından FAZ6D — Faz 6 Final Acceptance audit'i. Faz 6'nın
   tamamlanması için FAZ6C/FAZ6D'nin ikisi de gereklidir (bkz. Bölüm 22).
@@ -8286,6 +8389,26 @@ Bölüm 17.2.20–17.2.24'ün `summarize_cpcv_paths` tarafından karşılandığ
 6. Kapsam metni "no stability score" içerir (§17.7.1). **PASS** — `test_real_parametric_family_neighbors`.
 
 **Count: 6 / 6.** Parametre stabilitesi, plato veya seçim anlamına GELMEZ; stabilite metriği AÇIK (§17.7.8).
+
+### 28.U — EFFECTIVE N + POOLED DSR ACCEPTANCE (5/5)
+
+`tests/test_validation_trial_statistics.py` (5 test, PASS). 1. elle korelasyonlar N = 2 / 1 / 3 (işaretli) / 3 − 2√2/3 — `test_effective_n_hand_cases`. 2. sıfır varyans, < 2 deneme, tip retleri — `test_effective_n_invalid_inputs`. 3. tek pencerede kilitli DSR ile birebir (N = 2, 5, 50) — `test_pooled_dsr_equals_the_locked_dsr_for_single_window_trials`. 4. iki pencere = eşdeğer tek pencere DSR (1e-20) — `test_pooled_dsr_matches_dsr_on_the_equivalent_single_window_evidence`. 5. argüman retleri — `test_pooled_dsr_invalid_inputs`. **5/5.**
+
+### 28.V — PBO SIDE STATISTICS ACCEPTANCE (5/5)
+
+`tests/test_validation_pbo_diagnostics.py` (5 test, PASS). 1. elle eğim −5, kesişim 6√2, P(kayıp) 1/2, stokastik baskınlık not_evaluated — `test_hand_case_degradation_line_and_probability_of_loss`. 2. eşitlik ağırlığı -> 1/4 — `test_tied_in_sample_winners_share_the_combination_weight`. 3. sabit IS -> None — `test_constant_in_sample_sharpe_leaves_the_slope_undefined`. 4. PBO doğrulaması aynen — `test_validation_is_the_pbo_validation`. 5. gerçek rolling grubu PBO seçimleriyle tutarlı, deterministik — `test_real_rolling_group_matches_the_pbo_selections`. **5/5.**
+
+### 28.W — STABILITY MEASURES ACCEPTANCE (3/3)
+
+`tests/test_validation_parameter_stability.py` (+3 test; dosyada 7, PASS). 1. negatif/sıfır/eşit/komşusuz elle — `test_hand_cases_gap_and_sign_consistency`. 2. uzun Decimal farkı tam — `test_gap_is_exact_for_long_decimals`. 3. gerçek parametrik ailede uçtan uca + tip retti — `test_measures_on_the_real_parametric_family`. **3/3.**
+
+### 28.X — POSITION INTERVALS + OBSERVATION-LEVEL PURGE ACCEPTANCE (7/7)
+
+`tests/test_backtest_position_log.py` (4), `tests/test_validation_cpcv.py` (+2), `tests/test_validation_cpcv_study.py` (+2), PASS. 1. gözlemcili = gözlemcisiz sonuç; elle aralıklar; geçişler = trade_count — `test_observer_never_changes_the_result_and_records_hand_derived_intervals`. 2. işaret zamanlaması — `test_produces_return_at_follows_the_mark_timing`. 3. kayıt/aralık doğrulaması — `test_recorder_and_interval_validation`. 4. rolling "with positions" değişmemiş WindowResult'lar, sıfır ve context-aware — `test_rolling_with_positions_returns_the_unchanged_window_results`. 5. elle purge 2,2,0,0,2,2; pencere purge'ü aynı vakayı boşaltır — `test_recorded_position_intervals_purge_exactly_the_overlapping_training_rows`. 6. provenance retleri — `test_position_interval_provenance_is_checked`. 7. gerçek zincir: bağımsız türetmeyle eşit, pencere purge'ünden ince; oynanmış aralık failed — `test_recorded_intervals_purge_the_real_chain_more_finely_than_the_window_purge`, `test_intervals_that_do_not_reproduce_the_trade_count_fail`. Tüm backtest/golden suite'leri değişmeden geçer. **7/7.**
+
+### 28.Y — HAC + MULTI-WINDOW SHARPE P-VALUES ACCEPTANCE (7/7)
+
+`tests/test_validation_sharpe_significance.py` (+7 test; dosyada 16, PASS). 1. q = 0 PSR terimine indirgenir — `test_hac_lag_zero_reduces_to_the_iid_variance_term`. 2. elle q = 1: V = 1/6, z = 3 — `test_hac_lag_one_hand_case_negative_autocorrelation_shrinks_the_variance`. 3. asimetrik seri Fraction referansı — `test_hac_asymmetric_series_matches_an_independent_fraction_computation`. 4. pencere sınırı dışlanır — `test_hac_pools_windows_without_crossing_their_boundary`. 5. not_evaluated açık ve aileyi bloklar — `test_hac_not_evaluated_is_explicit_and_blocks_the_family`. 6. argüman ve lag kuralı — `test_hac_argument_validation_and_default_lag_rule`. 7. gerçek rolling iç tutarlılık — `test_hac_real_rolling_group_is_internally_consistent`. **7/7.**
 
 ## 29. Faz 6 Sonrası (Bilgi Amaçlı — Bu Dokümanda Tasarlanmaz)
 
