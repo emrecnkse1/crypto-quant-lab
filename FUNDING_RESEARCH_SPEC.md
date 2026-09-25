@@ -1811,7 +1811,7 @@ Demo: iki temiz dizinde aynı deterministic_sha256; doğrulanamayan kaynakla fai
 
 #### 19.13.6 Offline store demosu
 
-`python -m crypto_quant_lab.research.multileg_store_demo --output <YENİ dizin>` — `<çıktı>\fixture\` altında gerçek yazıcılarla sentetik store'lar (spot: provenance'lı spot ingestion + sahte transport; perpetual: candle store `write_ingestion_batch`, çünkü USDⓈ-M ingestion fonksiyonu her zaman Binance uç noktasını yazar; funding: funding store `write_ingestion_batch`), yazıcılar kapatıldıktan sonra salt okunur runner ile dört senaryo, rapor v2. Eski `multileg_offline` komutu değişmedi ve çalışıyor.
+`python -m crypto_quant_lab.research.multileg_store_demo --output <YENİ dizin>` — `<çıktı>\fixture\` altında gerçek yazıcılarla sentetik store'lar (spot: provenance'lı spot ingestion + sahte transport; perpetual: candle store `write_ingestion_batch`, çünkü USDⓈ-M ingestion fonksiyonu her zaman Binance uç noktasını yazar [2026-09-25 notu: §19.14 ile `source` parametresi eklendi; demo değiştirilmedi]; funding: funding store `write_ingestion_batch`), yazıcılar kapatıldıktan sonra salt okunur runner ile dört senaryo, rapor v2. Eski `multileg_offline` komutu değişmedi ve çalışıyor.
 
 #### 19.13.7 Denetim (ayrı tur, harici reviewer yok)
 
@@ -1829,11 +1829,153 @@ Açık bulgular (bu dilimde değiştirilmedi):
 - research/offline_fixture.py (gece paketi) sentetik perpetual/index verisini
   USDⓈ-M ingestion ile yazdığı için Binance kaynak etiketi taşır; bu yeni runner
   onu "Binance" diye doğrulamaz ama etiket yanıltıcıdır. Düzeltme ayrı karar.
+  [2026-09-25 notu: §19.14'te düzeltildi.]
 - USDⓈ-M ingestion fonksiyonları sentetik kaynak etiketi kabul etmez (spot'taki
-  source parametresinin eşdeğeri yok).
+  source parametresinin eşdeğeri yok). [2026-09-25 notu: §19.14'te eklendi.]
 - Funding kaynağı şemada yok; eklenmesi şema/migration kararıdır.
 - Mevcut spot HTTP adaptörü HTTPError'ı da ConnectionError'a çevirir (retry
   edilir); bu dilimde değiştirilmedi.
 ```
 
 Durumlar: Multi-leg accounting first slice IMPLEMENTED + TESTED · E1 IMPLEMENTED + TESTED · In-memory multi-leg replay IMPLEMENTED + TESTED · Synthetic offline demo VERIFIED · Spot provenance ingestion IMPLEMENTED + TESTED · Read-only store-backed multi-leg replay IMPLEMENTED + TESTED (yalnız sentetik store'larla) · Real-market store-backed run NOT PERFORMED · Partial fill/legging PENDING · Margin/liquidation NOT MODELED · Basis/carry strategy evaluation PENDING · Faz 7 NOT COMPLETE · FAZ6C NOT COMPLETE · FAZ6D NOT STARTED.
+
+### 19.14 USDⓈ-M kaynak etiketi desteği + sentetik fixture kaynak düzeltmesi — IMPLEMENTED + TESTED (2026-09-25)
+
+Yalnız kaynak METADATA'sı değişti; fiyat, funding, maliyet, zamanlama, muhasebe veya strateji değişmedi. Gerçek piyasa verisiyle koşulmadı. §19 genel olarak DRAFT kalır.
+
+#### 19.14.1 Başlangıç bulgusu (koddan)
+
+```
+research/offline_fixture.py sentetik contract/index mumlarını
+ingest_binance_usdm_perpetual_klines / ingest_binance_usdm_index_price_klines
+ile sahte fetch_page üzerinden yazıyordu; bu fonksiyonların source parametresi
+yoktu, dataset her zaman kanonik Binance uç noktasıyla etiketleniyordu
+("binance:GET https://fapi.binance.com/fapi/v1/klines" /
+ ".../fapi/v1/indexPriceKlines"). Okuyucular (cli inspect/doctor/basis-report/
+funding-research, research/basis.py, research/usdm_perpetual.py) kanonik
+kaynağı birebir eşitlikle beklediği için etiket yanıltıcı olduğu hâlde
+fixture geçiyordu. research/multileg_offline.py'deki in-memory sentetik
+perpetual dataset'i de Binance etiketi taşıyordu.
+```
+
+#### 19.14.2 API (additive, geriye uyumlu)
+
+```
+storage/datasets.py
+  binance_usdm_perpetual_contract_trade_dataset(symbol, tf, *, source=BINANCE_USDM_KLINES_SOURCE)
+  binance_usdm_index_price_dataset(pair, tf, *, source=BINANCE_USDM_INDEX_PRICE_KLINES_SOURCE)
+data_quality/usdm_ingestion.py
+  ingest_binance_usdm_perpetual_klines(..., source: str | None = None)
+  ingest_binance_usdm_index_price_klines(..., source: str | None = None)
+  kural (_source_for):
+    fetch_page yok (gerçek adaptör) + source yok  -> kanonik uç nokta (eski davranış)
+    fetch_page yok + source verildi               -> ValueError, istek/yazım YOK
+    fetch_page var + source verildi               -> beyan edilen etiket, olduğu gibi
+    fetch_page var + source yok                   -> LEGACY: kanonik etiket (aşağı bkz.)
+  boş / yalnız boşluk -> ValueError("source cannot be empty"), str olmayan ->
+  TypeError; ikisi de CandleDataset kurulurken, ilk fetch'ten ÖNCE.
+research/basis.py  load_close_basis_history(..., contract_source=kanonik, index_source=kanonik)
+research/usdm_perpetual.py  evaluate_usdm_perpetual_funding_research(..., contract_source=kanonik)
+research/cli.py  config v1'e opsiyonel "sources": {"contract"?: str, "index"?: str}
+  - verilmeyen rol kanonik uç noktadır (eski config'ler aynen çalışır)
+  - bilinmeyen rol, boş/boşluk/str olmayan değer, nesne olmayan alan -> ConfigError
+  - inspect, doctor, basis-report, funding-research beklenen dataset'i
+    ResearchConfig.expected_dataset(role) ile kurar; eşitlik kuralı GEVŞETİLMEDİ
+    (kaynak dahil birebir). effective() değişmedi: config'de sources yoksa
+    kaydedilen config ve config_sha256 öncekiyle aynı.
+Şema/migration, rapor şeması (v2), pyproject/bağımlılık değişikliği yok.
+```
+
+LEGACY sınırlaması (bilinçli olarak korundu, testle sabitlendi): enjekte edilmiş transport ile `source` vermeden çağrılan USDⓈ-M ingestion, veri o uç noktadan gelmediği hâlde kanonik Binance etiketini yazar. Mevcut çağıranları kırmamak için korunmuştur; yeni sentetik yazıcılar `source` vermelidir. Düzeltilmiş fixture bu yolu kullanmaz. (Spot ingestion'da §19.13.3 bu durumda reddeder; USDⓈ-M'de ret, mevcut testleri/çağıranları kıracağından ayrı karardır.)
+
+#### 19.14.3 Sentetik kimlikler
+
+```
+research/offline_fixture.py
+  FIXTURE_CONTRACT_SOURCE = "synthetic:offline-fixture/contract-trade/v1"
+  FIXTURE_INDEX_SOURCE    = "synthetic:offline-fixture/index-price/v1"
+  her iki ingestion çağrısı source ile; fixture_config()["sources"] aynı etiketler
+research/multileg_offline.py
+  _PERP_DS.source = "synthetic:perpetual" (aynı modüldeki "synthetic:spot" ile tutarlı)
+Kimlik alanları (exchange="binance", market_type, symbol, timeframe, price_kind)
+DEĞİŞMEDİ; yeni piyasa kimliği uydurulmadı. Mevcut DB'ler SQL UPDATE ile
+yeniden etiketlenmedi; yeni fixture'lar yeni dizinlerde üretilir.
+```
+
+#### 19.14.4 Önce/sonra karşılaştırması (alan düzeyinde, rapor v2)
+
+```
+Rapor              status     deterministic_sha256  config_sha256     run_input_sha256
+offline-smoke  önce succeeded 94d2710b9e34ce66     7de15e518239fe4c  8d8b890c5d6070a3
+               sonra succeeded 641201f98b02cba0    955cdb55a533c08d  380c13630772f8ec
+multileg-off.  önce succeeded fccfa2f14112a4af     9235ca477dd675a8  4c6a4380f6384ed6
+               sonra succeeded f1bc8edeb580a695    9235ca477dd675a8  7df372d2320b8393
+multileg-store önce/sonra      d635c25f1a179540     d5aaf08941e1ecb6  45b91cea8fedd158 (değişmedi)
+Sonra değerleri üç ayrı temiz dizinde aynı.
+Grup A (ekonomi, AYNI): tüm results, check durumları, equity/fill/funding/maliyet
+  değerleri; fixture store'larındaki historical_candles (24 contract, 23 index
+  satırı) ve candle_coverage satırları bayt bayt aynı. Kabul değerleri:
+  N1 402 · N2 402.0101 · N3 402.01515 · N5 401.7101 · N7 açık 402 · oransal
+  maliyet demosu 401.7076.
+Grup B (kasıtlı değişen): offline-smoke config.sources (yeni alan),
+  config_sha256, inputs[0..1].registered_dataset.source,
+  inputs[0..1].logical_fingerprint_sha256, contract/index provenance check
+  detay metinleri, run_input_sha256, deterministic_sha256; multileg-offline
+  inputs[1].dataset kaynak alanı, run_input_sha256, deterministic_sha256.
+Grup C (uçucu): run_metadata.created_at, run_metadata.git_tracked_changes.
+Kaynak fingerprint'ten ÇIKARILMADI; rapor şeması yükseltilmedi; eski raporlar
+yeniden yazılmadı. sources içermeyen bir config'in config_sha256'sı önceki
+değere eşittir (P9 testi 7de15e51...'i sabitler).
+```
+
+#### 19.14.5 Kabul kanıtı (tests/test_usdm_source_labels.py, 51 öğe)
+
+```
+P1  varsayılan gerçek adaptör (patch'li urlopen): fapi URL'leri, kanonik etiketler
+P2  gerçek ingestion üzerinden beyan edilen sentetik etiket (contract + index),
+    tam provenance + coverage; builder varsayılanları kanonik
+P3  "", "   ", "\t\n", 123, b"..." -> belirli TypeError/ValueError; spy fetch
+    hiç çağrılmaz, store boş; gerçek adaptör + source -> ret, urlopen spy boş
+P4  LEGACY: source'suz enjekte transport kanonik etiket yazar (sınırlama olarak
+    sabitlendi); düzeltilmiş fixture store/config sentetik etiket taşır;
+    multileg_offline manifest'inde Binance etiketi yok
+P5  yarım/sırasız sayfalama hiçbir şey yazmaz; boş tam aralık = etiketli yetkili
+    yokluk; aynı içerik idempotent; farklı etiket / legacy etiket / farklı
+    içerik DataConflictError; kanonik store sentetik etiketle yeniden
+    etiketlenmez; provenance'sız satırlar etiketlenmez
+P6  eşleşen config geçer; sentetik store + kanonik config ve kanonik store +
+    sentetik config doctor/inspect/basis-report/funding-research'te failed;
+    tek rol farkı yalnız o rolü düşürür; okuyucular boşluk/büyük harf farkını
+    da reddeder; geçersiz sources config'i (8 biçim) ConfigError
+P7  sentetik ve kanonik etiketli aynı satırlar: mum/coverage satırları ve
+    funding-research sonuçları/check durumları aynı
+P8  multileg_offline dört senaryo: etiket değişimi sonuç görünümünü değiştirmez;
+    402 / 402.0101 / 401.7076 / 402
+P9  config'siz-sources digest sabit; offline-smoke iki koşuda aynı
+    deterministic/run_input hash; etiket input fingerprint'lerine girer
+P10 ağ yasakken offline-smoke çalışır; var olan çıktı ezilmez (exit 2, bayt
+    aynı); global Decimal context değişmez
+P11 tam suite 2671 passed (önce 2620; +51 yeni test); tek mevcut test
+    değişikliği: tests/test_research_cli.py::_trial yardımcısı fixture'ın beyan
+    ettiği contract kaynağını geçer (gevşetme değil, beklenen değer güncellemesi)
+```
+
+#### 19.14.6 Denetim (ayrı tur, harici reviewer yok)
+
+```
+Kontrol edilen riskler: okuyucu eşitliğinin gevşemesi (yok; P6 boşluk/büyük harf
+farkını da reddeder), eski config digest'inin kayması (P9 sabit hash),
+ekonominin değişmesi (grup A + P7/P8), gerçek adaptöre sahte etiket (P3),
+fetch sonrası doğrulama (P3 spy), mevcut store'un yeniden etiketlenmesi (P5),
+ağ/ezme/context sızıntısı (P10), korumalı dosyalar (backtest/*, report.py,
+test_backtest_multileg.py, pyproject.toml değişmedi; AGENTS.md hash aynı).
+Denetimde düzeltilen: ResearchConfig.expected_dataset bilinmeyen rolü sessizce
+index sayıyordu -> ValueError (testli); offline_fixture ve multileg_store_demo
+docstring'lerindeki eskimiş kaynak ifadeleri güncellendi (davranış değişmedi).
+Açık sınırlar (bu dilimde çözülmedi): funding store'da kaynak kolonu yok;
+parametreleri tanımlanamayan maliyet modelinde replay fingerprint'i None;
+spot HTTP adaptöründe HTTPError retry sınıflandırması; E1 performansı;
+source'suz enjekte USDⓈ-M transport'unun legacy kanonik etiketi.
+```
+
+Durumlar: USD-M source support IMPLEMENTED + TESTED · Synthetic offline fixture source fix IMPLEMENTED + TESTED · Real-market run NOT PERFORMED · Faz 7 NOT COMPLETE · FAZ6C NOT COMPLETE · FAZ6D NOT STARTED.

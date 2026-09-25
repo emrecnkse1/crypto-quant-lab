@@ -27,7 +27,7 @@ Rapor şeması `crypto-quant-lab/research-report/v2`: her kontrolün bir `catego
 .\.venv\Scripts\python.exe -m crypto_quant_lab.research offline-smoke --output "$env:TEMP\cql\offline-smoke-1"
 ```
 
-Ne yapar: `<output>\fixture\` altında sentetik üç store'u (contract, index, funding) **production ingestion yoluyla** kurar, `fixture\config.json` yazar; inspect + basis + funding araştırmasını çalıştırır; sonuçları `research/offline_fixture.py` docstring'inde elle türetilmiş beklentilerle karşılaştırır (`expectation.*` kontrolleri). Başarılı bir çalıştırma yalnız sentetik veride boru hattı bağlantısını kanıtlar.
+Ne yapar: `<output>\fixture\` altında sentetik üç store'u (contract, index, funding) **production ingestion yoluyla** kurar, `fixture\config.json` yazar; inspect + basis + funding araştırmasını çalıştırır; sonuçları `research/offline_fixture.py` docstring'inde elle türetilmiş beklentilerle karşılaştırır (`expectation.*` kontrolleri). Başarılı bir çalıştırma yalnız sentetik veride boru hattı bağlantısını kanıtlar. Fixture store'ları 2026-09-25'ten beri sentetik kaynak etiketi taşır (`synthetic:offline-fixture/...`) ve `config.json` aynı etiketleri `sources` altında beyan eder; daha önce üretilmiş fixture dizinleri Binance etiketlidir ve yeni config'le açılırsa provenance hatası verir — yeniden üretin (FUNDING_RESEARCH_SPEC §19.14).
 
 Çıktı: `report.json` (makine), `report.md` (okunabilir). Aynı girdilerle her çalıştırmada `deterministic_sha256` aynıdır; saat ve git bilgisi yalnız `run_metadata` içindedir.
 
@@ -132,6 +132,7 @@ SENTETİK VERİ · GERÇEK PİYASA VERİSİ YOK · SCRIPTED INTENT · STRATEJİ 
 | `funding_research.candidate` | `candidate_id`, `short_entry_rate`, `long_entry_rate` (string), `max_funding_age_hours` (tam sayı ≥ 1) |
 | `funding_research.include_no_trade_control` | `true`/`false` |
 | `funding_research.cost` | `commission_rate`, `half_spread_rate`, `slippage_rate` (string, ≥ 0; komisyon değeri bir varsayımdır) |
+| `sources` (opsiyonel) | `{"contract": "...", "index": "..."}`: store'ların kayıtlı olması BEKLENEN kaynak etiketi, birebir karşılaştırılır. Verilmeyen rol kanonik Binance uç noktasıdır (`binance:GET https://fapi.binance.com/fapi/v1/klines` / `.../indexPriceKlines`); eski config'ler aynen çalışır. Sentetik fixture `synthetic:offline-fixture/contract-trade/v1` ve `synthetic:offline-fixture/index-price/v1` kullanır (FUNDING_RESEARCH_SPEC §19.14). Bilinmeyen rol veya boş/str olmayan değer reddedilir. |
 | `decimal_context` (opsiyonel) | tam olarak `prec`, `rounding` (örn. `"ROUND_HALF_EVEN"`), `Emin`, `Emax`, `capitals`, `clamp`, `traps` (sinyal adları listesi). Yoksa: prec 28, ROUND_HALF_EVEN, Emin −999999, Emax 999999, capitals 1, clamp 0, traps `["DivisionByZero", "InvalidOperation", "Overflow"]`. Rapora her zaman çözülmüş hâli yazılır. |
 
 Ondalıklar JSON sayısı olarak yazılırsa (`0.0002`) config reddedilir — float'a hiç dönüştürülmez.
@@ -148,6 +149,7 @@ Ondalıklar JSON sayısı olarak yazılırsa (`0.0002`) config reddedilir — fl
 | `decimal_context...` | `decimal_context` eksik/fazla anahtar ya da geçersiz değer | yedi anahtarın hepsini verin veya alanı tamamen kaldırın |
 | `could not start a consistent read snapshot` | başka bir süreç DB'yi 5 sn'den uzun süre kilitledi | yazan süreç bitince tekrar çalıştırın |
 | `... registered as index_price ...` / `contract.provenance FAIL` | roller karışmış (contract ↔ index) | `stores.contract` contract-trade, `stores.index` index-price store'unu göstermeli |
+| `... registered as ... source='synthetic:...'; expected ... source='binance:GET ...'` (veya tersi) | store'un kaynak etiketi config'teki `sources` ile aynı değil (örn. 2026-09-25 öncesi üretilmiş fixture Binance etiketlidir) | etiketi tahmin etmeyin/DB'yi düzeltmeyin: `sources`'u store'un gerçek beyanıyla eşleyin veya fixture'ı yeni bir dizinde yeniden üretin |
 | `coverage does NOT contain [start, end)` | aralık ingestion ile kapsanmamış ya da kapanmamış | `start`/`end`'i coverage içine alın veya eksik aralığı ingest edin |
 | `JSON numbers with a fraction/exponent are not allowed` | ondalık JSON sayısı | tırnak içinde yazın: `"0.0002"` |
 | `must carry an explicit offset` | naive zaman | `Z` ekleyin: `"2026-01-05T00:00:00Z"` |

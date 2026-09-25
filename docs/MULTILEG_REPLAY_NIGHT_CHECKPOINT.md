@@ -68,3 +68,20 @@ Doğrulanan bulgu: `data_quality/ingestion.py::ingest_binance_historical_range` 
 Kod checkpoint'leri: `5e76ba8` (spot provenance) · `ab73f49` (store runner + demo + testler) · denetim/dokümanlar: bu dosyayı içeren commit (hash `git log` ile doğrulanır).
 
 Sonraki tek kontrollü iş önerisi: `research/offline_fixture.py`'nin sentetik perpetual/index verisini Binance kaynak etiketiyle yazma sorununu, USDⓈ-M ingestion'a spot'takine eşdeğer açık `source` parametresi ekleyerek düzeltmek (rapor fingerprint'leri değişeceği için kullanıcı onayı gerekir).
+
+
+## USD-M source desteği + sentetik kaynak düzeltmesi (2026-09-25)
+
+Başlangıç: HEAD `6758b4d` (origin 0/0), `pytest -q` 2620 passed, ruff/format temiz, `AGENTS.md` hash `c88c11fd…25b05` (değişmedi, stage edilmedi).
+
+| Paket | Durum |
+|---|---|
+| API | VERIFIED — USDⓈ-M ingestion + dataset builder'larına opsiyonel `source`; okuyuculara `contract_source`/`index_source`; config v1'e opsiyonel `sources` (FUNDING_RESEARCH_SPEC §19.14.2) |
+| Fixture düzeltmesi | VERIFIED — `synthetic:offline-fixture/contract-trade/v1`, `synthetic:offline-fixture/index-price/v1`; `multileg_offline` perpetual `synthetic:perpetual` |
+| Önce/sonra | VERIFIED — grup A (ekonomi) aynı, grup B (kaynak/config/digest) kasıtlı değişti, grup C (uçucu) (§19.14.4); multileg-store demosu değişmedi |
+| Testler | VERIFIED — `tests/test_usdm_source_labels.py` P1–P11 (51 öğe); tam suite 2671 passed |
+| Denetim | VERIFIED — ayrı tur, harici reviewer yok (§19.14.6); `expected_dataset` bilinmeyen rol sertleştirildi |
+
+Önceki bölümdeki "Sonraki tek kontrollü iş önerisi" (offline_fixture Binance etiketi) [2026-09-25 notu: bu bölümde uygulandı].
+
+Kod checkpoint'i: `6bdec88` (kod + testler) · dokümanlar: bu satırı içeren commit (hash `git log` ile doğrulanır).
