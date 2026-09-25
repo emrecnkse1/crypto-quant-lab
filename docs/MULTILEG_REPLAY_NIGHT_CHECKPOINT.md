@@ -29,7 +29,7 @@ R1 tam eşit open_time ızgarası · R2 MS9 sırası + E1 (opt-in) · R3 sonda a
 | B — in-memory replay | VERIFIED — `backtest/multileg_replay.py` (`run_multileg_replay`); eski motor bu modülü import etmez |
 | C — S1–S12 + N1–N7 | VERIFIED — `tests/test_backtest_multileg_replay.py` 23 test fonksiyonu (N1–N7, S1–S12); tam suite 2566 passed |
 | D — adversarial / oracle | VERIFIED — `tests/test_backtest_multileg_replay_adversarial.py` 20 test (seed 20260925, 40 rastgele senaryo bağımsız oracle ile birebir; oracle 3 bilinen kusuru ayırt eder); tam suite 2586 passed |
-| E — offline demo | NOT STARTED |
+| E — offline demo | VERIFIED — `python -m crypto_quant_lab.research.multileg_offline --output <yeni dizin>`; 4 senaryo elle türetilmiş beklentilerle geçti; iki temiz çalıştırmada aynı `deterministic_sha256` ve `run_input_sha256`; var olan çıktı ezilmez (exit 2); `tests/test_research_multileg_offline.py` 4 test; PowerShell'de doğrulandı; tam suite 2590 passed |
 | F — son denetim + docs | NOT STARTED |
 
 ## Bilinen sınır
@@ -38,4 +38,4 @@ R1 tam eşit open_time ızgarası · R2 MS9 sırası + E1 (opt-in) · R3 sonda a
 
 ## Sonraki tek adım
 
-Paket E: sentetik offline demo (`research/multileg_offline.py`).
+Paket F: bağımsız diff/ekonomik denetim, spec §19.12 + ROADMAP güncellemesi.

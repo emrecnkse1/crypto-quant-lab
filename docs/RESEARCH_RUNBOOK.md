@@ -98,6 +98,14 @@ Resmî kayıt T anındaki snapshot'tır, close basis `[T−1h, T)` kapanışıd�
 
 Üretilen `contract.db`/`index.db` dosyaları kendi config'inizle `basis-report` için kullanılabilir.
 
+## 6b. Çok bacaklı replay sentetik demo (offline)
+
+```powershell
+.\.venv\Scripts\python.exe -m crypto_quant_lab.research.multileg_offline --output "$env:TEMP\cql\multileg-demo-1"
+```
+
+SENTETİK VERİ · SCRIPTED INTENT · STRATEJİ DEĞİL. Dört sabit senaryoyu (funding'siz kapanış, kapanış anında funding, oransal maliyet + funding, sonda açık pozisyon) üretim `run_multileg_replay` fonksiyonundan geçirir ve modül docstring'indeki elle türetilmiş değerlerle karşılaştırır. Ağ, store veya var olan DB kullanmaz; çıktı yeni bir dizine `report.json` + `report.md` (rapor v2) olarak yazılır, var olan dizin ezilmez (exit 2); beklenti tutmazsa veya senaryo hata verirse rapor `failed`, exit 1. Kapsam ve sınırlar: FUNDING_RESEARCH_SPEC.md §19.12.8.
+
 ## 7. Config şeması (v1)
 
 `research/offline_fixture.py` içindeki `fixture_config()` tam bir örnektir; `offline-smoke` onu `fixture\config.json` olarak yazar.
