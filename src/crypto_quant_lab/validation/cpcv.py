@@ -44,9 +44,10 @@ class CpcvSplitResult:
     train_row_count: int
     train_sharpe_ratios: tuple[_Decimal, ...]
     selected_candidate_ids: tuple[str, ...]
+    purged_train_row_count: int = 0
 
     def __post_init__(self) -> None:
-        for name in ("split_index", "train_row_count"):
+        for name in ("split_index", "train_row_count", "purged_train_row_count"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int):
                 raise TypeError(f"{name} must be an int, got {type(value).__name__}")
@@ -126,8 +127,17 @@ def compute_cpcv_paths(
     fold_model: _CombinatorialFoldModel,
     *,
     risk_free_per_period: _Decimal = _Decimal(0),
+    purge_shared_backtest_windows: bool = False,
 ) -> CpcvResult:
-    """CPCV path returns with per-split training-set selection (Bölüm 17.2.11-17.2.19)."""
+    """CPCV path returns with per-split training-set selection (Bölüm 17.2.11-17.2.19).
+
+    `purge_shared_backtest_windows=True` (Bölüm 17.2.28) additionally drops,
+    in every split, each training row that shares a rolling backtest window
+    (`matrix.window_indices`) with a test row: every window is an
+    independent backtest that starts flat, so an outcome can never cross a
+    window boundary, but inside one window a position may carry across a fold
+    boundary for an unrecorded time. The default keeps the earlier behavior.
+    """
     if not isinstance(matrix, _TrialReturnMatrix):
         raise TypeError(f"matrix must be a TrialReturnMatrix, got {type(matrix).__name__}")
     if not isinstance(fold_model, _CombinatorialFoldModel):
@@ -140,6 +150,11 @@ def compute_cpcv_paths(
         )
     if not risk_free_per_period.is_finite():
         raise ValueError(f"risk_free_per_period must be finite, got {risk_free_per_period}")
+    if not isinstance(purge_shared_backtest_windows, bool):
+        raise TypeError(
+            "purge_shared_backtest_windows must be a bool, got "
+            f"{type(purge_shared_backtest_windows).__name__}"
+        )
     candidate_count = len(matrix.candidate_ids)
     if candidate_count < 2:
         raise ValueError(
@@ -160,7 +175,17 @@ def compute_cpcv_paths(
     selected_columns: list[list[int]] = []
     for split in fold_model.splits:
         train = set(split.train_groups)
-        train_rows = [row for row, group in enumerate(row_groups) if group in train]
+        group_train_rows = [row for row, group in enumerate(row_groups) if group in train]
+        if purge_shared_backtest_windows:
+            test = set(split.test_groups)
+            test_windows = {
+                matrix.window_indices[row] for row, group in enumerate(row_groups) if group in test
+            }
+            train_rows = [
+                r for r in group_train_rows if matrix.window_indices[r] not in test_windows
+            ]
+        else:
+            train_rows = group_train_rows
         if len(train_rows) < 2:
             raise ValueError(
                 f"split {split.split_index} has {len(train_rows)} training row(s); at least 2 "
@@ -188,6 +213,7 @@ def compute_cpcv_paths(
                 train_row_count=len(train_rows),
                 train_sharpe_ratios=tuple(sharpes),
                 selected_candidate_ids=tuple(matrix.candidate_ids[c] for c in selected),
+                purged_train_row_count=len(group_train_rows) - len(train_rows),
             )
         )
 

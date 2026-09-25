@@ -88,7 +88,9 @@ def test_public_api_and_reuse_of_the_pbo_rules():
     assert public == {"CpcvSplitResult", "CpcvPathResult", "CpcvResult", "compute_cpcv_paths",
                       "CpcvPathSummary", "summarize_cpcv_paths", "DIAGNOSTIC_SCOPE"}  # fmt: skip
     signature = inspect.signature(compute_cpcv_paths)
-    assert list(signature.parameters) == ["matrix", "fold_model", "risk_free_per_period"]
+    assert list(signature.parameters) == [
+        "matrix", "fold_model", "risk_free_per_period", "purge_shared_backtest_windows"]  # fmt: skip
+    assert signature.parameters["purge_shared_backtest_windows"].default is False
     assert signature.parameters["risk_free_per_period"].kind is inspect.Parameter.KEYWORD_ONLY
     assert signature.parameters["risk_free_per_period"].default == Decimal(0)
     # the Stage-2-identical subsample Sharpe of PBO is reused, not copied
