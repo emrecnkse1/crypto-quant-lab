@@ -552,13 +552,16 @@ def test_recorded_position_intervals_purge_exactly_the_overlapping_training_rows
     from crypto_quant_lab.backtest.position_log import PositionInterval
 
     columns = {"A": (1, 2, 3, 4, 5, 6, 7, 9), "B": (2, 1, 4, 3, 6, 5, 8, 7)}
-    # 4 groups x 2 rows (marks every 30 min), one backtest block; A holds a position from the
-    # mark at 1h to the mark at 3h -> it produces the returns at 1.5h, 2h (group 1) and
-    # 2.5h, 3h (group 2). A training row is purged when that position also touches a test group:
-    # (0,1): train g2,g3 -> 2.5h, 3h purged (touch test g1) = 2   (0,2): g1 rows purged = 2
-    # (0,3): position touches neither test group = 0           (1,2): no training row touched = 0
-    # (1,3): g2 rows purged (touch test g1) = 2                (2,3): g1 rows purged = 2
-    intervals = {"A": ((PositionInterval("LONG", Decimal(1), T0 + H, T0 + 3 * H),),), "B": ((),)}
+    # 4 groups x 2 rows (marks every 30 min), one backtest block; A enters after the 1h mark
+    # and exits after the 2.5h mark -> its returns are at 1.5h, 2h (group 1) and 2.5h plus the
+    # first mark after the exit, 3h (group 2). A training row is purged when that position also
+    # produces a return in a test group:
+    # (0,1): train g2,g3 -> 2.5h, 3h purged = 2      (0,2): g1 rows 1.5h, 2h purged = 2
+    # (0,3): no return in a test group = 0            (1,2): no training row touched = 0
+    # (1,3): g2 rows purged = 2                       (2,3): g1 rows purged = 2
+    # (the pre-audit rule entry < t <= exit ignored the 3h mark and gave 1, 2, 0, 0, 1, 2)
+    exit_mark = T0 + 5 * H / 2
+    intervals = {"A": ((PositionInterval("LONG", Decimal(1), T0 + H, exit_mark),),), "B": ((),)}
     model = build_combinatorial_fold_model(groups(4), test_group_count=2)
     result = compute_cpcv_paths(matrix(columns, rows_per_group=2), model,
                                 position_intervals=intervals)  # fmt: skip

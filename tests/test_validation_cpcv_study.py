@@ -303,8 +303,10 @@ def independent_purge(matrix, model, intervals, split):
         hit = False
         for per_window in intervals.values():
             for interval in per_window[block]:
+                after = None if interval.exit_time is None else next(
+                    (m for m in marks if m > interval.exit_time), None)  # fmt: skip
                 held = [m for m in marks if interval.entry_time < m
-                        and (interval.exit_time is None or m <= interval.exit_time)]  # fmt: skip
+                        and (after is None or m <= after)]  # fmt: skip
                 if t in held and any(model.groups[g].start < m <= model.groups[g].end
                                      for m in held for g in split.test_groups):  # fmt: skip
                     hit = True

@@ -123,8 +123,8 @@ def _row_groups(matrix: _TrialReturnMatrix, fold_model: _CombinatorialFoldModel)
     return owners
 
 
-def _label_spans(matrix: _TrialReturnMatrix, position_intervals: dict) -> list[list[tuple]]:
-    """Per row: (entry, last produced mark) of every interval producing that row's return."""
+def _interval_rows(matrix: _TrialReturnMatrix, position_intervals: dict) -> list[tuple[int, ...]]:
+    """Matrix rows whose return each recorded interval produces (Bölüm 17.2.35, 17.2.38)."""
     if not isinstance(position_intervals, dict):
         raise TypeError(
             f"position_intervals must be a dict, got {type(position_intervals).__name__}"
@@ -132,10 +132,10 @@ def _label_spans(matrix: _TrialReturnMatrix, position_intervals: dict) -> list[l
     if set(position_intervals) != set(matrix.candidate_ids):
         raise ValueError("position_intervals must have exactly the matrix candidate ids as keys")
     block_count = matrix.window_indices[-1] + 1
-    block_times: list[list] = [[] for _ in range(block_count)]
+    block_rows: list[list[int]] = [[] for _ in range(block_count)]
     for row, block in enumerate(matrix.window_indices):
-        block_times[block].append(matrix.observation_times[row])
-    spans: list[list[tuple]] = [[] for _ in matrix.observation_times]
+        block_rows[block].append(row)
+    interval_rows: list[tuple[int, ...]] = []
     for candidate_id in matrix.candidate_ids:
         per_block = position_intervals[candidate_id]
         if not isinstance(per_block, tuple) or len(per_block) != block_count:
@@ -144,29 +144,25 @@ def _label_spans(matrix: _TrialReturnMatrix, position_intervals: dict) -> list[l
                 "per-window interval tuples"
             )
         for block, intervals in enumerate(per_block):
-            marks = block_times[block]
+            rows = block_rows[block]
+            marks = [matrix.observation_times[r] for r in rows]
+            row_of = dict(zip(marks, rows, strict=True))
             for index, interval in enumerate(intervals):
                 if not isinstance(interval, _PositionInterval):
                     raise TypeError(
                         f"position_intervals[{candidate_id!r}][{block}][{index}] must be a "
                         "PositionInterval"
                     )
-                ends_ok = interval.exit_time is None or interval.exit_time in marks
-                if interval.entry_time not in marks or not ends_ok:
+                ends_ok = interval.exit_time is None or interval.exit_time in row_of
+                if interval.entry_time not in row_of or not ends_ok:
                     raise ValueError(
                         f"position_intervals[{candidate_id!r}][{block}][{index}] entry/exit time "
                         f"is not an equity mark of window block {block}"
                     )
-                produced = [m for m in marks if interval.produces_return_at(m)]
-                if not produced:
-                    continue
-                span = (interval.entry_time, produced[-1])
-                for row, block_of_row in enumerate(matrix.window_indices):
-                    if block_of_row == block and interval.produces_return_at(
-                        matrix.observation_times[row]
-                    ):
-                        spans[row].append(span)
-    return spans
+                produced = tuple(row_of[m] for m in interval.return_marks(marks))
+                if produced:
+                    interval_rows.append(produced)
+    return interval_rows
 
 
 def compute_cpcv_paths(
@@ -219,8 +215,8 @@ def compute_cpcv_paths(
         )
     row_groups = _row_groups(matrix, fold_model)
     row_count = len(row_groups)
-    label_spans = (
-        _label_spans(matrix, position_intervals) if position_intervals is not None else None
+    interval_rows = (
+        _interval_rows(matrix, position_intervals) if position_intervals is not None else None
     )
     cell_evaluations = len(fold_model.splits) * row_count * candidate_count
     if cell_evaluations > _MAX_CELL_EVALUATIONS:
@@ -245,17 +241,13 @@ def compute_cpcv_paths(
             ]
         else:
             train_rows = group_train_rows
-        if label_spans is not None:
-            test_spans = [fold_model.groups[g] for g in split.test_groups]
-            train_rows = [
-                r
-                for r in train_rows
-                if not any(
-                    entry < span.end and last > span.start
-                    for entry, last in label_spans[r]
-                    for span in test_spans
-                )
-            ]
+        if interval_rows is not None:
+            test = set(split.test_groups)
+            touched: set[int] = set()
+            for rows in interval_rows:  # a position producing a return inside a test group
+                if any(row_groups[r] in test for r in rows):
+                    touched.update(rows)
+            train_rows = [r for r in train_rows if r not in touched]
         if len(train_rows) < 2:
             raise ValueError(
                 f"split {split.split_index} has {len(train_rows)} training row(s); at least 2 "

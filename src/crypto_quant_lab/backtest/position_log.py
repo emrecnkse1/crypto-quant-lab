@@ -8,10 +8,13 @@ byte-for-byte what it is without an observer.
 
 Timing (Faz 4 contract, unchanged): the decision taken at candle N's
 availability fills at candle N+1's OPEN, stamped `open_time(N+1) ==
-availability(N)`. A position entered at time e and exited at time x therefore
-produces the returns of every equity mark t with e < t <= x (the mark at x is
-taken before the exiting fill). A position still open at the end has
-`exit_time is None`; no synthetic exit is ever recorded.
+availability(N)`. A position entered at fill time e and exited at fill time x
+produces the returns of every equity mark after e up to and INCLUDING the
+first mark after x: the mark at x is taken before the exiting fill, and the
+move from that mark to the exit fill price, plus the exit cost, only reaches
+equity at the next mark (VALIDATION_SPEC §17.2.38 counterexample). A
+position still open at the end has `exit_time is None`; no synthetic exit is
+ever recorded.
 """
 
 from dataclasses import dataclass
@@ -37,11 +40,19 @@ class PositionInterval:
         if self.exit_time is not None and not self.exit_time > self.entry_time:
             raise ValueError("exit_time must be after entry_time")
 
-    def produces_return_at(self, mark_time: datetime) -> bool:
-        """True when the equity mark at `mark_time` carries this position's return."""
-        return self.entry_time < mark_time and (
-            self.exit_time is None or mark_time <= self.exit_time
-        )
+    def return_marks(self, marks) -> tuple[datetime, ...]:
+        """The equity marks (ascending `marks` of this position's backtest) carrying its return.
+
+        Every mark m with entry_time < m, up to and including the first mark
+        after exit_time (open positions: every later mark).
+        """
+        later = [m for m in marks if m > self.entry_time]
+        if self.exit_time is None:
+            return tuple(later)
+        after_exit = next((m for m in marks if m > self.exit_time), None)
+        if after_exit is None:
+            return tuple(m for m in later if m <= self.exit_time)
+        return tuple(m for m in later if m <= after_exit)
 
 
 class PositionIntervalRecorder:
@@ -54,6 +65,10 @@ class PositionIntervalRecorder:
     def on_fill(self, *, fill_time: datetime, old_quantity: Decimal, new_quantity: Decimal) -> None:
         if old_quantity == new_quantity:
             raise ValueError("on_fill requires a position change")
+        if old_quantity != 0 and new_quantity != 0 and (old_quantity > 0) == (new_quantity > 0):
+            raise ValueError(
+                "a same-direction resize is not a legal Faz 4 transition (BACKTEST_SPEC Bölüm 16)"
+            )
         if old_quantity != 0:
             if self._open is None:
                 raise ValueError("a fill closed a position the recorder never saw opened")

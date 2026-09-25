@@ -66,13 +66,33 @@ def test_observer_never_changes_the_result_and_records_hand_derived_intervals():
     assert recorder.transition_count == with_observer.trade_count == 5
 
 
-def test_produces_return_at_follows_the_mark_timing():
+def test_return_marks_include_the_first_mark_after_the_exit_fill():
     interval = PositionInterval("LONG", Decimal(1), S + H, S + 3 * H)
-    # marks at S+1h (pre-fill), S+2h, S+3h (pre-exit), S+4h
-    assert [interval.produces_return_at(S + k * H) for k in (1, 2, 3, 4)] == [
-        False, True, True, False]  # fmt: skip
-    open_end = PositionInterval("SHORT", Decimal(1), S + H, None)
-    assert open_end.produces_return_at(S + 10 * H)
+    marks = [S + k * H for k in range(1, 7)]
+    # entry fill after the 1h mark; exit fill after the 3h mark; its price and cost reach
+    # equity at the 4h mark -> 2h, 3h, 4h
+    assert interval.return_marks(marks) == (S + 2 * H, S + 3 * H, S + 4 * H)
+    open_end = PositionInterval("SHORT", Decimal(1), S + 4 * H, None)
+    assert open_end.return_marks(marks) == (S + 5 * H, S + 6 * H)
+
+
+def test_counterexample_the_exit_move_is_carried_by_the_next_mark():
+    """Audit counterexample (§17.2.38): the earlier rule `entry < t <= exit` missed this row."""
+    recorder = PositionIntervalRecorder()
+    result = run_backtest_replay(CANDLES, as_of_time=base.AS_OF_TIME, config=CONFIG,
+                                 policy=Script([L, L, F, F, F, F]), cost_model=ZeroCostModel(),
+                                 position_observer=recorder)  # fmt: skip
+    (interval,) = recorder.intervals
+    equity = {p.time: p.equity for p in result.equity_curve}
+    marks = sorted(equity)
+    after = next(m for m in marks if m > interval.exit_time)
+    # flat after the exit fill, zero cost, no funding: the equity change at `after`
+    # (close 99 -> exit open 104) can only come from the position
+    assert equity[after] - equity[interval.exit_time] == Decimal(5)
+    assert after in interval.return_marks(marks)
+    later = [m for m in marks if m > after]
+    assert all(equity[m] == equity[after] for m in later)  # nothing after that
+    assert not set(later) & set(interval.return_marks(marks))
 
 
 def test_recorder_and_interval_validation():
@@ -85,6 +105,8 @@ def test_recorder_and_interval_validation():
                                          new_quantity=Decimal(1))  # fmt: skip
     with pytest.raises(ValueError, match="requires a position change"):
         recorder.on_fill(fill_time=S + H, old_quantity=Decimal(1), new_quantity=Decimal(1))
+    with pytest.raises(ValueError, match="same-direction resize is not a legal Faz 4 transition"):
+        recorder.on_fill(fill_time=S + H, old_quantity=Decimal(1), new_quantity=Decimal(2))
     with pytest.raises(ValueError, match="exit_time must be after entry_time"):
         PositionInterval("LONG", Decimal(1), S + H, S + H)
     with pytest.raises(ValueError, match="side must be"):
